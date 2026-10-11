@@ -1,6 +1,27 @@
 # PR Guide
 
-A Tern plugin (Luau and one stylesheet) that turns a GitHub PR into a guided review. `README.md` is the user manual. `GUIDE.md` is the guide-file contract.
+A Tern plugin (Luau and one stylesheet) with two surfaces: the PR hub organizes pull requests across repositories, and the guide walks through one pull request and posts one review.
+
+## Product map
+
+- `README.md` is the user manual and key reference.
+- `GUIDE.md` is the saved guide-file contract.
+- `docs/hub/README.md` is the PR hub's product and architecture spec. Before changing the hub, read **Product decisions**, **Shared Luau contracts**, **How this maps onto Tern** and **Verification**.
+
+| Feature | Code |
+|---|---|
+| Hub columns, reasons and priority | `src/hub/model.luau` |
+| Hub selection, filters, search and prepared board | `src/hub/state.luau` |
+| Cache, refresh scheduling, recent PRs and merge settings | `src/hub/sync.luau` |
+| GitHub commands and response parsing | `src/github.luau` |
+| Processes, files, kv and worktree effects | `src/fetch.luau` |
+| Hub actions, callbacks and window effects | `src/hub/block.luau` |
+| Fixes page, agent fixes, review-before-push and summaries | `src/hub/fixes.luau`, `src/hub/agent-fix.luau`, `src/hub/review-fix.luau`, `src/hub/summary.luau` |
+| Hub rendering | `src/view/hub/*.luau` |
+| Guided review state and effects | `src/guide.luau`, `src/block.luau` |
+| Guided review rendering | `src/view/*.luau` outside `src/view/hub/` |
+| Keyboard actions and help | `src/keys.luau`, `src/view/help.luau`, `src/view/hub/help.luau`, README Keys table |
+| Shared presentation | `guide.css` |
 
 ## Where code goes
 

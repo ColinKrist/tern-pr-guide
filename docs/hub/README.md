@@ -1,8 +1,8 @@
-# PR hub: design spec
+# PR hub: product and architecture spec
 
-A hub page for PR Guide. It shows every open PR you wrote and every PR waiting on your review, across repos, sorted by who needs to act next. This folder holds the approved design: this spec, clickable mockups in `mockups/` and the measured GitHub queries in `queries/`. **No plugin code has been written yet.**
+A hub page for PR Guide. It shows every open PR you wrote and every PR waiting on your review, across repos, sorted by who needs to act next. This folder holds the product and architecture spec, reference mockups in `mockups/` and the measured GitHub queries in `queries/`.
 
-**Status:** design approved and split into GitHub issues: parent [#17](https://github.com/jubbydev/tern-pr-guide/issues/17), with sub-issues #2–#20 labelled `hub` and `v0`/`v1`/`v2`. Each sub-issue names the modules it may touch and what it depends on. Start with #2 (rules); #3 (GitHub data) and #5 (board) follow it in parallel. See "How to build this" for the whole order.
+**Status:** implemented by parent [#17](https://github.com/jubbydev/tern-pr-guide/issues/17) and sub-issues #2–#20. The build plan and design history remain below as implementation context.
 
 ## Start here
 
