@@ -18,7 +18,8 @@ A Tern plugin (Luau and one stylesheet) with two surfaces: the PR hub organizes 
 | Hub actions, callbacks and window effects | `src/hub/block.luau` |
 | Fixes page, agent fixes, review-before-push and summaries | `src/hub/fixes.luau`, `src/hub/agent-fix.luau`, `src/hub/review-fix.luau`, `src/hub/summary.luau` |
 | Hub rendering | `src/view/hub/*.luau` |
-| Guided review state and effects | `src/guide.luau`, `src/block.luau` |
+| Saved guide model and parsing | `src/guide.luau` |
+| Guided review interaction state and effects | `src/state.luau`, `src/block.luau` |
 | Guided review rendering | `src/view/*.luau` outside `src/view/hub/` |
 | Keyboard actions and help | `src/keys.luau`, `src/view/help.luau`, `src/view/hub/help.luau`, README Keys table |
 | Shared presentation | `guide.css` |
