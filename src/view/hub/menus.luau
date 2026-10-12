@@ -1,5 +1,5 @@
 --!strict
--- The hub's menus (repositories, sort, agent model, a card's other actions) as Tern overlays under their
+-- The hub's menus (repositories, sort, settings, agent model, a card's other actions) as Tern overlays under their
 -- buttons. A menu opened by a key draws without animation: Tern's overlay pops only for the mouse.
 local Fields = require("../../text-field")
 local Paths = require("./paths")
@@ -14,6 +14,7 @@ local TITLES: { [string]: string } = {
 	repositories = "Filter by repository",
 	sort = "Sort by",
 	agent = "Agent model",
+	settings = "Settings",
 	actions = "More actions",
 	merge = "Merge method",
 }
@@ -21,7 +22,7 @@ local TITLES: { [string]: string } = {
 local function anchorOf(s: State.State): string
 	if s.menu == "repositories" then return Paths.repositoriesButton end
 	if s.menu == "sort" then return Paths.sortButton end
-	if s.menu == "agent" then return Paths.agentButton end
+	if s.menu == "agent" or s.menu == "settings" then return Paths.settingsButton end
 	local card = State.selectedCard(s)
 	return if card then Paths.moreButton(card) else Paths.titleLabel
 end
@@ -30,7 +31,7 @@ local function rowNode(s: State.State, row: State.MenuRow, index: number): Node
 	local kids: { Node } = {}
 	if row.kind == "check" then
 		table.insert(kids, el("span", { class = "gp-hm-box" .. (if row.on then " gp-hm-box-on" else "") }, if row.on then { Ui.icon("check") } else nil))
-	elseif row.kind == "choice" then
+	elseif row.kind == "choice" or row.kind == "menu" then
 		table.insert(kids, el("span", { class = "gp-hm-tick" }, if row.on then { Ui.icon("check") } else nil))
 	end
 	table.insert(kids, span("gp-hm-label", row.label))

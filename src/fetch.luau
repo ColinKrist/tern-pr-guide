@@ -709,6 +709,28 @@ function M.prepareLensFolder(): (string?, string?)
  return nil, Text.errorLine(err)
 end
 
+-- Where GitHub links open: "tern", Tern's own browser, or "browser", the system's default browser.
+local LINKS_KEY = "links"
+
+function M.linkTarget(): "tern" | "browser"
+ local ok, saved = pcall(function() return tern.kv.get(LINKS_KEY) end)
+ return if ok and saved == "browser" then "browser" else "tern"
+end
+
+function M.saveLinkTarget(target: "tern" | "browser")
+ pcall(tern.kv.set, LINKS_KEY, target)
+end
+
+-- Opens `url` in the system's default browser; `done` gets why it couldn't, else nil.
+-- ponytail: macOS `open` and Linux `xdg-open` only; Windows needs its own opener.
+function M.openInBrowser(url: string, done: (err: string?) -> ())
+ local opener = if tern.runtime.os == "linux" then "xdg-open" else "open"
+ M.runner({ opener, url }, { timeout_ms = 15_000 }, function(out)
+  if out.status == 0 and not out.timed_out then return done(nil) end
+  done(if out.timed_out then "the browser didn't answer" else Text.errorLine(if out.stderr ~= "" then out.stderr else "the browser didn't open"))
+ end)
+end
+
 -- How long the last finished run took, which the next run's progress is estimated from; three
 -- minutes before there is one.
 local RUN_SECONDS_KEY, DEFAULT_RUN_SECONDS = "runSeconds", 180

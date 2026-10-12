@@ -1056,6 +1056,8 @@
 .gp-hub-ctl-open, .gp-hub-ctl-open:hover { background: var(--l1); border-color: var(--l3); color: var(--t1); }
 .gp-hub-ctl-act, .gp-hub-ctl-act:hover { background: var(--chip-bg); border-color: var(--l2); color: var(--t1); }
 .gp-hub-ctl .sf-icon, .gp-hub-ctl .ico { width: 12px; height: 12px; color: var(--t3); }
+.gp-hub-ctl-icon { padding: 4px; }
+.gp-hub-ctl-icon .sf-icon, .gp-hub-ctl-icon .ico { width: 14px; height: 14px; }
 .gp-hub-ctl-label { display: flex; gap: 5px; font-family: var(--sans); }
 .gp-hub-ctl-dim { font-family: var(--sans); color: var(--t3); }
 .gp-hub-ctl-strong { font-family: var(--sans); font-weight: 600; color: var(--t1); }
@@ -1237,9 +1239,9 @@
 .gp-hm-box .sf-icon, .gp-hm-box .ico { width: 10px; height: 10px; }
 .gp-hm-tick { flex-shrink: 0; width: 14px; display: flex; color: var(--gp-blue); }
 .gp-hm-tick .sf-icon, .gp-hm-tick .ico { width: 13px; height: 13px; }
-.gp-hm-label { color: var(--t1); }
+.gp-hm-label { flex-shrink: 0; color: var(--t1); }
 .gp-hm-count { font-size: 11.5px; color: var(--t3); font-variant-numeric: tabular-nums; }
-.gp-hm-sub { padding-left: 16px; font-size: 12px; color: var(--t3); }
+.gp-hm-sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; padding-left: 16px; font-size: 12px; color: var(--t3); }
 .gp-hm-clear .gp-hm-label { color: var(--t2); }
 .gp-hm-edit { flex-wrap: nowrap; gap: 10px; }
 .gp-hm-edit > * { flex-shrink: 0; }

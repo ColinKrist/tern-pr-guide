@@ -198,6 +198,14 @@ local function openCard(b: Block, cx: BlockCx, value: string)
 	openRow(b, cx, value, false)
 end
 
+-- Opens a GitHub link where Settings says: Tern's browser, or the system's default browser.
+local function openLink(b: Block, cx: BlockCx, url: string)
+	if Fetch.linkTarget() == "tern" then return cx:open(url) end
+	Fetch.openInBrowser(url, function(err)
+		if err and not b.closed then cx:toast("error", "Couldn't open the link: " .. err, url) end
+	end)
+end
+
 local function closeMenu(b: Block)
 	State.closeMenu(b.s)
 end
@@ -228,6 +236,7 @@ local function pickRow(b: Block, cx: BlockCx, index: number, ACTIONS: { [string]
 	local menu = s.menu
 	State.menuPick(s, index)
 	if menu == "agent" then keepAgentChoice(b) end
+	if menu == "settings" and index > 1 then Fetch.saveLinkTarget(s.links) end
 end
 
 -- Sync: the cache, the timers and the live data ----------------------------------------------------------
@@ -2955,7 +2964,7 @@ ACTIONS["fixes-log"] = function(b, cx)
 	if pr == nil or step == nil or step.check == nil then return end
 	local url = Fixes.logUrl(step.check, pr.repo)
 	if url == "" then return cx:toast("error", "Couldn't open the log: GitHub gave no link for " .. step.check.name, pr.key) end
-	cx:open(url)
+	openLink(b, cx, url)
 end
 -- G: the step on GitHub: the conflict editor, the thread, the check, the review, or the pull request.
 ACTIONS["fixes-github"] = function(b, cx)
@@ -2968,7 +2977,7 @@ ACTIONS["fixes-github"] = function(b, cx)
 		elseif step.review then url = step.review.url
 		elseif step.check and step.check.url ~= "" then url = step.check.url end
 	end
-	cx:open(url)
+	openLink(b, cx, url)
 end
 -- ⏎ in the panel runs the highlighted action; the agent action is the card's own.
 ACTIONS["fixes-press"] = function(b, cx)
@@ -3059,6 +3068,7 @@ local block: BlockDef<Block> = {
 			end
 		end
 		local s = State.new(prs, now, saved)
+		s.links = Fetch.linkTarget()
 		if fixture then
 			State.setRecent(s, SAMPLE_RECENT)
 		else

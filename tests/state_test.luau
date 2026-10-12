@@ -234,6 +234,14 @@ return function()
 	assert(State.menuPick(s, 2) and (s.agent :: State.AgentChoice).model == "openai/gpt" and (s.agent :: State.AgentChoice).effort == nil)
 	assert(State.agentLabel(s) == "gpt")
 
+	-- Settings: Agent model opens the model menu; a link choice is kept and closes the menu.
+	State.openMenu(s, "settings")
+	rows = State.menuRows(s)
+	assert(#rows == 3 and rows[1].kind == "menu" and rows[1].sub == "gpt" and rows[2].on and not rows[3].on)
+	assert(State.menuPick(s, 1) == false and s.menu == "agent" and s.mode == "menu")
+	State.openMenu(s, "settings")
+	assert(State.menuPick(s, 3) == true and s.links == "browser" and s.menu == nil)
+
 	-- Help.
 	State.openHelp(s)
 	assert(s.mode == "help" and s.menu == nil)
