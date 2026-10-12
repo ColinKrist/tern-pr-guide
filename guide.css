@@ -1056,8 +1056,8 @@
 .gp-hub-ctl-open, .gp-hub-ctl-open:hover { background: var(--l1); border-color: var(--l3); color: var(--t1); }
 .gp-hub-ctl-act, .gp-hub-ctl-act:hover { background: var(--chip-bg); border-color: var(--l2); color: var(--t1); }
 .gp-hub-ctl .sf-icon, .gp-hub-ctl .ico { width: 12px; height: 12px; color: var(--t3); }
-.gp-hub-ctl-icon { padding: 4px; }
-.gp-hub-ctl-icon .sf-icon, .gp-hub-ctl-icon .ico { width: 14px; height: 14px; }
+.gp-hub-ctl-icon { padding: 3px 9px 3px 7px; }
+.gp-hub-ctl-icon .sf-icon, .gp-hub-ctl-icon .ico { width: 14px; height: 14px; color: var(--t2); }
 .gp-hub-ctl-label { display: flex; gap: 5px; font-family: var(--sans); }
 .gp-hub-ctl-dim { font-family: var(--sans); color: var(--t3); }
 .gp-hub-ctl-strong { font-family: var(--sans); font-weight: 600; color: var(--t1); }
@@ -1230,7 +1230,7 @@
 .gp-hub-rc-when { width: 64px; flex-shrink: 0; text-align: right; font-size: 12.5px; color: var(--t3); font-variant-numeric: tabular-nums; }
 
 /* the menus and the key panel: Tern overlays holding rows like the model menu's */
-[data-role='gp.hubmenu'] .sf-ov-body, [data-role='gp.hubhelp'] .sf-ov-body { padding: 0; gap: 0; }
+[data-role='gp.hubmenu'] .sf-ov-body, [data-role='gp.hubsettings'] .sf-ov-body, [data-role='gp.hubhelp'] .sf-ov-body { padding: 0; gap: 0; }
 .gp-hm-head { padding: 10px 14px 0; font-family: var(--sans); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--t3); }
 .gp-hm-list { max-height: 360px; }
 .gp-hm-row { font-size: 13px; white-space: nowrap; }
@@ -1253,8 +1253,19 @@
 .gp-hh .gp-keylabel { white-space: normal; min-width: 0; }
 .gp-hh-keys { display: flex; flex-direction: column; gap: 3px; flex-shrink: 0; width: 76px; }
 /* menus and the key panel are opaque cards, so the board never shows through; the menus are narrow */
-.sf-overlay[data-role='gp.hubmenu'] .sf-ov-card, .sf-overlay[data-role='gp.hubhelp'] .sf-ov-card { background: var(--card); }
+.sf-overlay[data-role='gp.hubmenu'] .sf-ov-card, .sf-overlay[data-role='gp.hubsettings'] .sf-ov-card, .sf-overlay[data-role='gp.hubhelp'] .sf-ov-card { background: var(--card); }
 .sf-overlay[data-role='gp.hubmenu'], .sf-overlay[data-role='gp.hubmenu'] .sf-ov-card { width: 260px; }
+/* Settings is wider: full model names, every effort level and the links toggle on one line each */
+.sf-overlay[data-role='gp.hubsettings'], .sf-overlay[data-role='gp.hubsettings'] .sf-ov-card { width: 400px; max-width: 100%; }
+.sf-overlay[data-role='gp.hubmenu'] .sf-ov-body, .sf-overlay[data-role='gp.hubsettings'] .sf-ov-body { width: 100%; max-width: none; padding: 0; }
+/* Tern's gradient edge draws at the card's default width, a stray line inside a resized card; its 1px ring stays */
+.sf-overlay[data-role='gp.hubmenu'] .sf-ov-card::after, .sf-overlay[data-role='gp.hubsettings'] .sf-ov-card::after { display: none; }
+.gp-hs-models { padding-top: 4px; }
+.gp-hs-row { display: flex; flex-direction: column; gap: 6px; padding: 8px 14px 12px; border-top: 1px solid var(--l2); }
+.gp-hs-row > * { flex-shrink: 0; }
+.gp-hs-top { display: flex; align-items: center; min-height: 20px; }
+/* the toggles fill the row, each side as wide as its word needs and sharing what is left */
+.gp-hs-segs > .gp-md-seg { flex: 1 1 auto; padding: 4px 6px; text-align: center; }
 /* the key panel is wider than Tern's lg overlay: three columns that wrap to fewer in a narrower pane */
 .sf-overlay[data-role='gp.hubhelp'], .sf-overlay[data-role='gp.hubhelp'] .sf-ov-card { width: 940px; max-width: 100%; }
 

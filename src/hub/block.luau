@@ -102,14 +102,16 @@ local SAMPLE_RECENT: { Sync.Opened } = {
 }
 
 
--- The agent a fixture board shows, so ⇧M has something to choose from without running omp.
+-- The agent a fixture board shows, so Settings has something to choose from without running omp. Names and
+-- efforts are as long as omp's real ones.
 local SAMPLE_AGENT: State.AgentChoice = {
 	models = {
-		{ selector = "anthropic/claude-opus", name = "claude-opus", efforts = { "low", "medium", "high" } },
-		{ selector = "anthropic/claude-sonnet", name = "claude-sonnet", efforts = { "low", "medium", "high" } },
-		{ selector = "openai/gpt", name = "gpt", efforts = {} },
+		{ selector = "anthropic/claude-fable-5-1", name = "Claude Fable 5.1", efforts = { "low", "medium", "high", "xhigh", "max" } },
+		{ selector = "anthropic/claude-haiku-4-5", name = "Claude Haiku 4.5", efforts = { "minimal", "low", "medium", "high", "xhigh" } },
+		{ selector = "anthropic/claude-3-5-sonnet-v2", name = "Claude Sonnet 3.5 v2", efforts = {} },
+		{ selector = "openai-codex/gpt-6.1-sol", name = "GPT-6.1 Sol", efforts = { "minimal", "low", "medium", "high", "xhigh", "max" } },
 	},
-	model = "anthropic/claude-opus", effort = "high",
+	model = "anthropic/claude-fable-5-1", effort = "high",
 }
 
 -- Sends frame ops after the render that draws their targets. A target the render dropped makes the frame
@@ -235,8 +237,7 @@ local function pickRow(b: Block, cx: BlockCx, index: number, ACTIONS: { [string]
 	if s.menu == "merge" then return chooseMergeRow(b, cx, index) end
 	local menu = s.menu
 	State.menuPick(s, index)
-	if menu == "agent" then keepAgentChoice(b) end
-	if menu == "settings" and index > 1 then Fetch.saveLinkTarget(s.links) end
+	if menu == "settings" then keepAgentChoice(b) end
 end
 
 -- Sync: the cache, the timers and the live data ----------------------------------------------------------
@@ -1735,6 +1736,11 @@ end
 ACTIONS["hub-menu-effort-set"] = function(b, cx, level)
 	State.setEffort(b.s, level)
 	keepAgentChoice(b)
+end
+-- L in Settings, or a click on a side of the toggle: where GitHub links open.
+ACTIONS["hub-links"] = function(b, cx, to)
+	State.setLinks(b.s, to)
+	Fetch.saveLinkTarget(b.s.links)
 end
 ACTIONS["hub-help"] = function(b)
 	State.openHelp(b.s)

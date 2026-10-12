@@ -21,7 +21,7 @@ export type Summary = Summary.Summary
 export type FixDetails = Fixes.FixDetails
 
 export type Mode = "board" | "search" | "link" | "menu" | "confirm" | "help" | "fixes" | "reply" | "review-fix"
-export type MenuId = "repositories" | "sort" | "agent" | "merge" | "actions" | "settings"
+export type MenuId = "repositories" | "sort" | "merge" | "actions" | "settings"
 export type Ring = "bad" | "good" | "bad-out" | "good-out" -- red ring, green wash, then the same fading
 -- What the flake evidence says about a card's failing checks, for the commit it was read on. `runs` are the workflow
 -- runs Re-run failed checks sends `gh run rerun` to, once each.
@@ -144,7 +144,7 @@ export type State = {
 	booted: boolean, -- arrival motion, as src/state.luau
 }
 
-export type MenuRow = { label: string, sub: string?, count: number?, on: boolean, kind: "choice" | "check" | "clear" | "menu" }
+export type MenuRow = { label: string, sub: string?, count: number?, on: boolean, kind: "choice" | "check" | "clear" }
 
 local M = {}
 M.SUMMARIZING = "Summarizing feedback…"
@@ -1106,7 +1106,7 @@ function M.closeHelp(s: State)
 end
 
 -- The rows of the open menu.
-local function row(label: string, sub: string?, count: number?, on: boolean, kind: "choice" | "check" | "clear" | "menu"): MenuRow
+local function row(label: string, sub: string?, count: number?, on: boolean, kind: "choice" | "check" | "clear"): MenuRow
 	return { label = label, sub = sub, count = count, on = on, kind = kind }
 end
 
@@ -1136,11 +1136,7 @@ function M.menuRows(s: State): { MenuRow }
 		if card then
 			for _, more in card.more do table.insert(rows, row(more.label, more.key, nil, false, "choice")) end
 		end
-	elseif s.menu == "settings" then
-		table.insert(rows, row("Agent model", if s.agent then M.agentLabel(s) else nil, nil, false, "menu"))
-		table.insert(rows, row("Open links in Tern", nil, nil, s.links == "tern", "choice"))
-		table.insert(rows, row("Open links in default browser", nil, nil, s.links == "browser", "choice"))
-	elseif s.menu == "agent" and s.agent then
+	elseif s.menu == "settings" and s.agent then
 		for _, model in s.agent.models do
 			table.insert(rows, row(model.name, string.match(model.selector, "^([^/]+)/"), nil, model.selector == (s.agent :: AgentChoice).model, "choice"))
 		end
@@ -1156,7 +1152,7 @@ function M.openMenu(s: State, menu: MenuId)
 		for index, sort in M.SORTS do
 			if sort.id == s.sort then s.menuCursor = index end
 		end
-	elseif menu == "agent" and s.agent then
+	elseif menu == "settings" and s.agent then
 		for index, model in s.agent.models do
 			if model.selector == s.agent.model then s.menuCursor = index end
 		end
@@ -1180,10 +1176,10 @@ function M.menuMove(s: State, delta: number)
 	s.menuCursor = math.clamp(s.menuCursor + delta, 1, math.max(1, #M.menuRows(s)))
 end
 
--- The efforts the highlighted model takes in the agent menu, and the one now chosen.
+-- The efforts the highlighted model takes in Settings, and the one now chosen.
 function M.agentEfforts(s: State): ({ string }, string?)
 	local agent = s.agent
-	if s.menu ~= "agent" or not agent then return {}, nil end
+	if s.menu ~= "settings" or not agent then return {}, nil end
 	local model = agent.models[s.menuCursor]
 	if not model then return {}, nil end
 	return model.efforts, agent.effort
@@ -1204,9 +1200,13 @@ function M.setEffort(s: State, level: string)
 	if s.agent and table.find(efforts, level) then s.agent.effort = level end
 end
 
+-- Where GitHub links open: `to`, else the other one.
+function M.setLinks(s: State, to: string?)
+	s.links = if to == "tern" or to == "browser" then to elseif s.links == "tern" then "browser" else "tern"
+end
+
 -- Applies row `index` of the open menu: a sort or model is chosen and the menu closes; a repository is
--- toggled and the menu stays; Clear filter clears and closes; Settings' Agent model opens the model menu.
--- Returns whether the menu closed.
+-- toggled and the menu stays; Clear filter clears and closes. Returns whether the menu closed.
 function M.menuPick(s: State, index: number): boolean
 	local rows = M.menuRows(s)
 	local row = rows[index]
@@ -1224,15 +1224,7 @@ function M.menuPick(s: State, index: number): boolean
 		end
 		M.toggleRepository(s, s.board.repositories[index].repo)
 		return false
-	elseif s.menu == "settings" then
-		if index == 1 then
-			M.openMenu(s, "agent")
-			return false
-		end
-		s.links = if index == 2 then "tern" else "browser"
-		M.closeMenu(s)
-		return true
-	elseif s.menu == "agent" and s.agent then
+	elseif s.menu == "settings" and s.agent then
 		local model = s.agent.models[index]
 		s.agent.model = model.selector
 		if #model.efforts == 0 then

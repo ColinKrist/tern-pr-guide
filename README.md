@@ -211,8 +211,7 @@ Press `?` on any PR Guide page for the keys that apply there.
 | `A` | Show or hide approved PRs, on Review requests |
 | `R` | Show or hide recently opened PRs |
 | `N` | Add a PR by link |
-| `⇧M` | Choose the agent model and effort |
-| `⇧S` | Settings: the agent model, and whether GitHub links open in Tern or the default browser |
+| `⇧S` | Settings: the agent model and effort, and whether GitHub links open in Tern or the default browser (`L` switches). `⇧M` opens it too |
 | `A` | Run the selected card's main action, on your PRs |
 | `⇧A` | Summarize feedback or return a retained worktree |
 | `C` | Copy the PR title and link |

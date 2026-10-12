@@ -210,11 +210,11 @@ return function()
 	rows = State.menuRows(s)
 	assert(#rows == 4 and rows[4].kind == "clear")
 	assert(State.menuPick(s, 4) == true and s.repositories == nil and s.menu == nil)
-	State.openMenu(s, "agent")
+	State.openMenu(s, "settings")
 	assert(#State.menuRows(s) == 0, "no agent found: no rows")
 	State.closeMenu(s)
 
-	-- The agent menu: model rows, efforts of the highlighted model, and picking.
+	-- Settings: model rows, efforts of the highlighted model, and picking.
 	s.agent = {
 		models = {
 			{ selector = "anthropic/claude-opus", name = "claude-opus", efforts = { "low", "high" } },
@@ -223,7 +223,7 @@ return function()
 		model = "anthropic/claude-opus", effort = "high",
 	}
 	assert(State.agentLabel(s) == "claude-opus · high")
-	State.openMenu(s, "agent")
+	State.openMenu(s, "settings")
 	assert(s.menuCursor == 1 and #State.menuRows(s) == 2 and State.menuRows(s)[1].sub == "anthropic")
 	State.stepEffort(s, -1)
 	assert((s.agent :: State.AgentChoice).effort == "low")
@@ -234,13 +234,17 @@ return function()
 	assert(State.menuPick(s, 2) and (s.agent :: State.AgentChoice).model == "openai/gpt" and (s.agent :: State.AgentChoice).effort == nil)
 	assert(State.agentLabel(s) == "gpt")
 
-	-- Settings: Agent model opens the model menu; a link choice is kept and closes the menu.
 	State.openMenu(s, "settings")
-	rows = State.menuRows(s)
-	assert(#rows == 3 and rows[1].kind == "menu" and rows[1].sub == "gpt" and rows[2].on and not rows[3].on)
-	assert(State.menuPick(s, 1) == false and s.menu == "agent" and s.mode == "menu")
-	State.openMenu(s, "settings")
-	assert(State.menuPick(s, 3) == true and s.links == "browser" and s.menu == nil)
+	assert(s.menuCursor == 2, "Settings opens on the chosen model")
+	-- Where links open: L flips it, a click sets one side.
+	assert(s.links == "tern")
+	State.setLinks(s)
+	assert(s.links == "browser")
+	State.setLinks(s, "browser")
+	assert(s.links == "browser")
+	State.setLinks(s, "tern")
+	assert(s.links == "tern")
+	State.closeMenu(s)
 
 	-- Help.
 	State.openHelp(s)
