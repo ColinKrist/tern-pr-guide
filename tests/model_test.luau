@@ -183,6 +183,8 @@ return function()
 	local approvedOld = { author = Cases.viewer, bot = false, verdict = "approved", at = ACTIVE, oid = "old301" }
 	assert(request({ mine = approvedOld }).column == "to_review", "a re-review with only a team asked")
 	assert(request({ mine = approvedOld, lastActivityAt = STALE }).column == "inactive")
+	local dismissed = { author = Cases.viewer, bot = false, verdict = "dismissed", at = ACTIVE, oid = "head301" }
+	assert(request({ mine = dismissed }).column == "to_review", "a dismissed review asks for a fresh one")
 	local approvedHead = { author = Cases.viewer, bot = false, verdict = "approved", at = ACTIVE, oid = "head301" }
 	assert(request({ mine = approvedHead, lastActivityAt = STALE }).column == "approved", "Approved has no stale gate")
 	-- Neither fold of review requests can be selected or closed as stale.

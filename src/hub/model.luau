@@ -240,7 +240,9 @@ function M.placement(pr: HubPR, now: number): Placement
 		local reviews = pr.reviews
 		local mine = reviews.mine
 		local column: Column = "team"
-		if reReview(pr) or reviews.requestedMe or pr.addedByMe then
+		-- A dismissed review of the viewer's asks for a fresh one, as a re-review does.
+		local dismissed = mine ~= nil and mine.verdict == "dismissed"
+		if reReview(pr) or dismissed or reviews.requestedMe or pr.addedByMe then
 			column = if pr.addedByMe or active(pr, now) then "to_review" else "inactive"
 		elseif mine and mine.verdict == "approved" then
 			column = "approved"
