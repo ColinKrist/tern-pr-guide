@@ -2,15 +2,18 @@
 -- The PR hub block: reads its arguments, loads the board's pull requests (for now only the recorded
 -- fixture), draws it, and turns clicks and keys into state changes plus the scrolling, focusing and toasts
 -- only a live window can do. Clicks (`event`) and keys (`key`) both run one ACTIONS table.
+local Actions = require("../ci/actions")
 local Agent = require("../agent")
 local AgentFix = require("./agent-fix")
 local Board = require("../view/hub/board")
+local Buildkite = require("../ci/buildkite")
 local Fetch = require("../fetch")
 local Fields = require("../text-field")
 local FixesPage = require("../view/hub/fixes")
 local Fixes = require("./fixes")
 local Github = require("../github")
 local Keys = require("../keys")
+local Log = require("../ci/log")
 local Model = require("./model")
 local Paths = require("../view/hub/paths")
 local ReviewFix = require("./review-fix")
@@ -59,6 +62,7 @@ export type Block = {
 	agentFlight: AgentFlight?, -- lookup, engine and retained lease; never serialized
 	botKeys: { [string]: boolean }, -- retains the bot input kind across clone/stop/retry, never saved
 	github: Github.Client, timers: Timers,
+	ci: { Log.Provider }, -- who reads a failing check's log: Buildkite, then GitHub Actions
 	flights: { refresh: boolean, checks: boolean, probe: boolean, flake: boolean, tandem: boolean }, -- one call of each kind at a time
 	watched: { [string]: boolean }, -- the PRs Tandem watches (lowercase "owner/repo#123"): the cache's flags until a read of Tandem succeeds, then that read
 	handoffs: number, -- hand-offs Tandem has taken this session: a read that began before one cannot name that PR
@@ -102,14 +106,16 @@ local SAMPLE_RECENT: { Sync.Opened } = {
 }
 
 
--- The agent a fixture board shows, so ⇧M has something to choose from without running omp.
+-- The agent a fixture board shows, so Settings has something to choose from without running omp. Names and
+-- efforts are as long as omp's real ones.
 local SAMPLE_AGENT: State.AgentChoice = {
 	models = {
-		{ selector = "anthropic/claude-opus", name = "claude-opus", efforts = { "low", "medium", "high" } },
-		{ selector = "anthropic/claude-sonnet", name = "claude-sonnet", efforts = { "low", "medium", "high" } },
-		{ selector = "openai/gpt", name = "gpt", efforts = {} },
+		{ selector = "anthropic/claude-fable-5-1", name = "Claude Fable 5.1", efforts = { "low", "medium", "high", "xhigh", "max" } },
+		{ selector = "anthropic/claude-haiku-4-5", name = "Claude Haiku 4.5", efforts = { "minimal", "low", "medium", "high", "xhigh" } },
+		{ selector = "anthropic/claude-3-5-sonnet-v2", name = "Claude Sonnet 3.5 v2", efforts = {} },
+		{ selector = "openai-codex/gpt-6.1-sol", name = "GPT-6.1 Sol", efforts = { "minimal", "low", "medium", "high", "xhigh", "max" } },
 	},
-	model = "anthropic/claude-opus", effort = "high",
+	model = "anthropic/claude-fable-5-1", effort = "high",
 }
 
 -- Sends frame ops after the render that draws their targets. A target the render dropped makes the frame
@@ -179,7 +185,7 @@ local sampleDetails: (pr: Model.HubPR) -> Fixes.FixDetails
 local openFixes: (b: Block, cx: BlockCx, key: string) -> ()
 local openReviewFix: (b: Block, cx: BlockCx, key: string) -> ()
 
--- ⏎ and a double-click open the selected row; ⇧⏎ (or a hub opened for AI guides) starts the AI guide too.
+-- ⏎ and a click open the row; ⇧⏎ (or a hub opened for AI guides) starts the AI guide too.
 local function openRow(b: Block, cx: BlockCx, value: string, withGuide: boolean)
 	local s = b.s
 	if value ~= "" then State.select(s, value) end
@@ -196,6 +202,14 @@ end
 
 local function openCard(b: Block, cx: BlockCx, value: string)
 	openRow(b, cx, value, false)
+end
+
+-- Opens a GitHub link where Settings says: Tern's browser, or the system's default browser.
+local function openLink(b: Block, cx: BlockCx, url: string)
+	if Fetch.linkTarget() == "tern" then return cx:open(url) end
+	Fetch.openInBrowser(url, function(err)
+		if err and not b.closed then cx:toast("error", "Couldn't open the link: " .. err, url) end
+	end)
 end
 
 local function closeMenu(b: Block)
@@ -227,7 +241,7 @@ local function pickRow(b: Block, cx: BlockCx, index: number, ACTIONS: { [string]
 	if s.menu == "merge" then return chooseMergeRow(b, cx, index) end
 	local menu = s.menu
 	State.menuPick(s, index)
-	if menu == "agent" then keepAgentChoice(b) end
+	if menu == "settings" then keepAgentChoice(b) end
 end
 
 -- Sync: the cache, the timers and the live data ----------------------------------------------------------
@@ -700,7 +714,7 @@ local function readFeedback(b: Block, pr: Model.HubPR, done: (Fixes.FixDetails?,
 			return done(nil, if err then err.message else "Feedback changed or is unavailable; refresh the board")
 		end
 		-- The same commit keeps what git said last time, as the fixes page does.
-		if known and known.headOid == d.headOid then d.conflicts, d.conflictNote, d.files = known.conflicts, known.conflictNote, known.files end
+		if known and known.headOid == d.headOid then d.conflicts, d.conflictNote, d.files, d.logs = known.conflicts, known.conflictNote, known.files, known.logs end
 		State.setDetails(b.s, d)
 		done(Summary.current(d, latest), nil)
 	end
@@ -1636,7 +1650,11 @@ ACTIONS["hub-open-generate"] = function(b, cx, value)
 end
 ACTIONS["open"] = openCard
 ACTIONS["hub-move"] = function(b, cx, direction)
-	if State.move(b.s, direction :: any) then revealSelected(b, cx) end
+	local moved = State.move(b.s, direction :: any)
+	-- On the top row the board scrolls to its start, so the column titles show too, even when k can't move
+	-- any higher.
+	if State.onTopRow(b.s) then return frameLater(cx, { { "scroll", Paths.body, "start" } }) end
+	if moved then revealSelected(b, cx) end
 end
 ACTIONS["hub-tab"] = function(b, cx, id)
 	if id == "mine" then
@@ -1650,8 +1668,10 @@ end
 ACTIONS["hub-next"] = function(b, cx)
 	if State.walk(b.s) then revealSelected(b, cx) end
 end
+-- Opening a fold scrolls its header to the top of the board, so the rows it adds show. Closing doesn't scroll.
 ACTIONS["hub-fold"] = function(b, cx, name)
 	State.toggleFold(b.s, name)
+	if not b.s.folded[name] then frameLater(cx, { { "reveal", Paths.foldHead(name), "start" } }) end
 end
 ACTIONS["hub-escape"] = function(b, cx)
 	local s = b.s
@@ -1720,6 +1740,11 @@ end
 ACTIONS["hub-menu-effort-set"] = function(b, cx, level)
 	State.setEffort(b.s, level)
 	keepAgentChoice(b)
+end
+-- L in Settings, or a click on a side of the toggle: where GitHub links open.
+ACTIONS["hub-links"] = function(b, cx, to)
+	State.setLinks(b.s, to)
+	Fetch.saveLinkTarget(b.s.links)
 end
 ACTIONS["hub-help"] = function(b)
 	State.openHelp(b.s)
@@ -2525,13 +2550,25 @@ ACTIONS["hub-link-clear"] = function(b)
 	State.closeLink(b.s, true)
 end
 
--- ⏎: add a new pull request to Review requests, or show one the board already has.
+-- ⏎: add a new pull request to Review requests, add a folded one (Team requests, Inactive) to To review, or show
+-- one the board already has.
 ACTIONS["hub-link-add"] = function(b, cx)
 	local s = b.s
 	local target = State.linkTarget(s)
 	if target.kind == "board" then
 		State.closeLink(s, true)
 		if State.show(s, target.pr.key) then revealSelected(b, cx) end
+	elseif target.kind == "folded" then
+		local pr = target.pr
+		if not b.fixture then
+			local added, why = State.withAdded(readLocal().added, { repo = pr.repo, number = pr.number })
+			local problem = why or (if added then writeAdded(added) else nil)
+			if problem then return cx:toast("error", "Couldn't add #" .. pr.number .. ": " .. problem, pr.repo) end
+		end
+		State.closeLink(s, true)
+		keepCache(b, cx, function() State.markAdded(s, pr.key) end, pr.key, pr.headOid)
+		if b.closed then return end
+		if State.show(s, pr.key) then revealSelected(b, cx) end
 	elseif target.kind == "new" then
 		local ref: Model.PRRef = { repo = target.repo, number = target.number }
 		if b.fixture then return cx:toast("info", "The sample board doesn't add pull requests") end
@@ -2548,7 +2585,7 @@ end
 -- ⇧⏎: open it without adding it.
 ACTIONS["hub-link-open"] = function(b, cx)
 	local target = State.linkTarget(b.s)
-	if target.kind == "board" or target.kind == "new" then
+	if target.kind == "board" or target.kind == "folded" or target.kind == "new" then
 		State.closeLink(b.s, true)
 		openPr(b, cx, target.repo, target.number, b.generate)
 	end
@@ -2787,6 +2824,49 @@ local function readGit(b: Block, cx: BlockCx, pr: Model.HubPR, d: Fixes.FixDetai
 	end)
 end
 
+-- Failed-check logs: each failing check with no usable annotations has its log read by the CI that owns it, once per
+-- commit. The files the log names are read like annotated ones, so the page can show those lines in place.
+local function readLogFiles(b: Block, cx: BlockCx, pr: Model.HubPR, d: Fixes.FixDetails, log: Log.Log)
+	if b.fixture then return end
+	local paths: { string } = {}
+	for _, ref in Log.refs(log, d.changedPaths) do
+		if (d.files == nil or d.files[ref.path] == nil) and table.find(paths, ref.path) == nil then table.insert(paths, ref.path) end
+	end
+	if #paths == 0 then return end
+	local filesOnly = table.clone(pr)
+	filesOnly.conflicts = false
+	Fetch.checkoutFor(nil, cx.cwd or tern.getenv("HOME") or "", pr.repo, function(found)
+		if b.closed then return end
+		local repo = found or Fetch.readySavedCopy(pr.repo)
+		if repo == nil then return end
+		Fetch.readFixes(repo, filesOnly, paths, function(read)
+			if b.closed or read == nil then return end
+			local files = d.files or {}
+			for path, text in read.files do files[path] = text end
+			d.files = files
+			draw(b, cx)
+		end)
+	end)
+end
+
+local function readLogs(b: Block, cx: BlockCx, pr: Model.HubPR, d: Fixes.FixDetails)
+	local logs = d.logs or {}
+	d.logs = logs
+	for _, check in d.checks do
+		local provider = if check.url ~= "" and #Fixes.usable(check.annotations) == 0 then Log.providerFor(b.ci, check) else nil
+		if provider and logs[check.url] == nil then
+			logs[check.url] = { state = "loading" }
+			local ok, err = pcall(provider.read, check, pr.repo, function(log, why)
+				if b.closed then return end
+				logs[check.url] = if log then { state = "loaded", log = log } else { state = "failed", reason = why or "no answer" }
+				draw(b, cx)
+				if log then readLogFiles(b, cx, pr, d, log) end
+			end)
+			if not ok then logs[check.url] = { state = "failed", reason = tostring(err) } end
+		end
+	end
+end
+
 -- The sample board's details: the fixture for the card's key, with the recorded git output for its conflicts.
 sampleDetails = function(pr: Model.HubPR): Fixes.FixDetails
 	local summaries: any = require("../../fixtures/hub/summary")
@@ -2823,7 +2903,9 @@ openFixes = function(b: Block, cx: BlockCx, key: string)
 	if not State.openFixes(s, key) then return end
 	local pr = State.prOf(s, key) :: Model.HubPR
 	if b.fixture then
-		State.setDetails(s, sampleDetails(pr))
+		local d = sampleDetails(pr)
+		State.setDetails(s, d)
+		readLogs(b, cx, pr, d)
 		return
 	end
 	local route = s.route :: State.Route
@@ -2836,10 +2918,11 @@ openFixes = function(b: Block, cx: BlockCx, key: string)
 		end
 		d.fetchedAt = isoNow()
 		-- The same commit keeps what git said last time while it is read again.
-		if known and known.headOid == d.headOid then d.conflicts, d.conflictNote, d.files = known.conflicts, known.conflictNote, known.files end
+		if known and known.headOid == d.headOid then d.conflicts, d.conflictNote, d.files, d.logs = known.conflicts, known.conflictNote, known.files, known.logs end
 		State.setDetails(s, d)
 		draw(b, cx)
 		readGit(b, cx, pr, d)
+		readLogs(b, cx, pr, d)
 	end)
 end
 
@@ -2937,7 +3020,7 @@ ACTIONS["fixes-log"] = function(b, cx)
 	if pr == nil or step == nil or step.check == nil then return end
 	local url = Fixes.logUrl(step.check, pr.repo)
 	if url == "" then return cx:toast("error", "Couldn't open the log: GitHub gave no link for " .. step.check.name, pr.key) end
-	cx:open(url)
+	openLink(b, cx, url)
 end
 -- G: the step on GitHub: the conflict editor, the thread, the check, the review, or the pull request.
 ACTIONS["fixes-github"] = function(b, cx)
@@ -2950,7 +3033,7 @@ ACTIONS["fixes-github"] = function(b, cx)
 		elseif step.review then url = step.review.url
 		elseif step.check and step.check.url ~= "" then url = step.check.url end
 	end
-	cx:open(url)
+	openLink(b, cx, url)
 end
 -- ⏎ in the panel runs the highlighted action; the agent action is the card's own.
 ACTIONS["fixes-press"] = function(b, cx)
@@ -3005,12 +3088,25 @@ local function held(ev: UiEvent, name: string): boolean
 end
 
 local function actionOf(ev: UiEvent): Keys.Action?
-	-- ⌘-click and ⇧-click on a card select it for Merge selected or Close stale instead of moving the selection.
-	if ev.ev == "action" and ev.act == "hub-select" and (held(ev, "meta") or held(ev, "shift")) then
+	-- ⌘-click and ⇧-click on a card select it for Merge selected or Close stale instead of opening it.
+	if ev.ev == "action" and ev.act == "hub-open" and (held(ev, "meta") or held(ev, "shift")) then
 		return { act = "hub-mark", value = ev.value }
 	end
 	if ev.ev == "action" then return { act = ev.act, value = ev.value } end
 	return nil
+end
+
+-- Who reads a failing check's log; the first to claim a check reads it. The CI modules never meet but here.
+local function ciProviders(run: Log.Run): { Log.Provider }
+	return { Buildkite.provider(run, tern.json.decode), Actions.provider(run) }
+end
+
+-- The sample board's CI: recorded `gh` and `bk` output, answered at once for the command it was recorded for.
+local function sampleRun(argv: { string }, _opts: any, done: (out: Log.Out) -> ())
+	local recorded: any = require("../../fixtures/hub/ci-logs")
+	local stdout = recorded.outputs[table.concat(argv, " ")]
+	if stdout then return done({ status = 0, stdout = stdout, stderr = "", timed_out = false }) end
+	done({ status = 1, stdout = "", stderr = "no recording for " .. table.concat(argv, " "), timed_out = false })
 end
 
 local block: BlockDef<Block> = {
@@ -3041,6 +3137,7 @@ local block: BlockDef<Block> = {
 			end
 		end
 		local s = State.new(prs, now, saved)
+		s.links = Fetch.linkTarget()
 		if fixture then
 			State.setRecent(s, SAMPLE_RECENT)
 		else
@@ -3054,6 +3151,7 @@ local block: BlockDef<Block> = {
 		local b: Block = {
 			s = s, cache = cache, fixture = fixture, generate = opts ~= nil and opts.generate, agent = nil, agentFlight = nil, botKeys = {},
 			github = Github.client(Fetch.runner, tern.json.decode), timers = {},
+			ci = ciProviders(if fixture then sampleRun else Fetch.runner),
 			flights = { refresh = false, checks = false, probe = false, flake = false, tandem = false }, watched = watched, handoffs = 0, seen = {}, heard = {}, held = if cache then storedId(cache) else nil, replays = {}, retired = {}, unsaved = false, root = nil, rootWaiters = nil,
 			sched = {
 				probedAt = now, probeChanged = false, focusedAt = if live then now else nil, checksAt = nil,

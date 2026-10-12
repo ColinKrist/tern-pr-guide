@@ -1,6 +1,7 @@
 --!strict
 local Fields = require("../src/text-field")
 local Model = require("../src/hub/model")
+local Keys = require("../src/keys")
 local State = require("../src/hub/state")
 local Cases: any = require("../fixtures/hub/cases")
 
@@ -24,6 +25,18 @@ local function column(s: State.State, id: string): { string }
 	error("no column " .. id)
 end
 
+-- The keys in the card fold `id` under the tab's board.
+local function fold(s: State.State, id: string): { string }
+	local found = State.fold(s, id :: any)
+	if not found then error("no fold " .. id) end
+	return keysOf(found.cards)
+end
+
+local function foldOpen(s: State.State, id: string): boolean
+	local found = State.fold(s, id :: any)
+	return found ~= nil and found.open
+end
+
 -- The PR with `key` in `s`, mutable.
 local function byKey(s: State.State, key: string): Model.HubPR
 	for _, pr in s.prs do
@@ -44,6 +57,9 @@ local function fresh(saved: any?): State.State
 	return State.new(copy(Cases.prs), NOW, saved)
 end
 
+local roleOf: { [string]: string } = {}
+for _, pr in Cases.prs do roleOf[pr.key] = pr.role end
+
 return function()
 	-- Every fixture key lands in its expected column and order, for each sort and both tabs.
 	for _, sort in SORTS do
@@ -58,11 +74,17 @@ return function()
 					assert(card.column == entry.column and Cases.columns[card.pr.key] == entry.column)
 				end
 			end
-			if tab == "mine" then
-				assert(join(keysOf(s.board.inactive)) == join(expected.inactive), sort .. "/inactive")
-			else
-				assert(#s.board.inactive == 0)
+			local folds = {}
+			for _, entry in s.board.folds do
+				table.insert(folds, entry.column)
+				-- A fold holds the column's cards from this tab only.
+				local want = {}
+				for _, key in expected[entry.column] do
+					if roleOf[key] == tab then table.insert(want, key) end
+				end
+				assert(join(keysOf(entry.cards)) == join(want), sort .. "/" .. tab .. "/" .. entry.column .. ": " .. join(keysOf(entry.cards)))
 			end
+			assert(join(folds) == (if tab == "mine" then "inactive" else "inactive,team,approved"), "folds under " .. tab)
 		end
 	end
 
@@ -77,7 +99,7 @@ return function()
 	assert(#s.board.grid == 3 and join(s.board.grid[3]) == "acme/api#110,acme/api#108,acme/api#109")
 	assert(#s.board.grid[1] == 15 and #s.board.columns[1].cards == 15)
 	assert(s.board.empty == false)
-	assert(s.board.open.inactive == false, "Inactive starts folded")
+	assert(foldOpen(s, "inactive") == false, "Inactive starts folded")
 	assert(s.board.counts.mine == 15 and s.board.counts.review == 5, "blue counts are the your-turn columns")
 	assert(State.mode(s) == "board")
 	for _, card in s.board.columns[1].cards do assert(card.selected == false and card.main ~= nil) end
@@ -88,7 +110,9 @@ return function()
 	assert(s.tab == "review" and s.board.tab == "review" and s.selected == nil)
 	assert(join(column(s, "to_review")) == join(Cases.orders.repository.to_review))
 	assert(s.board.counts.mine == 15 and s.board.counts.review == 5)
-	assert(#s.board.inactive == 0)
+	assert(join(fold(s, "inactive")) == "acme/web#310" and join(fold(s, "team")) == "acme/web#309")
+	assert(join(fold(s, "approved")) == "acme/web#306,acme/web#302" and #s.board.columns == 2)
+	assert(not foldOpen(s, "inactive") and not foldOpen(s, "team") and not foldOpen(s, "approved"), "every fold starts folded")
 	State.switchTab(s)
 	assert(s.tab == "mine")
 	State.setTab(s, "mine")
@@ -104,7 +128,7 @@ return function()
 	State.toggleRepository(s, "acme/api")
 	assert(join(column(s, "needs_fixes")) == "acme/api#116,acme/api#118,acme/api#119,acme/api#105,acme/api#112")
 	assert(s.board.counts.mine == 5 and s.board.counts.review == 2)
-	assert(join(keysOf(s.board.inactive)) == "acme/api#122")
+	assert(join(fold(s, "inactive")) == "acme/api#122")
 	assert(s.repositories ~= nil and (s.repositories :: any)["acme/api"] == true)
 	State.toggleRepository(s, "acme/web")
 	assert(s.board.counts.mine == 9)
@@ -126,11 +150,11 @@ return function()
 	assert(s.selected == nil, "selection follows its card off the board")
 	assert(s.board.counts.mine == 1 and s.board.counts.review == 0)
 	State.setSearch(s, "acme/mono")
-	assert(#column(s, "needs_fixes") == 6 and s.board.open.inactive == true and #s.board.inactive == 10)
+	assert(#column(s, "needs_fixes") == 6 and foldOpen(s, "inactive") and #fold(s, "inactive") == 10)
 	State.setSearch(s, "nothing matches this")
 	assert(s.board.empty == true)
 	State.setSearch(s, "")
-	assert(s.board.empty == false and s.board.open.inactive == false)
+	assert(s.board.empty == false and foldOpen(s, "inactive") == false)
 
 	-- Search mode: typing is the search field's; Esc clears, Enter keeps the text.
 	State.openSearch(s)
@@ -145,8 +169,8 @@ return function()
 	-- Moving: nothing selected starts at the first card; columns keep their row; Inactive is entered from below.
 	assert(State.move(s, "left") and s.selected == "acme/api#116")
 	assert(State.move(s, "left") == false)
-	assert(State.move(s, "up") == false)
-	assert(State.move(s, "down") and s.selected == "acme/api#118")
+	assert(State.move(s, "up") == false and State.onTopRow(s))
+	assert(State.move(s, "down") and s.selected == "acme/api#118" and not State.onTopRow(s))
 	assert(State.selectedCard(s) ~= nil and (State.selectedCard(s) :: State.Card).selected)
 	assert(State.move(s, "up") and s.selected == "acme/api#116")
 	assert(State.move(s, "right") and s.selected == "acme/api#114")
@@ -155,7 +179,7 @@ return function()
 	assert(State.move(s, "down") and State.move(s, "down") and s.selected == "acme/api#109")
 	assert(State.move(s, "down") == false, "Inactive is folded")
 	State.toggleFold(s, "inactive")
-	assert(s.board.open.inactive == true and s.folded.inactive == false)
+	assert(foldOpen(s, "inactive") and s.folded.inactive == false)
 	assert(State.move(s, "down") and s.selected == "acme/api#122")
 	assert(State.move(s, "down") and s.selected == "acme/mono#216")
 	assert(State.move(s, "up") and State.move(s, "up") and s.selected == "acme/web#104", "up from Inactive returns to the board")
@@ -186,11 +210,11 @@ return function()
 	rows = State.menuRows(s)
 	assert(#rows == 4 and rows[4].kind == "clear")
 	assert(State.menuPick(s, 4) == true and s.repositories == nil and s.menu == nil)
-	State.openMenu(s, "agent")
+	State.openMenu(s, "settings")
 	assert(#State.menuRows(s) == 0, "no agent found: no rows")
 	State.closeMenu(s)
 
-	-- The agent menu: model rows, efforts of the highlighted model, and picking.
+	-- Settings: model rows, efforts of the highlighted model, and picking.
 	s.agent = {
 		models = {
 			{ selector = "anthropic/claude-opus", name = "claude-opus", efforts = { "low", "high" } },
@@ -199,7 +223,7 @@ return function()
 		model = "anthropic/claude-opus", effort = "high",
 	}
 	assert(State.agentLabel(s) == "claude-opus · high")
-	State.openMenu(s, "agent")
+	State.openMenu(s, "settings")
 	assert(s.menuCursor == 1 and #State.menuRows(s) == 2 and State.menuRows(s)[1].sub == "anthropic")
 	State.stepEffort(s, -1)
 	assert((s.agent :: State.AgentChoice).effort == "low")
@@ -209,6 +233,18 @@ return function()
 	assert(select("#", State.agentEfforts(s)) == 2 and #(State.agentEfforts(s)) == 0)
 	assert(State.menuPick(s, 2) and (s.agent :: State.AgentChoice).model == "openai/gpt" and (s.agent :: State.AgentChoice).effort == nil)
 	assert(State.agentLabel(s) == "gpt")
+
+	State.openMenu(s, "settings")
+	assert(s.menuCursor == 2, "Settings opens on the chosen model")
+	-- Where links open: L flips it, a click sets one side.
+	assert(s.links == "tern")
+	State.setLinks(s)
+	assert(s.links == "browser")
+	State.setLinks(s, "browser")
+	assert(s.links == "browser")
+	State.setLinks(s, "tern")
+	assert(s.links == "tern")
+	State.closeMenu(s)
 
 	-- Help.
 	State.openHelp(s)
@@ -224,7 +260,7 @@ return function()
 	assert(saved.tab == "review" and saved.sort == "oldest" and join(saved.repositories :: { string }) == "acme/web")
 	local back = fresh(saved)
 	assert(back.tab == "review" and back.sort == "oldest" and (back.repositories :: any)["acme/web"] == true)
-	assert(join(column(back, "to_review")) == "acme/web#302,acme/web#303,acme/web#301")
+	assert(join(column(back, "to_review")) == "acme/web#311,acme/web#303,acme/web#301")
 	local bad = fresh({ tab = "x", sort = 3, repositories = "no", folded = { inactive = "no" } })
 	assert(bad.tab == "mine" and bad.sort == "repository" and bad.repositories == nil and bad.folded.inactive == true)
 	assert(fresh(nil).tab == "mine" and #State.new({}, NOW, nil).board.columns[1].cards == 0 and State.new({}, NOW, nil).board.empty)
@@ -269,8 +305,14 @@ return function()
 	assert(names == "Fix checks" and detail == "1/4 checks failing")
 	names, detail = chipsOf("acme/web#301", "review")
 	assert(names == "Review" and detail == "@maria-k asked 2h ago")
-	names, detail = chipsOf("acme/web#302", "review")
-	assert(names == "Re-review" and detail == "New commits since you approved")
+	names, detail = chipsOf("acme/web#311", "review")
+	assert(names == "Re-review" and detail == "Requested again")
+	names, detail = chipsOf("acme/api#307", "review")
+	assert(names == "Re-review" and detail == "Requested again", "asked again after a comment")
+	-- An approval that new commits passed stays in Approved with a quiet note; one on the head has none.
+	local stale302 = State.card(fresh({ tab = "review" }), "acme/web#302") :: State.Card
+	assert(stale302.column == "approved" and #stale302.chips == 0 and stale302.note == "New commits since you approved")
+	assert((State.card(fresh({ tab = "review" }), "acme/web#306") :: State.Card).note == nil)
 	names, detail = chipsOf("acme/web#303", "review")
 	assert(names == "Review" and detail == "Added by you")
 	names, detail = chipsOf("acme/web#304", "review")
@@ -374,6 +416,82 @@ return function()
 	local known = target("  https://github.com/ACME/web/pull/301  ") :: any
 	assert(known.kind == "board" and known.pr.key == "acme/web#301" and known.repo == "acme/web")
 	assert((target("acme/web#0") :: any).kind == "invalid")
+	-- A review request folded away from To review is offered to add, from either fold; one in To review is shown.
+	local team = target("https://github.com/acme/web/pull/309") :: any
+	assert(team.kind == "folded" and team.column == "team" and team.pr.key == "acme/web#309")
+	local stale = target("acme/web#310") :: any
+	assert(stale.kind == "folded" and stale.column == "inactive")
+	assert((target("acme/api#122") :: any).kind == "board", "the viewer's own Inactive PR is only shown")
+	-- Adding it moves it into To review, which counts it.
+	State.markAdded(ls, "acme/web#309")
+	assert(table.find(column(ls, "to_review"), "acme/web#309") and #fold(ls, "team") == 0 and ls.board.counts.review == 6)
+	assert((target("acme/web#309") :: any).kind == "board")
+	-- Removing it again folds it back: the team's request still stands, so it stays on the board.
+	State.unadd(ls, "acme/web#309")
+	assert(join(fold(ls, "team")) == "acme/web#309" and ls.board.counts.review == 5)
+
+	-- Team requests: folded by default, outside the count and Next up, with a quiet chip naming the team.
+	local ts = fresh({ tab = "review" })
+	assert(ts.board.counts.review == 5 and not table.find(column(ts, "to_review"), "acme/web#309"))
+	for _, item in Model.queue(ts.prs, NOW) do assert(item.key ~= "acme/web#309") end
+	assert(State.card(ts, "acme/web#309") ~= nil and not foldOpen(ts, "team"))
+	State.move(ts, "down")
+	for _ = 1, 10 do State.move(ts, "down") end
+	assert(ts.selected ~= "acme/web#309", "a folded card isn't reached by j")
+	local teamCard = State.card(ts, "acme/web#309") :: State.Card
+	assert(#teamCard.chips == 1 and teamCard.chips[1].text == "Requested from @acme/web-platform" and teamCard.chips[1].kind == "wait")
+	assert(teamCard.main == nil and #teamCard.more == 0)
+	local ok, why = State.toggleMark(ts, "acme/web#309")
+	assert(not ok and why == "review requests can't be selected" and next(ts.marked) == nil)
+	State.toggleFold(ts, "team")
+	assert(foldOpen(ts, "team") and ts.folded.team == false and State.saved(ts).folded.team == false)
+	assert(State.new(copy(Cases.prs), NOW, State.saved(ts)).folded.team == false, "the fold's state is saved")
+	State.toggleFold(ts, "team")
+	State.setSearch(ts, "design tokens")
+	assert(foldOpen(ts, "team") and join(fold(ts, "team")) == "acme/web#309", "a search opens the fold on its matches")
+	State.setSearch(ts, "")
+	-- Walking or showing a card in a fold opens that fold.
+	assert(State.show(ts, "acme/web#309") and foldOpen(ts, "team") and ts.selected == "acme/web#309")
+
+	-- Inactive on Review requests: the stale request, its chip, and nothing that selects or closes it.
+	local ri = fresh({ tab = "review" })
+	local staleCard = State.card(ri, "acme/web#310") :: State.Card
+	assert(staleCard.column == "inactive" and staleCard.chips[1].text == "No recent activity")
+	assert(not State.toggleMark(ri, "acme/web#310") and next(ri.marked) == nil)
+	assert(State.staleCount(ri) == 0 and State.markStale(ri) == 0 and next(ri.marked) == nil)
+	State.toggleFold(ri, "inactive")
+	assert(join(fold(ri, "inactive")) == "acme/web#310" and State.staleCount(ri) == 0)
+	assert(not State.askBatch(ri, "inactive"))
+	-- A Close stale selection on the viewer's tab doesn't follow to Review requests.
+	local both = fresh({ tab = "mine" })
+	assert(State.markStale(both) > 0)
+	State.toggleFold(both, "inactive")
+	assert(next(both.marked) == nil, "closing the fold drops the marks in it")
+	assert(State.markStale(both) > 0)
+	State.setTab(both, "review")
+	assert(next(both.marked) == nil and State.selection(both) == nil)
+
+	-- Keys: ⇧T toggles Team requests on Review requests only; I toggles Inactive on both tabs.
+	local function pressed(st: State.State, name: string, shift: boolean): any
+		return Keys.hubAction(st, { name = name, shift = shift, meta = false, ctrl = false, alt = false } :: any)
+	end
+	local keyed = fresh({ tab = "review" })
+	local shiftT = pressed(keyed, "t", true)
+	assert(shiftT and shiftT.act == "hub-fold" and shiftT.value == "team")
+	assert(pressed(keyed, "i", false).value == "inactive")
+	State.setTab(keyed, "mine")
+	assert(pressed(keyed, "i", false).value == "inactive")
+	local mineShiftT = pressed(keyed, "t", true)
+	assert(mineShiftT == nil or mineShiftT.value ~= "team")
+	-- A toggles Approved on Review requests, even with a card selected; on Your pull requests it stays the card's key.
+	local keyedA = fresh({ tab = "review" })
+	State.select(keyedA, "acme/web#301")
+	local a = pressed(keyedA, "a", false)
+	assert(a and a.act == "hub-fold" and a.value == "approved")
+	local mineA = fresh()
+	State.select(mineA, "acme/web#103")
+	local fixA = pressed(mineA, "a", false)
+	assert(fixA and fixA.act == "card-agent" and fixA.value == "acme/web#103")
 
 	-- N opens the field on Review requests; choosing a card leaves it; Esc empties it.
 	local ns = fresh()

@@ -1,7 +1,7 @@
 --!strict
 -- Runs every test module. A failed assert names its module and exits non-zero.
--- Tests require pure modules. summary_test also loads block and fetch, with `tern` stubbed in block's
--- environment and every process effect a recorded callback; no other test touches a host module.
+-- Tests require pure modules. summary_test and fold_test also load block, with `tern` stubbed in block's
+-- environment and every effect recorded; no other test touches a host module.
 
 local modules: { { name: string, run: () -> () } } = {
 	{ name = "model_test", run = require("./model_test") },
@@ -19,6 +19,11 @@ local modules: { { name: string, run: () -> () } } = {
 	{ name = "review_fix_test", run = require("./review_fix_test") },
 	{ name = "summary_test", run = require("./summary_test") },
 	{ name = "tandem_test", run = require("./tandem_test") },
+	{ name = "moves_test", run = require("./moves_test") },
+	{ name = "diff_test", run = require("./diff_test") },
+	{ name = "groups_test", run = require("./groups_test") },
+	{ name = "fold_test", run = require("./fold_test") },
+	{ name = "ci_log_test", run = require("./ci_log_test") },
 }
 
 local failed = 0

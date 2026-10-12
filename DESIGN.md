@@ -281,7 +281,7 @@ Tern's native `tabs` node, with the `t` keycap beside it. Its underline is Tern'
 - **Comment card:** inset from the gutter (60px left), avatar plus the author line ("Tandem left a nit"), body at 14.5px, and a foot row of actions with their keys. Added cards take a success hairline, problem cards a danger hairline, the focused card a Review Blue hairline, and dismissed cards drop to 60% opacity.
 
 ### Code excerpt (signature)
-A file block: a glass sticky header (caret, dimmed directory plus bold file name, line range, `+n −n` counts, "Show whole file", and a Reviewed check), then diff rows. Rows are a 40px gutter of old and new numbers, a sign, and code in the terminal font. Added and removed rows take the translucent diff tints, and word-level changes take a stronger tint with a 2px radius. Hidden runs collapse into a dashed shade bar ("26 unchanged lines"). The current excerpt takes a Review Blue border and a blue-washed header. The current step's rows get a 3px Review Blue inset bar.
+A file block: a glass sticky header (caret, dimmed directory plus bold file name, line range, `+n −n` counts, "Show whole file", and a Reviewed check), then diff rows. Rows are a 40px gutter of old and new numbers, a sign, and code in the terminal font. Added and removed rows take the translucent diff tints, and word-level changes take a stronger tint with a 2px radius. Hidden runs collapse into a dashed shade bar ("26 unchanged lines"). A step's block starts at the line that opens its enclosing function; when that opener is more than 30 lines up, the bar above shows its text as a muted label instead. Code the PR only moved is neutral: `--l1` rows with a 2px `--l4` hairline on the left, never red or green, under a muted "Moved from src/a.ts:12" or "Moved to line 40" label set in the code columns. The current step's blue still wins over the gray. The current excerpt takes a Review Blue border and a blue-washed header. The current step's rows get a 3px Review Blue inset bar.
 
 ### Step outline (signature)
 The left column's list of steps: a circle tick, the number, and the title. The current step sits in a Review Blue wash box with its note under it. Steps in a shared block also show a 15px numbered marker in the code gutter, filled Review Blue for the current one.
@@ -333,7 +333,7 @@ New UI reuses one of these components or an earlier one in this section. A chang
 
 ## Interaction and density
 
-- **A click selects; ⏎ or double-click opens.** The cursor moves only when the reader moves it: nothing auto-selects or jumps on open.
+- **A click or ⏎ opens; ⌘-click or ⇧-click selects.** The cursor moves only when the reader moves it: nothing auto-selects or jumps on open.
 - **Keys never animate.** Mouse-driven entrances may.
 - **Every visible string changes a decision.** If a chip, header, column or card already says it, cut it. No explanatory notes for what the layout already shows.
 - **Controls appear only where they act:** on the selected or hovered card, never on every card at rest.

@@ -13,6 +13,13 @@ local function button(label: string, key: string, action: string, class: string?
 	})
 end
 
+-- Back to the board.
+local function back(disabled: boolean?): Node
+	return el("button", { class = "gp-btn gp-btn-keyed gp-back", disabled = disabled == true, actions = { click = "review-fix-close" } }, {
+		el("span", { class = "gp-back-ico" }, { Ui.icon("chev-r") }), span("gp-fx-btn-label", "Pull requests"), Ui.keys("esc"),
+	})
+end
+
 local function header(page: State.ReviewPage): Node
 	local cleanup = page.completion == "push"
 	local pushLabel = if cleanup then "Return worktree lease" else "Push to branch"
@@ -39,7 +46,7 @@ local function header(page: State.ReviewPage): Node
 	end
 	return el("div", { class = "gp-header gp-fx-head", key = "header" }, {
 		el("div", { class = "gp-title", key = "title" }, {
-			button("Pull requests", "esc", "review-fix-close", nil, page.busy or page.ask),
+			back(page.busy or page.ask),
 			span("gp-title-num", "#" .. page.pr.number), span("gp-title-text", page.pr.title), Ui.spacer(),
 			el("div", { class = "gp-fx-hdr gp-rfix-actions" }, {
 				button("Discard fix", "D", "review-fix-discard", nil, page.busy or page.ask or cleanup),
@@ -133,7 +140,7 @@ function M.view(s: State.State, _motion: Ui.Motion): Node
 	if not page then
 		return el("div", {}, { el("div", { class = "gp-root gp-hub gp-fx gp-rfix" }, {
 			span("gp-fx-error", "Couldn't open the fix: that pull request is no longer available."),
-			button("Pull requests", "esc", "review-fix-close"),
+			back(),
 		}) })
 	end
 	-- No gp-soft or entrance class: conflict navigation, review and confirmation stay instant.

@@ -133,7 +133,8 @@ local function testMerge()
 	local calm = Sync.merge({ prs = {}, viewer = "jubbydev", rateLimit = refresh.rateLimit, calls = {}, truncated = false } :: any, merged, { added = {}, tandem = {} }, NOW + 60)
 	assert(calm.counts.needFixes == 0 and calm.counts.flashAt == NOW and calm.refreshedAt == "2026-10-09T12:01:00Z")
 	-- Counts over the whole fixture.
-	local all = Sync.merge({ prs = Cases.prs, viewer = "jubbydev", rateLimit = refresh.rateLimit, calls = {}, truncated = false } :: any, nil, { added = {}, tandem = {} }, NOW)
+	local added = { ["acme/web#303"] = { repo = "acme/web", number = 303 } }
+	local all = Sync.merge({ prs = Cases.prs, viewer = "jubbydev", rateLimit = refresh.rateLimit, calls = {}, truncated = false } :: any, nil, { added = added, tandem = {} }, NOW)
 	local fixes, review = 0, 0
 	for _, pr in Cases.prs do
 		local column = require("../src/hub/model").classify(pr, NOW)
@@ -203,7 +204,7 @@ local function simulate(from: number, to: number, script: { probeChangesAt: { nu
 			table.insert(refreshes, now)
 			state.refreshedAt = now
 			state.probeChanged = false
-			cost += 17
+			cost += 10
 		end
 		if due.checks == 0 then
 			table.insert(checks, now)
@@ -229,7 +230,7 @@ local function testSchedule()
 	for _, gap in gaps(refreshes) do assert(gap == 300) end
 	assert(#checks == 10 and checks[1] == 0 and checks[2] == 30 and checks[10] == 270, "checks every 30 s while running")
 	for _, gap in gaps(checks) do assert(gap == 30) end
-	assert(cost == 12 * 17 + 10 and cost <= 220, "modelled cost " .. cost)
+	assert(cost == 12 * 10 + 10 and cost <= 220, "modelled cost " .. cost)
 	-- No checks poll when nothing runs.
 	local _, _, none = simulate(0, 3599, { runningUntil = 0 })
 	assert(#none == 0)

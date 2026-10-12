@@ -1,25 +1,31 @@
 # PR Guide
 
+> [!NOTE]
+> PR Guide is in active development. Features, keys and the saved guide format may change between
+> versions.
+
 **A Tern plugin for tracking pull requests across repositories, reading their diffs and posting
 reviews.**
 
 Once you have a dozen PRs open across several repositories, keeping up with them turns into tab
-management. CI results are on one GitHub page and review comments on another. The discussion is in
-a Slack thread, and the fix you asked an agent for is in a separate conversation. To find out which
-PRs need you, and why, you check each of them in turn.
+management. CI is on one page, review comments on another, and the fix you asked an agent for is in
+a separate conversation. PR Guide puts all of it in Tern.
 
-PR Guide puts that work in Tern. The hub lists your PRs and review requests from every repository,
-with the next action for each one. Open a PR to read the diff, have your own agent write a guided
-walkthrough, comment on lines and submit the review to GitHub.
+## What it does
 
-- **[PR Hub](#pr-hub)** sorts every PR you opened or were asked to review into columns by next
-  action.
-- **[PR View](#pr-view)** displays the description, changed files, comments and review panel in one
-  Tern tab.
-- **[Guided PR Diffs](#guided-pr-diffs)** present a large diff as an overview and a short series of
-  steps, each pinned to its lines.
-- **[AI Review](#ai-review)** generates that walkthrough with the model, effort and review lens you
-  pick.
+- **All your PRs on one board.** PRs from every repository are sorted into Needs fixes, In review
+  and Ready to merge, and each card says why it's there.
+- **Teammates' PRs in one place.** See what's waiting for your review, what's waiting on the author
+  and what's approved. A PR you approved comes back to To review only when you're asked again.
+- **No trips to the browser.** Read the diff, comment on lines and submit the GitHub review without
+  leaving the terminal.
+- **Two ways to read a PR.** A file view like GitHub's, or a guided walkthrough written by your
+  agent, inspired by Linear Diffs.
+- **Fixes done for you.** An agent resolves conflicts and addresses bot reviews in an isolated
+  worktree, and you review its commit before anything is pushed. Flaky checks are flagged so you
+  can re-run them instead of debugging them.
+- **Merging the way each repository does.** PR Guide detects a merge queue, Aviator or a `/merge`
+  comment command, and can merge a PR as soon as it's ready.
 
 ![The PR hub with pull requests in Needs fixes, In review and Ready to merge](docs/screenshots/hub.png)
 
@@ -34,85 +40,133 @@ gh auth login
 tern plugin install github.com/jubbydev/tern-pr-guide
 ```
 
-Press `⌥⌘R` in Tern, or choose **PR hub** from the command palette. To look around before pointing
-it at real PRs, run **New PR hub sample block** for a board of recorded sample data, or **New PR
-Guide sample block** for a sample PR whose review is a dry run.
+Press `⌥⌘R` in Tern, or choose **PR hub** from the command palette. Press `?` on any page for the
+keys that apply there. To look around before pointing it at real PRs, run **New PR hub sample
+block** for a board of recorded sample data, or **New PR Guide sample block** for a sample PR whose
+review is a dry run.
 
 To work on the plugin itself, clone it and run `tern plugin link /path/to/tern-pr-guide`.
 
-## PR Hub
+## Your pull requests
 
-The hub has two tabs, switched with `T`. **Your pull requests** sorts your own PRs into **Needs
-fixes**, **In review** and **Ready to merge**. **Review requests** sorts the PRs others asked you to
-review into **To review**, **Waiting on author** and **Approved**. Each card includes the reason for
-its column, such as requested changes, unresolved comments, failing checks, a conflict or a failed
-merge-queue run.
+The **Your pull requests** tab sorts every PR you opened into three columns:
 
-The **Next up** bar above the board displays the most urgent PR. Press `.` to select it, `/` to
-search across repositories, `F` to filter by repository and `S` to sort by repository, priority,
-age or size. Routine card actions have their own keys: `M` to merge, `U` to update the branch, `⇧R`
-to re-run failed checks and `Q` to re-request review.
+- **Needs fixes:** requested changes, unresolved comments, failing checks, a conflict or a failed
+  merge-queue run. Each reason is its own chip on the card.
+- **In review:** waiting on a reviewer, on checks or on Tandem.
+- **Ready to merge:** approved, passing and free of conflicts.
 
-To resolve a conflict or address a bot review, press `A` to hand the work to your OMP agent. The
-agent works in an isolated worktree, and you can follow its progress on the card. Nothing is pushed
-until you have reviewed the resulting commit and chosen to push it. For a PR tracked by Tandem,
-pressing `A` sends it back to its Tandem coordinator instead.
+The **Next up** bar above the board shows the most urgent PR. Drafts and PRs with no activity for
+7 days move to a hidden **Inactive** group, where you can select stale PRs and close them together.
 
-The board loads from its cache and refreshes in the background when checks, comments or merge state
-change. While the hub is open, a Tern status-line segment displays the number of PRs that need fixes
-or review.
+When a PR lands in Needs fixes, its card is outlined in red and the hub's status-line segment
+flashes. Failed merges, failing checks and feedback from a person also show a toast. Conflicts
+don't, because they arrive in bursts when other PRs merge. The segment stays visible while the hub
+is open and shows how many PRs need fixes or review.
 
-## PR View
+**Merging.** Each repository has one merge setting: squash, merge commit, rebase, merge queue, a
+comment command such as `/aviator merge`, or a label. PR Guide reads it from the repository's
+config, or learns it from how recent PRs were merged and asks you once to confirm. Merge one PR,
+select several and merge them together, or set an In review PR to merge as soon as it's ready.
 
-Open a card to see the whole PR in Tern. For a PR that needs fixes, the first screen is the failing
-check, comment or conflict. For a PR without a saved guide, the first screen contains its
-description and the changed files as a folder tree. From there you can search the changed code,
-comment on any changed line and submit a GitHub review.
+## Review teammates' PRs
+
+The **Review requests** tab sorts the PRs others asked you to review:
+
+- **To review:** requests that name you, including a request to review again after you approved,
+  PRs whose review from you was dismissed, and PRs you added by pasting a link.
+- **Waiting on author:** you requested changes or left comments.
+
+Below the board, four folded lists keep the rest out of the way. Opening one scrolls it into view.
+
+- **Inactive:** requests that name you but have had no activity for 7 days. PRs you added by link
+  always stay in To review.
+- **Team requests:** PRs that ask a team you're on, such as a CODEOWNERS team, and not you by name.
+  They don't count toward the tab's number or Next up. Paste one's link in the add field to move it
+  to To review.
+- **Approved:** PRs you approved. New commits don't move one back to To review; its card notes
+  "New commits since you approved" until the author asks you again. Approved PRs don't count toward
+  the tab's number or Next up.
+- **Recently opened:** any PR you opened before stays one key away, even after it closes.
+
+## Fix what's blocking
+
+Open a Needs fixes card to go straight to the problems: requested changes, comments, failing checks
+and conflicts, each next to its code. Reply to a thread, resolve it, read a check's log or re-run
+failed checks from the same page.
+
+- **Check logs.** A failing check with no annotations shows its log, cut to the lines around the
+  error, with the changed lines it names shown in their files. This works for GitHub Actions
+  (through `gh`) and Buildkite (through the [`bk` CLI](https://github.com/buildkite/cli), signed in
+  with `bk auth login`; PR Guide asks for the organization in the check's link). Other CI shows the
+  check's summary, and `⇧L` opens its page.
+
+- **Agent fixes.** Your OMP agent resolves a conflict or addresses a bot review in an isolated
+  worktree, never in your checkout. You follow its progress on the card.
+- **Fewer tokens.** Conflicts are fixed by merging the base branch in. A clean merge costs no
+  tokens, lockfiles are regenerated rather than merged, and only the conflicts left over go to the
+  agent.
+- **Review before push.** The fix opens on a review page that labels every line as from the base
+  branch, your branch or the agent. Push unlocks once every conflict is marked reviewed.
+- **Sandboxed bot fixes.** When the agent addresses a bot review, it can write only inside its
+  worktree.
+- **Flaky checks.** A failure that also happens on main, for example "failed 3 of the last 20 runs
+  on main", is marked **Likely flaky**, so a re-run is the obvious next step.
+- **Feedback summaries.** A one-line summary of what reviewers asked for, such as "Reply to
+  @maria-k", followed by one line for each commenter.
+- **Tandem.** A PR that Tandem watches goes back to its Tandem coordinator instead of a new agent.
+
+## Read a PR
+
+Open any card to see the whole PR in Tern, with two ways to read it. Press `t` to switch between
+them. Comments, reviewed marks and the summary carry over.
+
+**Files** works like GitHub's PR page: the description, the changed files as a folder tree,
+search across the changed code, and comments on any line. The diff comes from local git, so
+GitHub's diff size limit doesn't apply, and large PRs stay responsive. Tests and generated files
+come last, under their own folding rows.
 
 ![The PR file browser with the changed files and description](docs/screenshots/pr-view.png)
 
-The diff comes from local git rather than GitHub, so GitHub's diff size limit doesn't apply, and
-large PRs and long files stay responsive. PR Guide requests only changed data from GitHub: the hub
-reads from its cache, checks the notifications endpoint with a conditional request and batches its
-GraphQL queries. Measured usage is about 220 GraphQL points per hour while the hub is open, against
-GitHub's limit of 5,000 per hour. Opening a PR fetches its metadata once, and the diff and source
-come from local git.
+**Guided** is an AI walkthrough inspired by Linear Diffs. You see the overall shape of the change
+first, then go through it in small steps:
 
-## Guided PR Diffs
-
-With OMP installed, you can have your agent write a guided review of the PR. The idea is close to
-Linear Diffs: see the overall shape of the change first, then go through it in small pieces.
-
-The first screen contains a plain-language overview and, for some PRs, a before-and-after diagram.
-The PR is split into a few changes, and each change into steps. Each step's explanation appears
-beside its lines. Press `j` and `k` to move between steps and `⏎` to mark the current one reviewed.
+- A plain-language overview and, for some PRs, a before-and-after diagram.
+- The PR split into a few changes, and each change into steps pinned to their lines.
+- Code blocks that start at the enclosing function, method or class, so a step reads in context. When
+  that line is far above the change, the block keeps a few lines of context and the hidden lines
+  above it are labeled with it.
+- Suggested review comments placed next to the code they're about.
+- Moved code shown as moved. A block cut from one place and pasted in another, in the same file or
+  a different one, is drawn in neutral gray instead of red and green, with a label such as "Moved
+  from src/a.ts:12" or "Moved to line 40".
+- Supporting changes folded away. Files no step visits sit under "Supporting changes", followed by
+  a folded "Tests" group and a folded "Generated" group (files marked `linguist-generated` in
+  `.gitattributes`). A test file a step visits stays in its step. The guide agent never reads
+  generated files, so no step or comment points at one, and lockfiles are left out of the PR
+  altogether.
+- Guides saved in the repository, so a reopened PR loads its guide right away in every worktree of
+  the clone.
 
 ![A guided review with an overview, diagram and the first change](docs/screenshots/overview.png)
 
-Each step contains its file list, removed and added lines, and any suggested comments next to the
-relevant code. Press `t` at any point to switch between **Guided** and **Files**. Switching views
-preserves comments, reviewed marks and the summary.
-
 ![A guided step with its code and a suggested review comment](docs/screenshots/step.png)
 
-Guides are saved in the repository, so a reopened PR loads its guide right away, and every worktree
-of the clone uses the same copy.
+## Choose a review lens
 
-## AI Review
+Guided reviews need OMP. Before generating one, pick the model, effort and lens. PR Guide ships
+five lenses:
 
-Before generating a guide, choose the model, effort and lens with `⇧M`. Pick a lens for the
-review's focus:
-
-- **Balanced**: a walkthrough of the whole PR with the comments worth making.
-- **Security**: the change from an attacker's point of view.
-- **Architecture**: boundaries, dependencies and long-term cost.
-- **Quick skim**: the shape of the PR and only the most important comments.
-- **Teaching**: explanations for someone new to the project.
+- **Balanced:** a walkthrough of the whole PR with the comments worth making.
+- **Security:** the change from an attacker's point of view.
+- **Architecture:** boundaries, dependencies and long-term cost.
+- **Quick skim:** the shape of the PR and only the most important comments.
+- **Teaching:** explanations for someone new to the project.
 
 ![Choosing an OMP model, effort and review lens](docs/screenshots/lenses.png)
 
-To add your own, choose **Edit lenses…** or press `⌃E`. Each custom lens is a Markdown file in your
-lenses folder:
+You can also write your own. Choose **Edit lenses…** to open your lenses folder, and add a Markdown
+file for each lens:
 
 ```markdown
 # Performance
@@ -123,58 +177,48 @@ Check for repeated work in loops, unnecessary copying, blocking calls on hot pat
 could be batched. Comment only when the cost will matter in practice.
 ```
 
-A custom lens with the same name as a built-in one replaces it. The guide format is the same for
-every lens, so PR View can open a guide written with any of them.
+A custom lens with the same name as a built-in one replaces it. Every lens writes the same guide
+format, so any guide opens the same way.
 
-## Finish the review
+## Post the review
 
-The agent's comments are suggestions until you act on them. Press `a` to add one to your review or
-`d` to dismiss it, and `c` to write your own on the current step. Press `r` to open the review
-panel, pick Comment, Approve or Request changes with `1`, `2` or `3`, edit the summary and submit
-everything as one GitHub review.
+The agent's comments are suggestions until you add them to your review. Open the review panel, pick
+Comment, Approve or Request changes, edit the summary, and submit everything as one GitHub review.
 
 ![The review panel with comments, summary and verdict](docs/screenshots/review.png)
 
-Submitting takes two presses of `⌘⏎`. After the first, the review panel displays what will be
-posted and where. The second press posts it, and any other key cancels. If the PR has new commits
-since you started reading, submission stops until you refresh.
-
-A dry run never writes to GitHub. The sample block and any guide opened with `post=false` save the
-review to a JSON file under `/tmp` instead, and the review panel displays that destination before
-you submit.
-
-## A typical pass through the queue
-
-1. Press `⌥⌘R` to focus the hub.
-2. Press `.` to select the most urgent PR.
-3. Use the card's action, or press `⏎` to open the PR.
-4. Read with `j` and `k`, mark steps with `⏎` and add comments with `c`.
-5. Press `r` to finish the review, then go back to the hub for the next card.
-
-Press `⌥⇧⌘R` to open the hub in AI-guide mode, where `⏎` starts a guided review for any PR that
-doesn't have a saved guide yet. `⇧⏎` does the same from any card.
+- **Two presses to submit.** The first press shows what will be posted and where. Any other key
+  cancels.
+- **No stale reviews.** If the PR has new commits since you started reading, submission stops until
+  you refresh.
+- **Dry runs.** The sample block and any guide opened with `post=false` save the review to a JSON
+  file under `/tmp` and never write to GitHub.
 
 ## Keyboard reference
 
-Press `?` on any PR Guide page for the shortcuts that apply there.
+Press `?` on any PR Guide page for the keys that apply there.
 
 ### PR hub
 
 | Key | Action |
 |---|---|
+| `⌥⌘R` | Open or focus the hub |
+| `⌥⇧⌘R` | Open the hub so `⏎` starts a guided review |
 | `h` `j` `k` `l` or arrows | Move between cards |
 | `.` | Select the most urgent PR |
-| `⏎` | Open the PR, its fixes page or a ready agent fix |
+| `⏎` or click | Open the PR, its fixes page or a ready agent fix |
 | `⇧⏎` | Open and start a guided review |
 | `T` | Switch between your PRs and review requests |
 | `/` | Search |
 | `F` | Filter by repository |
 | `S` | Sort |
-| `I` | Show or hide inactive PRs |
+| `I` | Show or hide inactive PRs, on either tab |
+| `⇧T` | Show or hide team review requests |
+| `A` | Show or hide approved PRs, on Review requests |
 | `R` | Show or hide recently opened PRs |
 | `N` | Add a PR by link |
-| `⇧M` | Choose the agent model and effort |
-| `A` | Run the selected card's main action |
+| `⇧S` | Settings: the agent model and effort, and whether GitHub links open in Tern or the default browser (`L` switches). `⇧M` opens it too |
+| `A` | Run the selected card's main action, on your PRs |
 | `⇧A` | Summarize feedback or return a retained worktree |
 | `C` | Copy the PR title and link |
 | `M` | Merge, merge when ready or cancel a pending merge |
@@ -183,7 +227,7 @@ Press `?` on any PR Guide page for the shortcuts that apply there.
 | `⇧R` | Re-run failed checks |
 | `Q` | Re-request review |
 | `O` | Choose a clone or open a retained worktree |
-| `Space` | Select cards for a batch action |
+| `Space` or ⌘-click | Select cards for a batch action |
 | `⇧X` | Select stale PRs |
 | `X` | Remove an added review request or close selected stale PRs |
 | `⌘R` | Refresh |
@@ -202,7 +246,7 @@ Press `?` on any PR Guide page for the shortcuts that apply there.
 | `t` | Switch between Guided and Files |
 | `/` | Search steps, files, comments and code |
 | `s` | Show supporting changes |
-| `o` | Open all supporting files |
+| `o` | Open all supporting files and unfold Tests; generated files stay as they are |
 | `c` | Comment on the current step |
 | `a` `d` | Keep or dismiss a suggested comment |
 | `i` | Show the PR description |
@@ -210,6 +254,7 @@ Press `?` on any PR Guide page for the shortcuts that apply there.
 | `g` | Open the PR on GitHub |
 | `⇧G` | Generate a guided review |
 | `⇧M` | Choose the model, effort and lens |
+| `⌃E` | Edit lenses |
 | `r` | Open the review panel |
 | `x` | Include or leave out the selected review comment |
 | `a` | Include or exclude every review comment |
@@ -218,24 +263,36 @@ Press `?` on any PR Guide page for the shortcuts that apply there.
 | `⌘⏎` | Submit the review |
 | `Esc` | Close the review panel |
 
-### Fixes and agent review
+### Fixes page
 
-On the fixes page, press `j` and `k` to move through requested changes, comments, failing checks
-and conflicts. Press `R` to reply, `E` to resolve a thread, `⇧L` to open a check's log, `⇧R` to
-re-run failed checks, `G` to open GitHub's conflict editor and `B` to show bot comments. `Esc`
-returns you to the hub with the same card selected.
+Replies and resolves write to GitHub right away.
 
-Replies and resolves write to GitHub right away. A reply posts when you press `⌘⏎`, and a thread is
-resolved as soon as you press `E`.
+| Key | Action |
+|---|---|
+| `j` `k` | Move through requested changes, comments, failing checks and conflicts |
+| `R` | Reply to the thread |
+| `⌘⏎` | Post the reply |
+| `E` | Resolve the thread |
+| `⇧L` | Open the check's log |
+| `⇧R` | Re-run failed checks |
+| `G` | Open GitHub's conflict editor |
+| `B` | Show bot comments |
+| `Esc` | Back to the hub with the same card selected |
 
-An agent fix opens on a review page before you can push it. Press `j` and `k` to move between
-conflicts, `⏎` to mark one reviewed and `B` to see the original conflict. Once every conflict is
-reviewed, press `P` to push. `D` discards the fix after a confirmation, and `Esc` returns you to
-the board.
+### Agent fix review
 
-## Open a guide from another tool
+| Key | Action |
+|---|---|
+| `j` `k` | Move between conflicts |
+| `⏎` | Mark the conflict reviewed |
+| `B` | Show the original conflict |
+| `P` | Push, once every conflict is reviewed |
+| `D` | Discard the fix, after a confirmation |
+| `Esc` | Back to the hub |
 
-The guide block is `prguide.guide`:
+## For tool authors
+
+Open a PR from another tool with the `prguide.guide` block:
 
 ```lua
 cx:new_block("prguide.guide", {"pr=123", "repo=/path/to/your/clone"}, "tab")
@@ -251,7 +308,9 @@ cx:new_block("prguide.guide", {"pr=123", "repo=/path/to/your/clone"}, "tab")
 
 PR Guide fetches the PR into `refs/prguide/<number>/*` and doesn't touch your branches or working
 tree. When there's no local clone to use, it keeps a light copy under Tern's plugin-data folder and
-reuses it for later PRs.
-
-Saved guides are stored at `.git/prguide/<number>.json`. Any tool can write that format, which is
+reuses it for later PRs. Saved guides are stored at `.git/prguide/<number>.json`, in the format
 documented in [GUIDE.md](GUIDE.md).
+
+The hub uses about 130 GitHub GraphQL points an hour while it's open, against GitHub's limit of
+5,000. It loads from its cache, checks for changes with a conditional request, and batches its
+queries. Opening a PR fetches its metadata once, and the diff comes from local git.

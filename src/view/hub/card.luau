@@ -79,7 +79,7 @@ local function toneOf(card: State.Card): string
 	if c == "needs_fixes" then return "bad" end
 	if c == "to_review" then return "info" end
 	if c == "ready" or c == "approved" then return "done" end
-	if c == "inactive" then return "quiet" end
+	if c == "inactive" or c == "team" then return "quiet" end
 	return "wait"
 end
 
@@ -164,7 +164,7 @@ function M.view(card: State.Card, now: number): Node
 	if card.ring then class ..= " gp-hc-ring-" .. card.ring end
 	return el("div", {
 		class = class, key = Paths.cardKey(pr.key),
-		actions = { click = "hub-select=" .. pr.key, dblclick = "hub-open=" .. pr.key },
+		actions = { click = "hub-open=" .. pr.key },
 	}, kids)
 end
 

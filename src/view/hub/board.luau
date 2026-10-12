@@ -1,6 +1,6 @@
 --!strict
--- The hub page: header (title, search, freshness, agent model), the tab row, the board's columns, the
--- Inactive fold and the hint bar. Everything it draws was decided by `State.project`.
+-- The hub page: header (title, search, freshness, settings), the tab row, the board's columns, the
+-- card folds and the hint bar. Everything it draws was decided by `State.project`.
 local Card = require("./card")
 local Fields = require("../../text-field")
 local Help = require("./help")
@@ -17,18 +17,18 @@ local el, span = Ui.el, Ui.span
 
 local LABELS: { [Model.Column]: string } = {
 	needs_fixes = "Needs fixes", in_review = "In review", ready = "Ready to merge", inactive = "Inactive",
-	to_review = "To review", waiting_on_author = "Waiting on author", approved = "Approved",
+	to_review = "To review", waiting_on_author = "Waiting on author",
 }
 local EMPTY: { [Model.Column]: string } = {
 	needs_fixes = "No pull requests need fixes.", in_review = "No pull requests in review.",
 	ready = "No pull requests ready to merge.", to_review = "No pull requests to review.",
-	waiting_on_author = "No pull requests waiting on their authors.", approved = "No approved pull requests.",
+	waiting_on_author = "No pull requests waiting on their authors.",
 }
 
 local M = {}
 
 local function rootClass(s: State.State): string
-	return "gp-root gp-hub" .. (if s.keyed then "" else " gp-soft")
+	return "gp-root gp-hub gp-hub-fit" .. (if s.keyed then "" else " gp-soft")
 end
 
 local function tabs(s: State.State): Node
@@ -95,9 +95,9 @@ local function header(s: State.State): Node
 	elseif s.loading then
 		table.insert(fresh, span("gp-hub-fresh", "Loading…"))
 	end
-	table.insert(fresh, el("span", { class = "gp-hub-ctl" .. (if s.menu == "agent" then " gp-hub-ctl-open" else ""), key = "agent", actions = { click = "hub-menu=agent" } }, {
-		el("span", { class = "gp-hub-ctl-label" }, if s.agent then { span("gp-hub-ctl-dim", "Agent:"), span("gp-hub-ctl-strong", State.agentLabel(s)) } else { span("gp-hub-ctl-strong", State.agentLabel(s)) }),
-		Ui.icon("chev"),
+	table.insert(fresh, el("span", { class = "gp-hub-ctl gp-hub-ctl-icon" .. (if s.menu == "settings" then " gp-hub-ctl-open" else ""), key = "settings", actions = { click = "hub-menu=settings" } }, {
+		Ui.icon("settings"),
+		span("gp-hub-ctl-label", "Settings"),
 	}))
 	local up = nextUp(s)
 	local rows: { Node } = {
@@ -138,7 +138,7 @@ end
 local function columnClass(column: Model.Column, tab: Model.Tab): string
 	if column == "needs_fixes" then return "gp-hub-col-act gp-hub-col-bad" end
 	if column == "to_review" then return "gp-hub-col-act gp-hub-col-info" end
-	if column == "ready" or column == "approved" then return "gp-hub-col-done" end
+	if column == "ready" then return "gp-hub-col-done" end
 	return "gp-hub-col-wait"
 end
 
@@ -168,36 +168,53 @@ local function columns(s: State.State): Node
 	return el("div", { class = "gp-hub-board", key = "board" }, out)
 end
 
-local function fold(s: State.State, motion: Ui.Motion): Node?
-	local list = s.board.inactive
+-- Each card fold's title, its note on each tab, and its key.
+local FOLDS: { [Model.Column]: { title: string, note: { [Model.Tab]: string }, key: string } } = {
+	inactive = {
+		title = "Inactive", key = "I",
+		note = { mine = "Drafts and pull requests with no activity for 7 days", review = "Review requests with no activity for 7 days" },
+	},
+	team = {
+		title = "Team requests", key = "⇧T",
+		note = { mine = "", review = "Requested from a team, not from you by name" },
+	},
+	approved = {
+		title = "Approved", key = "A",
+		note = { mine = "", review = "Pull requests you approved" },
+	},
+}
+
+local function fold(s: State.State, cardFold: State.CardFold, motion: Ui.Motion): Node?
+	local list = cardFold.cards
 	if #list == 0 then return nil end
-	local open = s.board.open.inactive
+	local open = cardFold.open
+	local look = FOLDS[cardFold.column]
 	-- The header's toggle and its Close stale button are siblings, so a click on one never reaches the other.
 	local head: { Node } = {
-		el("span", { class = "gp-hub-foldtoggle", key = "toggle", actions = { click = "hub-fold=inactive" } }, {
+		el("span", { class = "gp-hub-foldtoggle", key = "toggle", actions = { click = "hub-fold=" .. cardFold.column } }, {
 			Ui.caret(open),
-			span("gp-panel-h", "Inactive"),
+			span("gp-panel-h", look.title),
 			span("gp-hub-colcount", tostring(#list)),
-			span("gp-hub-foldnote", "Drafts and pull requests with no activity for 7 days"),
+			span("gp-hub-foldnote", look.note[s.tab]),
 			Ui.spacer(),
-			Ui.keys("I"),
+			Ui.keys(look.key),
 		}),
 	}
-	if State.staleCount(s) > 0 then
+	if cardFold.column == "inactive" and State.staleCount(s) > 0 then
 		table.insert(head, el("span", { class = "gp-btn gp-btn-sm gp-hub-closestale", key = "stale", actions = { click = "hub-mark-stale" } }, {
 			span("gp-hub-closestale-l", "Close stale"), Ui.keys("⇧X"),
 		}))
 	end
 	local kids: { Node } = { el("div", { class = "gp-hub-foldhead", key = "head" }, head) }
 	if open then
-		local enter = Ui.entering(motion, "fold:inactive", "gp-enter-panel")
+		local enter = Ui.entering(motion, "fold:" .. cardFold.column, "gp-enter-panel")
 		local rows: { Node } = {}
 		local selection = State.selection(s)
-		if selection and selection.group == "inactive" then table.insert(rows, Selection.view(selection)) end
+		if cardFold.column == "inactive" and selection and selection.group == "inactive" then table.insert(rows, Selection.view(selection)) end
 		for _, node in cards(s, list) do table.insert(rows, node) end
 		table.insert(kids, el("div", { class = "gp-hub-foldrows " .. enter, key = "rows" }, rows))
 	end
-	return el("div", { class = "gp-hub-fold", key = "fold" }, kids)
+	return el("div", { class = "gp-hub-fold", key = Paths.foldKey(cardFold.column) }, kids)
 end
 
 -- One Recently opened row: repository and number, the title with its author under it, and when it was opened.
@@ -208,7 +225,7 @@ local function recentRow(s: State.State, opened: State.Opened): Node
 	if opened.author ~= "" then table.insert(main, span("gp-sr-sub", "@" .. opened.author)) end
 	return el("div", {
 		class = "gp-sr-row gp-hub-rc" .. (if s.selected == key then " gp-sr-row-on" else ""), key = Paths.recentKey(key),
-		actions = { click = "hub-select=" .. key, dblclick = "hub-open=" .. key },
+		actions = { click = "hub-open=" .. key },
 	}, {
 		span("gp-hub-rc-ref", name),
 		el("span", { class = "gp-hub-rc-main" }, main),
@@ -260,8 +277,10 @@ local function body(s: State.State, motion: Ui.Motion): Node
 			message("No pull requests match the search or filter.")
 		else
 			table.insert(kids, columns(s))
-			local inactive = fold(s, motion)
-			if inactive then table.insert(kids, inactive) end
+			for _, cardFold in s.board.folds do
+				local node = fold(s, cardFold, motion)
+				if node then table.insert(kids, node) end
+			end
 			local recent = recentFold(s, motion)
 			if recent then table.insert(kids, recent) end
 		end

@@ -1,4 +1,5 @@
 --!strict
+local FileTree = require("./file-tree")
 local Fields = require("./text-field")
 local Guide = require("./guide")
 local Pr = require("./pr")
@@ -59,7 +60,9 @@ M.verdicts = {
 
 -- Suggestions within this many lines of a step belong to it.
 local STEP_REACH = 3
--- A step owns the lines of its code block: its range plus this many either side.
+-- A step owns the lines of its code block's changed part: its range plus this many either side. The
+-- unchanged lines a block also shows from the enclosing scope's opener (see Diff `scopeOf`) are
+-- nobody's; a comment there goes to the file's nearest step.
 local STEP_BLOCK_CONTEXT = 2
 
 local function verdictOf(id: VerdictId): Verdict
@@ -216,6 +219,12 @@ function M.supportingFiles(r: Review): { Pr.File }
   if #M.keysOfFile(r, file.path) == 0 then table.insert(files, file) end
  end
  return files
+end
+
+-- The supporting files as the page lists them: the ones in no group first, then the tests, then the
+-- generated files, each section a folder tree. A test file a step visits isn't among them.
+function M.supportingSections(r: Review): { FileTree.Section }
+ return FileTree.sections(M.supportingFiles(r))
 end
 
 -- The first step of a change (or of its visit to `file`), as an index into `steps`.

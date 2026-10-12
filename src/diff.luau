@@ -1,4 +1,5 @@
 --!strict
+local Moves = require("./moves")
 local Pr = require("./pr")
 local Text = require("./text")
 
@@ -6,10 +7,12 @@ local Text = require("./text")
 export type Span = { from: number, to: number }
 -- Entry numbers, both included.
 export type Interval = { first: number, last: number }
+export type Move = Moves.Move
 
 -- One line of the new-side file. Lines the PR's diff lists carry `diff = true`, the word-diff span
 -- of a paired removed/added line, and the hunk label when they open a hunk. Unchanged lines
--- between hunks are filled in from the file source.
+-- between hunks are filled in from the file source. A line that was cut and pasted elsewhere in
+-- the PR carries `moved`, and no word-diff span.
 export type Entry = {
  row: Pr.Line,
  diff: boolean,
@@ -17,6 +20,8 @@ export type Entry = {
  label: string?,
  -- The new-side line the entry sits at; a removed line belongs with the line after it.
  anchor: number?,
+ -- Where the other half of a moved line is.
+ moved: Move?,
 }
 
 export type Token = { text: string, kind: string, changed: boolean }
@@ -51,7 +56,8 @@ export type FileDiff = {
 -- What a code block shows of a file.
 export type Show = {
  -- The entries of the steps the block shows (see `stepSpan`); it starts with the PR's lines within
- -- a couple of lines of them. Nil starts with every line of the PR's diff.
+ -- a couple of lines of them, and at the line that opens the scope around each (see `scopeOf`).
+ -- Nil starts with every line of the PR's diff.
  spans: { Interval }?,
  -- The whole file was asked for.
  whole: boolean,
@@ -72,6 +78,10 @@ local LANGUAGES: { [string]: string } = { ts = "ts", tsx = "tsx", js = "js", md 
 
 -- Entries a step shows on each side of its range.
 local STEP_CONTEXT = 2
+-- How many entries above a step's range its block reaches for the line that opens the enclosing scope.
+local SCOPE_REACH = 30
+-- The longest scope opener shown as the label of a gap, in bytes.
+local SCOPE_LABEL = 80
 -- Unchanged lines that stay as rows on each side of a change when a big file is shown whole.
 local NEAR = 3
 -- A file shown whole with more lines than this draws its unchanged stretches natively.
@@ -101,16 +111,17 @@ local function trimmed(span: Span, text: string): Span
  return { from = math.max(span.from, first), to = math.min(span.to, last + 1) }
 end
 
--- Pairs each run of removed lines with the added lines after it: row index -> changed span.
-local function pairChanges(rows: { Pr.Row }): { [number]: Span }
+-- Pairs each run of removed lines with the added lines after it: row index -> changed span. Moved
+-- lines pair with nothing.
+local function pairChanges(rows: { Pr.Row }, moves: { [number]: Move }): { [number]: Span }
  local spans: { [number]: Span } = {}
  local i = 1
  while i <= #rows do
-  if rows[i].kind == "del" then
+  if rows[i].kind == "del" and not moves[i] then
    local firstDel = i
-   while i <= #rows and rows[i].kind == "del" do i += 1 end
+   while i <= #rows and rows[i].kind == "del" and not moves[i] do i += 1 end
    local firstAdd = i
-   while i <= #rows and rows[i].kind == "add" do i += 1 end
+   while i <= #rows and rows[i].kind == "add" and not moves[i] do i += 1 end
    local dels, adds = firstAdd - firstDel, i - firstAdd
    for k = 0, math.min(dels, adds) - 1 do
     spans[firstDel + k], spans[firstAdd + k] = changedMiddle(rowText(rows[firstDel + k]), rowText(rows[firstAdd + k]))
@@ -136,7 +147,7 @@ local function pairChanges(rows: { Pr.Row }): { [number]: Span }
  return spans
 end
 
-local function buildEntries(file: Pr.File, spans: { [number]: Span }): { Entry }
+local function buildEntries(file: Pr.File, spans: { [number]: Span }, moves: { [number]: Move }): { Entry }
  local entries: { Entry } = {}
  local src = file.src or {}
  local newN, oldN, label = 1, 1, nil
@@ -153,7 +164,7 @@ local function buildEntries(file: Pr.File, spans: { [number]: Span }): { Entry }
    fillUnchanged(row.newStart)
    newN, oldN, label = row.newStart, row.oldStart, row.label
   else
-   table.insert(entries, { row = row, diff = true, changed = spans[index], label = label })
+   table.insert(entries, { row = row, diff = true, changed = spans[index], label = label, moved = moves[index] })
    label = nil
    if row.new then newN = row.new + 1 end
    if row.old then oldN = row.old + 1 end
@@ -188,14 +199,159 @@ local function inBase(entries: { Entry }, i: number, spans: { Interval }?): bool
  return false
 end
 
+-- What opens a scope, language-agnostic: the line ends with an opening bracket, `:`, `=>`, `->`,
+-- `then`, `do` or `begin`, or it declares something (starts with function, def, fn, func, fun,
+-- class, struct, enum, trait, impl, interface, module, namespace or object, after modifiers like
+-- export or async, mentions `function`, or looks like a method, `name(…) {`, unless `name` is a
+-- control keyword such as `if`).
+local OPENING_ENDS = { "{", "(", "[", ":", "=>", "->" }
+local OPENING_WORDS: { [string]: boolean } = { ["then"] = true, ["do"] = true, ["begin"] = true }
+local MODIFIERS: { [string]: boolean } = {}
+for word in string.gmatch("export default async public private protected static pub abstract final override local unsafe extern inline virtual readonly", "%S+") do MODIFIERS[word] = true end
+local DECLARATORS: { [string]: boolean } = {}
+for word in string.gmatch("function def fn func fun class struct enum trait impl interface module namespace object", "%S+") do DECLARATORS[word] = true end
+-- Lines that continue the scope above them (`end`, `else`, `} else {`) are never its opener.
+local CONTINUATIONS: { [string]: boolean } = {}
+for word in string.gmatch("end else elseif elif except catch finally", "%S+") do CONTINUATIONS[word] = true end
+local CONTROL: { [string]: boolean } = {}
+for word in string.gmatch("if for while switch catch elseif elif return await yield try do with when match", "%S+") do CONTROL[word] = true end
+
+-- A line's text without indentation and a trailing `//` or `--` comment.
+local function stripped(text: string): string
+ local code = (string.gsub(text, "(%S)%s+//.*$", "%1"))
+ code = string.gsub(code, "(%S)%s+%-%-.*$", "%1")
+ code = string.gsub(code, "^%s+", "")
+ return (string.gsub(code, "%s+$", ""))
+end
+
+-- Whether the line starts by closing something: `}`, `)`, `]`, `</`, or `end`/`else`/`catch` and kin.
+local function closes(code: string): boolean
+ if string.find(code, "^[})%]]") or string.sub(code, 1, 2) == "</" then return true end
+ return CONTINUATIONS[string.match(code, "^[%a_]+") or ""] == true
+end
+
+-- Whether the line declares a function, class, method or the like.
+local function declares(code: string): boolean
+ if string.find(code, "%f[%w_]function%f[^%w_]") then return true end
+ for word in string.gmatch(code, "[%a_]+") do
+  if DECLARATORS[word] then return true end
+  if not MODIFIERS[word] then break end
+ end
+ local rest = code
+ while true do
+  local word, after = string.match(rest, "^([%a_]+)%s+(.*)$")
+  if word and after and MODIFIERS[word] then rest = after else break end
+ end
+ local name = string.match(rest, "^([%a_$][%w_$]*)%s*[%(<]")
+ return name ~= nil and not CONTROL[name] and string.sub(code, -1) == "{"
+end
+
+local function opensScope(code: string): boolean
+ if code == "" or closes(code) then return false end
+ if declares(code) then return true end
+ for _, ending in OPENING_ENDS do
+  if string.sub(code, -#ending) == ending then return true end
+ end
+ return OPENING_WORDS[string.match(code, "([%a_]+)$") or ""] == true
+end
+
+local function indentOf(text: string): number
+ return #(string.match(text, "^[ \t]*") :: string)
+end
+
+-- The entry that opens the scope enclosing a step's `span`, so a block can start there like an
+-- editor's sticky scroll. Walks up the new-side lines (removed lines are skipped, except in a deleted
+-- file where they are all there is) from the span's first entry through the lines indented less
+-- than the span's first line of code, each less than the one before it, and stops at the first
+-- that declares a function, class or method; the `if` and `for` blocks between are passed over.
+-- Where none declares (a stylesheet, a data file), it is the outermost line that opens a scope.
+-- A less indented line that opens nothing narrows the walk the same way: nothing above it can
+-- enclose the span unless it is less indented still. Lines that start by closing something
+-- (`}`, `) {`, `end`) never count. A span that starts by declaring something, or holds only
+-- blank lines, has no scope to show; a span of only closing lines is enclosed by the line at its
+-- own indentation. The walk stops at a gap between hunks when the file has no source. Nil when no
+-- line encloses the span.
+local function scopeOf(fd: FileDiff, span: Interval): number?
+ local entries = fd.entries
+ local skipRemoved = fd.file.src ~= nil
+ local bar: number? = nil
+ local closing: number? = nil
+ for i = span.first, span.last do
+  local row = entries[i].row
+  local code = stripped(row.text)
+  if code ~= "" then
+   if closes(code) then
+    closing = closing or indentOf(row.text) + 1
+   else
+    if declares(code) then return nil end
+    bar = indentOf(row.text)
+    break
+   end
+  end
+ end
+ bar = bar or closing
+ if bar == nil then return nil end
+ local outermost: number? = nil
+ local below: number? = entries[span.first].row.new
+ for i = span.first - 1, 1, -1 do
+  if bar == 0 then break end
+  local row = entries[i].row
+  if row.kind == "del" and skipRemoved then continue end
+  if row.new then
+   if below and row.new < below - 1 then break end
+   below = row.new
+  end
+  local code = stripped(row.text)
+  if code == "" then continue end
+  local indent = indentOf(row.text)
+  if indent >= bar then continue end
+  if closes(code) then continue end
+  bar = indent
+  local at, allman = i, false
+  if code == "{" then
+   -- Allman braces: the line before a lone `{` is what opens the scope, and a declaration unless it
+   -- is a control line like `if (a)`.
+   for k = i - 1, 1, -1 do
+    local before = stripped(entries[k].row.text)
+    if before ~= "" and not (skipRemoved and entries[k].row.kind == "del") then
+     at, code, allman = k, before, not closes(before) and not CONTROL[string.match(before, "^[%a_]+") or ""]
+     break
+    end
+   end
+  end
+  if allman or declares(code) then return at end
+  if opensScope(code) then outermost = at end
+ end
+ return outermost
+end
+
 -- Rows of the entries to draw: every shown entry, and for a big file shown whole only those near
--- changes, comments and the search hit.
-local function shownEntries(fd: FileDiff, show: Show): ({ boolean }, boolean)
+-- changes, comments and the search hit. A block of steps also starts at the line that opens the
+-- scope enclosing each step when that is within `SCOPE_REACH` entries; when it is farther, the
+-- opener's text is returned under the entry the block starts at, to label the gap above it.
+local function shownEntries(fd: FileDiff, show: Show): ({ boolean }, boolean, { [number]: string })
  local entries = fd.entries
  local total = #entries
  local big = show.whole and total > WHOLE_MAX
  local shown = table.create(total, false)
+ local openers: { [number]: string } = {}
  for i = 1, total do shown[i] = (show.whole and not big) or inBase(entries, i, show.spans) end
+ if show.spans and not show.whole then
+  for _, span in show.spans do
+   local opener = scopeOf(fd, span)
+   if opener and span.first - opener <= SCOPE_REACH then
+    for i = opener, span.first - 1 do shown[i] = true end
+   elseif opener then
+    for i = math.max(span.first - STEP_CONTEXT, 1), span.first do
+     if entries[i].diff then
+      local text = stripped(entries[opener].row.text)
+      openers[i] = if #text > SCOPE_LABEL then string.sub(text, 1, SCOPE_LABEL) .. "…" else text
+      break
+     end
+    end
+   end
+  end
+ end
  if big then
   for i, entry in entries do
    if entry.diff then
@@ -209,7 +365,7 @@ local function shownEntries(fd: FileDiff, show: Show): ({ boolean }, boolean)
  for _, range in show.reveals do
   for i = math.max(range.first, 1), math.min(range.last, total) do shown[i] = true end
  end
- return shown, big
+ return shown, big, openers
 end
 
 -- A click opens the lines nearest the code (all of them when few are left); the arrow says which
@@ -287,8 +443,9 @@ local function markChanged(tokens: { { string } }, changed: Span?): { Token }
 end
 
 -- Prepares a file for display: word-diff spans, the whole new-side file as entries, line anchors.
-function M.analyze(file: Pr.File): FileDiff
- local entries = buildEntries(file, pairChanges(file.rows))
+-- `moves` are the file's moved rows by row index, from `Moves.detect`.
+function M.analyze(file: Pr.File, moves: { [number]: Move }?): FileDiff
+ local entries = buildEntries(file, pairChanges(file.rows, moves or {}), moves or {})
  anchorEntries(entries)
  local extension = Text.extension(file.path)
  return {
@@ -373,7 +530,7 @@ function M.layout(fd: FileDiff, show: Show): Layout
  local kept = fd.layouts[base]
  if kept and kept.key == key then return kept end
  local total = #fd.entries
- local shown, big = shownEntries(fd, show)
+ local shown, big, openers = shownEntries(fd, show)
  local segments: { Segment } = {}
  local rows = 0
  local i = 1
@@ -389,7 +546,7 @@ function M.layout(fd: FileDiff, show: Show): Layout
    table.insert(segments, { kind = "native", first = first, last = last } :: Native)
   else
    local following = fd.entries[i]
-   table.insert(segments, gapAt(first, last, total, following and following.label))
+   table.insert(segments, gapAt(first, last, total, openers[i] or (following and following.label)))
   end
  end
  local layout = { key = key, segments = segments, rows = rows }

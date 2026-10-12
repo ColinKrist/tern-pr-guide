@@ -91,6 +91,12 @@
 .gp-row { display: flex; font-size: 12.5px; min-height: 19px; align-items: flex-start; margin: 0; padding: 0; }
 .gp-add { background: rgba(60,160,90,0.14); }
 .gp-del { background: rgba(210,70,70,0.14); }
+/* moved code: neutral, not red and green, with a hairline down its left edge; the label above a
+   moved block says where its other half is */
+.gp-moved, .gp-moved-label { background: var(--l1); box-shadow: inset 2px 0 0 var(--l4); }
+.gp-moved .gp-code { color: var(--t2); }
+.gp-moved-label { display: flex; align-items: center; min-height: 19px; font-size: 12px; color: var(--t3); }
+.gp-moved-text { white-space: pre; }
 .gp-gut { width: 40px; flex-shrink: 0; text-align: right; padding-right: 6px; color: var(--t3); }
 .gp-sign { width: 14px; flex-shrink: 0; color: var(--t3); }
 .gp-code { display: block; white-space: pre; flex-grow: 1; flex-shrink: 0; margin: 0; padding: 0 12px 0 0; }
@@ -572,7 +578,7 @@
 
 .gp-gap:hover .gp-gap-gut, .gp-gap:hover .gp-gap-count { color: var(--t1); }
 .gp-gap-count { font-family: var(--sans); font-size: 12.5px; color: var(--t3); transition: color 140ms ease; }
-.gp-gap-label { font-size: 12px; color: var(--t4); }
+.gp-gap-label { font-size: 12px; color: var(--t3); }
 /* change card in the left column */
 
 .gp-ccard .gp-cfile-dir { font-size: 13px; }
@@ -615,6 +621,7 @@
 .gp-ctx.gp-on { background: light-dark(rgba(79, 134, 232, 0.12), rgba(91, 143, 240, 0.17)); }
 .gp-add.gp-on { background: light-dark(rgba(40, 170, 95, 0.27), rgba(40, 190, 90, 0.27)); }
 .gp-del.gp-on { background: light-dark(rgba(225, 70, 70, 0.27), rgba(230, 70, 70, 0.29)); }
+.gp-moved.gp-on, .gp-moved-label.gp-on { background: light-dark(rgba(79, 134, 232, 0.12), rgba(91, 143, 240, 0.17)); }
 @keyframes gp-steppulse0 { from { box-shadow: inset 3px 0 0 var(--gp-blue-line), inset 0 0 0 60px light-dark(rgba(79, 134, 232, 0.4), rgba(91, 143, 240, 0.45)); } to { box-shadow: inset 3px 0 0 var(--gp-blue-line), inset 0 0 0 60px light-dark(rgba(79, 134, 232, 0), rgba(91, 143, 240, 0)); } }
 @keyframes gp-steppulse1 { from { box-shadow: inset 3px 0 0 var(--gp-blue-line), inset 0 0 0 60px light-dark(rgba(79, 134, 232, 0.4), rgba(91, 143, 240, 0.45)); } to { box-shadow: inset 3px 0 0 var(--gp-blue-line), inset 0 0 0 60px light-dark(rgba(79, 134, 232, 0), rgba(91, 143, 240, 0)); } }
 .gp-pulse0 { animation: gp-steppulse0 600ms var(--gp-ease-out); }
@@ -754,6 +761,10 @@
 .gp-hdr-act:hover { background: var(--l1); }
 .gp-hdr-act-label { font-family: var(--sans); font-size: 13px; color: var(--t2); }
 .gp-hdr-act .sf-icon { color: var(--t3); }
+/* Back to the board: Tern has no left chevron, so the right one turns around. */
+.gp-back-ico { display: flex; transform: rotate(180deg); }
+.gp-back-ico .sf-icon, .gp-back-ico .ico { width: 12px; height: 12px; color: var(--t3); }
+.gp-back.gp-hdr-act { padding-left: 4px; gap: 5px; }
 /* writing a guide with the reader's AI agent */
 .gp-ai { display: flex; gap: 10px; align-items: center; min-height: 28px; }
 .gp-ai > .gp-btn, .gp-ai-model { flex-shrink: 0; }
@@ -816,6 +827,7 @@
 .gp-desc-md .sf-md { font-family: var(--sans); }
 .gp-desc-md .sf-md code { font-family: var(--tv-font); }
 .gp-sup-folder { margin-top: 6px; }
+.gp-sup-count { font-family: var(--sans); font-size: 13px; color: var(--t3); }
 .gp-sfile.gp-tree-d1 { margin-left: 16px; padding-left: 0; } .gp-sfile.gp-tree-d2 { margin-left: 32px; padding-left: 0; } .gp-sfile.gp-tree-d3 { margin-left: 48px; padding-left: 0; } .gp-sfile.gp-tree-d4 { margin-left: 64px; padding-left: 0; }
 .gp-sfile.gp-tree-d5 { margin-left: 80px; padding-left: 0; } .gp-sfile.gp-tree-d6 { margin-left: 96px; padding-left: 0; } .gp-sfile.gp-tree-d7 { margin-left: 112px; padding-left: 0; } .gp-sfile.gp-tree-d8 { margin-left: 128px; padding-left: 0; }
 /* without a guide: the page scrolls the code; the file tree stays pinned with a scroll of its own */
@@ -1040,6 +1052,11 @@
 /* PR hub: header, tab row, board, cards, menus. See DESIGN.md (Board card, Card actions, Status chip). */
 .sf-layer[data-surface="plugin.prguide.hub"] { z-index: 30; }
 .gp-hub { gap: 0; min-height: calc(100vh - 40px); }
+/* The board fills the pane and its body scrolls on its own, so the page itself never scrolls: Tern sends a page that
+   scrolls past about 1,100px back to its top when a scroll overshoots the bottom. */
+.sf-main[data-surface="plugin.prguide.hub"] > div { height: 100%; }
+.gp-hub-fit { height: 100%; min-height: 0; }
+.gp-hub-fit > .gp-hub-body { flex: 1 1 0; min-height: 0; overflow-y: auto; padding-bottom: 16px; }
 .gp-hub .gp-hintbar { margin-top: 0; }
 .gp-hub-head { gap: 12px; padding: 14px 0 0; border-bottom: none; }
 .gp-hub-top { display: flex; gap: 16px; align-items: center; }
@@ -1063,6 +1080,8 @@
 .gp-hub-ctl-open, .gp-hub-ctl-open:hover { background: var(--l1); border-color: var(--l3); color: var(--t1); }
 .gp-hub-ctl-act, .gp-hub-ctl-act:hover { background: var(--chip-bg); border-color: var(--l2); color: var(--t1); }
 .gp-hub-ctl .sf-icon, .gp-hub-ctl .ico { width: 12px; height: 12px; color: var(--t3); }
+.gp-hub-ctl-icon { padding: 3px 9px 3px 7px; }
+.gp-hub-ctl-icon .sf-icon, .gp-hub-ctl-icon .ico { width: 14px; height: 14px; color: var(--t2); }
 .gp-hub-ctl-label { display: flex; gap: 5px; font-family: var(--sans); }
 .gp-hub-ctl-dim { font-family: var(--sans); color: var(--t3); }
 .gp-hub-ctl-strong { font-family: var(--sans); font-weight: 600; color: var(--t1); }
@@ -1235,7 +1254,7 @@
 .gp-hub-rc-when { width: 64px; flex-shrink: 0; text-align: right; font-size: 12.5px; color: var(--t3); font-variant-numeric: tabular-nums; }
 
 /* the menus and the key panel: Tern overlays holding rows like the model menu's */
-[data-role='gp.hubmenu'] .sf-ov-body, [data-role='gp.hubhelp'] .sf-ov-body { padding: 0; gap: 0; }
+[data-role='gp.hubmenu'] .sf-ov-body, [data-role='gp.hubsettings'] .sf-ov-body, [data-role='gp.hubhelp'] .sf-ov-body { padding: 0; gap: 0; }
 .gp-hm-head { padding: 10px 14px 0; font-family: var(--sans); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--t3); }
 .gp-hm-list { max-height: 360px; }
 .gp-hm-row { font-size: 13px; white-space: nowrap; }
@@ -1244,9 +1263,9 @@
 .gp-hm-box .sf-icon, .gp-hm-box .ico { width: 10px; height: 10px; }
 .gp-hm-tick { flex-shrink: 0; width: 14px; display: flex; color: var(--gp-blue); }
 .gp-hm-tick .sf-icon, .gp-hm-tick .ico { width: 13px; height: 13px; }
-.gp-hm-label { color: var(--t1); }
+.gp-hm-label { flex-shrink: 0; color: var(--t1); }
 .gp-hm-count { font-size: 11.5px; color: var(--t3); font-variant-numeric: tabular-nums; }
-.gp-hm-sub { padding-left: 16px; font-size: 12px; color: var(--t3); }
+.gp-hm-sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; padding-left: 16px; font-size: 12px; color: var(--t3); }
 .gp-hm-clear .gp-hm-label { color: var(--t2); }
 .gp-hm-edit { flex-wrap: nowrap; gap: 10px; }
 .gp-hm-edit > * { flex-shrink: 0; }
@@ -1258,8 +1277,19 @@
 .gp-hh .gp-keylabel { white-space: normal; min-width: 0; }
 .gp-hh-keys { display: flex; flex-direction: column; gap: 3px; flex-shrink: 0; width: 76px; }
 /* menus and the key panel are opaque cards, so the board never shows through; the menus are narrow */
-.sf-overlay[data-role='gp.hubmenu'] .sf-ov-card, .sf-overlay[data-role='gp.hubhelp'] .sf-ov-card { background: var(--card); }
+.sf-overlay[data-role='gp.hubmenu'] .sf-ov-card, .sf-overlay[data-role='gp.hubsettings'] .sf-ov-card, .sf-overlay[data-role='gp.hubhelp'] .sf-ov-card { background: var(--card); }
 .sf-overlay[data-role='gp.hubmenu'], .sf-overlay[data-role='gp.hubmenu'] .sf-ov-card { width: 260px; }
+/* Settings is wider: full model names, every effort level and the links toggle on one line each */
+.sf-overlay[data-role='gp.hubsettings'], .sf-overlay[data-role='gp.hubsettings'] .sf-ov-card { width: 400px; max-width: 100%; }
+.sf-overlay[data-role='gp.hubmenu'] .sf-ov-body, .sf-overlay[data-role='gp.hubsettings'] .sf-ov-body { width: 100%; max-width: none; padding: 0; }
+/* Tern's gradient edge draws at the card's default width, a stray line inside a resized card; its 1px ring stays */
+.sf-overlay[data-role='gp.hubmenu'] .sf-ov-card::after, .sf-overlay[data-role='gp.hubsettings'] .sf-ov-card::after { display: none; }
+.gp-hs-models { padding-top: 4px; }
+.gp-hs-row { display: flex; flex-direction: column; gap: 6px; padding: 8px 14px 12px; border-top: 1px solid var(--l2); }
+.gp-hs-row > * { flex-shrink: 0; }
+.gp-hs-top { display: flex; align-items: center; min-height: 20px; }
+/* the toggles fill the row, each side as wide as its word needs and sharing what is left */
+.gp-hs-segs > .gp-md-seg { flex: 1 1 auto; padding: 4px 6px; text-align: center; }
 /* the key panel is wider than Tern's lg overlay: three columns that wrap to fewer in a narrower pane */
 .sf-overlay[data-role='gp.hubhelp'], .sf-overlay[data-role='gp.hubhelp'] .sf-ov-card { width: 940px; max-width: 100%; }
 
@@ -1333,6 +1363,11 @@
 .gp-fx-stack > * { flex-shrink: 0; }
 .gp-fx-stack > .gp-fx-stack > .gp-card { margin: 0; }
 .gp-fx-where { font-family: var(--tv-font); font-size: 12px; color: var(--t3); }
+/* A failed check's log: the excerpt's frame with no gutter, and its left-out runs as bars that do nothing. */
+.gp-fx-log .gp-code { padding-left: 12px; }
+.gp-fx-log .gp-body { padding: 4px 0; }
+.gp-fx-logskip, .gp-fx-logskip:hover { cursor: default; background: var(--sf-shade); }
+.gp-fx-logskip:hover .gp-gap-gut, .gp-fx-logskip:hover .gp-gap-count { color: var(--t3); }
 .gp-fx-chk { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding: 0 4px; }
 .gp-fx-cname { font-family: var(--tv-font); font-size: 15px; font-weight: 650; }
 .gp-fx-cfail { font-family: var(--sans); font-size: 13px; font-weight: 600; color: var(--gp-danger-text); }

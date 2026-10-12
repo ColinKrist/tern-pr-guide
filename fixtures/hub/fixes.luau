@@ -22,7 +22,7 @@ local function pr(repo: string, number: number, title: string, patch: { [string]
 		checks = { state = "none", passing = 0, failing = 0, pending = 0 },
 		conflicts = false, behind = false,
 		reviews = {
-			decision = "none", latest = {}, mine = nil, requestedMe = false, requested = {},
+			decision = "none", latest = {}, mine = nil, requestedMe = false, requested = {}, teams = {},
 			unresolved = 0, threads = {}, threadsKnown = true, comments = 0,
 		},
 		mergeFailure = nil, pending = nil, tandem = false, addedByMe = false,
@@ -94,6 +94,28 @@ receipts[41] = "  const seen = new Set<string>();"
 receipts[42] = "    const key = receipt.id;"
 receipts[43] = "    if (seen.has(key)) continue;"
 details.check.files = { ["src/session/receipts.ts"] = table.concat(receipts, "\n") .. "\n" }
+
+-- The `noann` case also fails on Buildkite (a commit status linking the build), and the Buildkite log names two of its
+-- changed files; `fixtures/hub/ci-logs.luau` holds both CIs' recorded output.
+table.insert(details.noann.checks, {
+	name = "buildkite/web", workflow = nil, runId = nil, url = "https://buildkite.com/acme/web/builds/429", summary = nil, annotations = {},
+})
+table.insert(details.noann.changedPaths, "src/cart/reprice.ts")
+table.insert(details.noann.changedPaths, "src/cart/reprice.test.ts")
+local reprice, repriceTest = {}, {}
+for n = 1, 70 do reprice[n], repriceTest[n] = "  // line " .. n, "  // line " .. n end
+reprice[55] = "export function reprice(cart: Cart, change: ShippingChange): Cart {"
+reprice[56] = "  const shipping = quoteShipping(cart, change);"
+reprice[57] = "  return { ...cart, shipping, total: totalOf(cart.items, shipping) };"
+reprice[58] = "}"
+repriceTest[40] = "  const next = reprice(cart, { shipping: \"express\" });"
+repriceTest[41] = ""
+repriceTest[42] = "  expect(next.promo).toBe(\"SAVE10\");"
+repriceTest[43] = "});"
+details.noann.files = {
+	["src/cart/reprice.ts"] = table.concat(reprice, "\n") .. "\n",
+	["src/cart/reprice.test.ts"] = table.concat(repriceTest, "\n") .. "\n",
+}
 
 local TREE = "7784ba3f5f2f1938ff54bf80fa4ea308ee329c6c"
 

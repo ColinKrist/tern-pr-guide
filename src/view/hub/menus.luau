@@ -1,6 +1,6 @@
 --!strict
--- The hub's menus (repositories, sort, agent model, a card's other actions) as Tern overlays under their
--- buttons. A menu opened by a key draws without animation: Tern's overlay pops only for the mouse.
+-- The hub's menus (repositories, sort, a card's other actions) and Settings (agent model, effort, where links
+-- open) as Tern overlays under their buttons. A menu opened by a key draws without animation: Tern's overlay pops only for the mouse.
 local Fields = require("../../text-field")
 local Paths = require("./paths")
 local State = require("../../hub/state")
@@ -13,7 +13,7 @@ local M = {}
 local TITLES: { [string]: string } = {
 	repositories = "Filter by repository",
 	sort = "Sort by",
-	agent = "Agent model",
+	settings = "Settings",
 	actions = "More actions",
 	merge = "Merge method",
 }
@@ -21,7 +21,7 @@ local TITLES: { [string]: string } = {
 local function anchorOf(s: State.State): string
 	if s.menu == "repositories" then return Paths.repositoriesButton end
 	if s.menu == "sort" then return Paths.sortButton end
-	if s.menu == "agent" then return Paths.agentButton end
+	if s.menu == "settings" then return Paths.settingsButton end
 	local card = State.selectedCard(s)
 	return if card then Paths.moreButton(card) else Paths.titleLabel
 end
@@ -46,8 +46,10 @@ end
 -- Effort levels of the highlighted model, as one segmented control.
 local function efforts(s: State.State): Node?
 	local levels, current = State.agentEfforts(s)
-	if s.menu ~= "agent" then return nil end
-	if #levels == 0 then return el("div", { class = "gp-md-foot", key = "efforts" }, { span("gp-md-none", "This model has no effort setting") }) end
+	if s.agent == nil then return nil end
+	if #levels == 0 then
+		return el("div", { class = "gp-hs-row", key = "efforts" }, { span("gp-md-label", "Effort"), span("gp-md-none", "This model has no effort setting") })
+	end
 	local segments: { Node } = {}
 	for _, level in levels do
 		table.insert(segments, el("span", {
@@ -55,11 +57,9 @@ local function efforts(s: State.State): Node?
 			key = "e_" .. level, text = level, actions = { click = "hub-menu-effort-set=" .. level },
 		}))
 	end
-	return el("div", { class = "gp-md-foot", key = "efforts" }, {
-		span("gp-md-label", "Effort"),
-		el("div", { class = "gp-md-segs" }, segments),
-		Ui.spacer(),
-		Ui.keys("← →"),
+	return el("div", { class = "gp-hs-row", key = "efforts" }, {
+		el("div", { class = "gp-hs-top", key = "top" }, { span("gp-md-label", "Effort"), Ui.spacer(), Ui.keys("← →") }),
+		el("div", { class = "gp-md-segs gp-hs-segs", key = "segs" }, segments),
 	})
 end
 
@@ -81,21 +81,45 @@ local function mergeFoot(s: State.State): Node?
 	return el("div", { class = "gp-md-foot", key = "source" }, { span("gp-md-label", source) })
 end
 
+-- Where GitHub links open, as a two-sided toggle.
+local function links(s: State.State): Node
+	local function side(to: string, label: string): Node
+		return el("span", { class = "gp-md-seg" .. (if s.links == to then " gp-md-seg-on" else ""), key = to, text = label, actions = { click = "hub-links=" .. to } })
+	end
+	return el("div", { class = "gp-hs-row gp-hs-links", key = "links" }, {
+		el("div", { class = "gp-hs-top", key = "top" }, { span("gp-md-label", "Open links in"), Ui.spacer(), Ui.keys("L") }),
+		el("div", { class = "gp-md-segs gp-hs-segs", key = "segs" }, { side("tern", "Tern"), side("browser", "Default browser") }),
+	})
+end
+
+-- Settings: the agent's models with the highlighted one's efforts, then where links open.
+local function settings(s: State.State, rows: { Node }): { Node }
+	if #rows == 0 then table.insert(rows, span("gp-md-empty", "Couldn't find the agent: no models to choose from.")) end
+	local kids: { Node } = {
+		span("gp-hm-head", "Agent model"),
+		el("div", { class = "gp-md-list gp-hm-list gp-hs-models", key = "list" }, rows),
+	}
+	local effort = efforts(s)
+	if effort then table.insert(kids, effort) end
+	table.insert(kids, links(s))
+	return kids
+end
+
 function M.view(s: State.State): Node
 	local rows: { Node } = {}
 	for index, row in State.menuRows(s) do table.insert(rows, rowNode(s, row, index)) end
-	if #rows == 0 then
-		local empty = if s.menu == "agent" then "Couldn't find the agent: no models to choose from." else "No options."
-		table.insert(rows, span("gp-md-empty", empty))
+	local kids: { Node }
+	if s.menu == "settings" then
+		kids = settings(s, rows)
+	else
+		if #rows == 0 then table.insert(rows, span("gp-md-empty", "No options.")) end
+		kids = { span("gp-hm-head", TITLES[s.menu :: string]), el("div", { class = "gp-md-list gp-hm-list", key = "list" }, rows) }
+		local foot = mergeFoot(s)
+		if foot then table.insert(kids, foot) end
 	end
-	local kids: { Node } = {
-		span("gp-hm-head", TITLES[s.menu :: string]),
-		el("div", { class = "gp-md-list gp-hm-list", key = "list" }, rows),
-	}
-	local foot = efforts(s) or mergeFoot(s)
-	if foot then table.insert(kids, foot) end
 	local body = el("div", { class = "gp-md gp-hm" .. (if s.keyed then "" else " gp-soft"), key = "body" }, kids)
-	return { k = "overlay", p = { key = "menu", role = "gp.hubmenu", aria = TITLES[s.menu :: string], anchor = { node = anchorOf(s), side = "below" }, size = "md" }, c = { body } } :: any
+	local role = if s.menu == "settings" then "gp.hubsettings" else "gp.hubmenu"
+	return { k = "overlay", p = { key = "menu", role = role, aria = TITLES[s.menu :: string], anchor = { node = anchorOf(s), side = "below" }, size = "md" }, c = { body } } :: any
 end
 
 return M

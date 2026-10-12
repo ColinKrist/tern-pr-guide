@@ -1,19 +1,14 @@
-# Measured 2026-10-09 on 42 open PRs: 11 points, 5.8-9.2 s (9 points before timelineItems). Never add thread authors here: 159 points.
-# A PR added by link adds `addedN: repository(owner:, name:) { pullRequest(number:) { ...Hub } }` before the fragment (no change in cost).
-query Hub($n: Int = 50) {
+# One page of one search. src/github.luau runs it for `mine` ($q = "is:pr is:open author:@me archived:false"),
+# `requested` ("is:pr is:open review-requested:@me archived:false") and `reviewed`
+# ("is:pr is:open reviewed-by:@me -author:@me archived:false") at once, renaming the alias, 20 PRs a page up to 50.
+# Measured 2026-10-12: a 20-PR page costs 1 point and 4.5-6.4 s on busy repos (vscode, next.js). The three searches
+# as one query of 50 each cost 11 points and got HTTP 502 after about 11 s, GitHub's execution limit, as did a
+# single search of 50. A dropped page is asked again with $n halved, down to 5. Never add thread authors here: 159 points.
+# The first `mine` page of a refresh adds `addedN: repository(owner:, name:) { pullRequest(number:) { ...Hub } }` per PR added by link, before the fragment.
+query Hub($q: String!, $n: Int!, $after: String) {
   viewer { login }
   rateLimit { cost remaining resetAt limit used nodeCount }
-  mine: search(type: ISSUE, query: "is:pr is:open author:@me archived:false", first: $n) {
-    issueCount
-    pageInfo { hasNextPage endCursor }
-    nodes { ...Hub }
-  }
-  requested: search(type: ISSUE, query: "is:pr is:open review-requested:@me archived:false", first: $n) {
-    issueCount
-    pageInfo { hasNextPage endCursor }
-    nodes { ...Hub }
-  }
-  reviewed: search(type: ISSUE, query: "is:pr is:open reviewed-by:@me -author:@me archived:false", first: $n) {
+  mine: search(type: ISSUE, query: $q, first: $n, after: $after) {
     issueCount
     pageInfo { hasNextPage endCursor }
     nodes { ...Hub }

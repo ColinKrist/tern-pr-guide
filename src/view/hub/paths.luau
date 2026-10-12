@@ -7,8 +7,10 @@ local M = {}
 
 M.ROOT = "main.hub"
 M.searchField = M.ROOT .. ".header.top.search.field"
+-- The board's scrolling body, under the header.
+M.body = M.ROOT .. ".body"
 M.titleLabel = M.ROOT .. ".header.top.title"
-M.agentButton = M.ROOT .. ".header.top.fresh.agent"
+M.settingsButton = M.ROOT .. ".header.top.fresh.settings"
 M.repositoriesButton = M.ROOT .. ".header.tabs.ctls.repos"
 M.sortButton = M.ROOT .. ".header.tabs.ctls.sort"
 -- The add-by-link field, at the top of the To review column.
@@ -23,9 +25,21 @@ function M.columnKey(column: string): string
 	return "col_" .. column
 end
 
--- The card's node: in its column, or in the Inactive fold.
+-- The key of a fold's node under the board: "fold" for Inactive, else its name ("team", "approved", "recent").
+function M.foldKey(column: string): string
+	return if column == "inactive" then "fold" else column
+end
+
+-- A fold's header, which the block scrolls to the top when the fold opens.
+function M.foldHead(column: string): string
+	return M.ROOT .. ".body." .. M.foldKey(column) .. ".head"
+end
+
+-- The card's node: in its column, or in its fold.
 function M.card(card: State.Card): string
-	if card.column == "inactive" then return M.ROOT .. ".body.fold.rows." .. M.cardKey(card.pr.key) end
+	if State.isFold(card.column) then
+		return M.ROOT .. ".body." .. M.foldKey(card.column) .. ".rows." .. M.cardKey(card.pr.key)
+	end
 	return M.ROOT .. ".body.board." .. M.columnKey(card.column) .. "." .. M.cardKey(card.pr.key)
 end
 

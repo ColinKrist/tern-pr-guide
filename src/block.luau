@@ -57,6 +57,14 @@ local function frameLater(cx: BlockCx, ops: { any })
  end)
 end
 
+-- Opens a GitHub link where the PR hub's Settings say: Tern's browser, or the system's default browser.
+local function openLink(cx: BlockCx, url: string)
+ if Fetch.linkTarget() == "tern" then return cx:open(url) end
+ Fetch.openInBrowser(url, function(err)
+  if err then pcall(function() cx:toast("error", "Couldn't open the link: " .. err, url) end) end
+ end)
+end
+
 -- Moves straight to `path`, so a clicked jump reads as intended flashing the ring of block `ring`
 -- or pulsing the lines of the step `step`. Tern's reveal cannot animate and a glide faked from
 -- line scrolls stuttered.
@@ -307,7 +315,7 @@ local ACTIONS: { [string]: Handler } = {
   if s.helpOpen then toggleHelp(s, cx) end
  end,
  ["scroll"] = function(_, cx, how) cx:frame({ { "scroll", "main", how } }) end,
- ["open-github"] = function(s, cx) cx:open(s.review.pr.url) end,
+ ["open-github"] = function(s, cx) openLink(cx, s.review.pr.url) end,
  ["view"] = function(s, cx, to) switchView(s, cx, to :: State.ViewId) end,
  ["toggle-view"] = function(s, cx) switchView(s, cx, if s.view == "guided" then "files" else "guided") end,
 
@@ -435,7 +443,7 @@ local ACTIONS: { [string]: Handler } = {
  ["submit-review"] = submit,
  ["open-posted"] = function(s, cx)
   local posted = s.review.posted
-  if posted and posted.delivery.kind == "posted" then cx:open(posted.delivery.url) end
+  if posted and posted.delivery.kind == "posted" then openLink(cx, posted.delivery.url) end
  end,
 }
 
@@ -498,7 +506,7 @@ end
 -- walkthrough.
 local function showPr(b: Block, pr: Pr.PR)
  if #pr.files == 0 then
-  b.notice = Notice.failed(b.name, "This PR has no file changes to show (lockfiles and generated files are left out).")
+  b.notice = Notice.failed(b.name, "This PR has no file changes to show (lockfiles are left out).")
   return
  end
  local path = b.opts.guide

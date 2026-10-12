@@ -183,7 +183,8 @@ local function fetchRefs(job: Job, meta: Meta, ok: (head: string, mergeBase: str
  end)
 end
 
--- The changes worth reviewing: every changed file but lockfiles and ones marked linguist-generated.
+-- The changes worth reviewing: every changed file but lockfiles. Ones marked linguist-generated stay,
+-- marked `generated`: the page sets them apart and the guide agent never reads them.
 local function listChanges(job: Job, mergeBase: string, head: string, ok: (changes: { GitOutput.Change }) -> ())
  git(job, "git diff --name-status", { "diff", "--name-status", "-z", "--find-renames", mergeBase, head }, nil, function(stdout)
   local changes = {}
@@ -196,11 +197,10 @@ local function listChanges(job: Job, mergeBase: string, head: string, ok: (chang
   local stdin = table.concat(paths, "\0") .. "\0"
   git(job, "git check-attr", { "check-attr", "--source=" .. head, "-z", "--stdin", "linguist-generated" }, stdin, function(attrs)
    local generated = GitOutput.generated(attrs)
-   local kept = {}
    for _, change in changes do
-    if not generated[change.path] then table.insert(kept, change) end
+    if generated[change.path] then change.generated = true end
    end
-   ok(kept)
+   ok(changes)
   end)
  end)
 end
@@ -709,6 +709,28 @@ function M.prepareLensFolder(): (string?, string?)
  return nil, Text.errorLine(err)
 end
 
+-- Where GitHub links open: "tern", Tern's own browser, or "browser", the system's default browser.
+local LINKS_KEY = "links"
+
+function M.linkTarget(): "tern" | "browser"
+ local ok, saved = pcall(function() return tern.kv.get(LINKS_KEY) end)
+ return if ok and saved == "browser" then "browser" else "tern"
+end
+
+function M.saveLinkTarget(target: "tern" | "browser")
+ pcall(tern.kv.set, LINKS_KEY, target)
+end
+
+-- Opens `url` in the system's default browser; `done` gets why it couldn't, else nil.
+-- ponytail: macOS `open` and Linux `xdg-open` only; Windows needs its own opener.
+function M.openInBrowser(url: string, done: (err: string?) -> ())
+ local opener = if tern.runtime.os == "linux" then "xdg-open" else "open"
+ M.runner({ opener, url }, { timeout_ms = 15_000 }, function(out)
+  if out.status == 0 and not out.timed_out then return done(nil) end
+  done(if out.timed_out then "the browser didn't answer" else Text.errorLine(if out.stderr ~= "" then out.stderr else "the browser didn't open"))
+ end)
+end
+
 -- How long the last finished run took, which the next run's progress is estimated from; three
 -- minutes before there is one.
 local RUN_SECONDS_KEY, DEFAULT_RUN_SECONDS = "runSeconds", 180
@@ -794,9 +816,9 @@ function M.generateGuide(agent: Agent.Agent, repo: Repo, pr: Pr.PR, done: (Guide
  end)
 end
 
--- `Github.Runner` over `tern.process.run`: `argv[1]` is found on the shell's PATH like `run` does,
+-- `Github.Runner` (and `Log.Run`) over `tern.process.run`: `argv[1]` is found on the shell's PATH like `run` does,
 -- and the result is always handed back, a failed spawn as status -1.
-function M.runner(argv: { string }, opts: { cwd: string?, stdin: string?, timeout_ms: number? }, done: (out: Github.Out) -> ())
+function M.runner(argv: { string }, opts: { cwd: string?, stdin: string?, timeout_ms: number?, env: { [string]: string }? }, done: (out: Github.Out) -> ())
  local called = false
  local function settle(out: Github.Out)
   if called then return end
@@ -806,7 +828,9 @@ function M.runner(argv: { string }, opts: { cwd: string?, stdin: string?, timeou
  withShellPath(function(path)
   local resolved = table.clone(argv)
   resolved[1] = located(argv[1], path)
-  local spawned, err = pcall(tern.process.run, resolved, { cwd = opts.cwd, stdin = opts.stdin, timeout_ms = opts.timeout_ms, env = { PATH = path } }, function(result: ProcessResult)
+  local env = if opts.env then table.clone(opts.env) else {}
+  env.PATH = path
+  local spawned, err = pcall(tern.process.run, resolved, { cwd = opts.cwd, stdin = opts.stdin, timeout_ms = opts.timeout_ms, env = env }, function(result: ProcessResult)
    settle({ status = result.status, stdout = result.stdout, stderr = result.stderr, timed_out = result.timed_out })
   end)
   if not spawned then settle({ status = -1, stdout = "", stderr = Text.errorLine(err), timed_out = false }) end

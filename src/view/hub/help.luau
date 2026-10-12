@@ -15,6 +15,8 @@ local GROUPS: { Group } = {
 		{ ".", "Next pull request that needs you" },
 		{ "T", "Switch tab" },
 		{ "I", "Show or hide Inactive" },
+		{ "⇧T", "Show or hide Team requests" },
+		{ "A", "Show or hide Approved, on Review requests" },
 		{ "R", "Show or hide Recently opened" },
 	} },
 	{ title = "The selected card", keys = {
@@ -46,7 +48,7 @@ local GROUPS: { Group } = {
 		{ "N", "Add a pull request by link" },
 		{ "F", "Filter by repository" },
 		{ "S", "Sort" },
-		{ "⇧M", "Agent model" },
+		{ "⇧S", "Settings: agent model, effort and where links open (also ⇧M)" },
 		{ "⌘R", "Refresh" },
 		{ "j k", "Move in a menu" },
 		{ "Space", "Select a card to merge or close, or choose in a menu" },

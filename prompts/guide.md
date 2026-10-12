@@ -48,9 +48,11 @@ there. Format:
 - `lens`: the review lens you were asked to use; keep it exactly as written above.
 - `overview`: a TL;DR in 2-4 plain sentences for someone who doesn't know the project: what the PR
   does and why, at a high level. Everyday words; skip internal names unless unavoidable.
-- `changes`: in reading order, each with a short `title` and a one-sentence `why`. Size them to the
-  PR, never pad: a PR that changes a handful of lines is 1 change with 1-2 steps; a typical PR is
-  2-3 changes and 3-8 steps; only a big PR needs 4 changes and up to about 12 steps.
+- `changes`: in reading order, each with a short `title` and a one-sentence `why`. Keep each change
+  bite-sized, 1-3 steps: when a change needs more, split it into two changes the reader can take one
+  at a time. Size them to the PR, never pad: a PR that changes a handful of lines is 1 change with
+  1-2 steps; a typical PR is 2-4 changes and 3-8 steps; only a big PR needs up to 6 changes and
+  about 12 steps.
 - Each step points at changed lines, because the page shows those lines highlighted. It has a
   `file`, an inclusive line range `from`..`to`, a short `title` and a one-sentence `note`; `code`
   spans are fine. Keep the range tight: the lines the step is about, not the whole function or
@@ -66,7 +68,7 @@ there. Format:
     can walk through the changes in a file one after another; don't repeat a step for lines
     already covered.
   - Order steps the way the code runs. Leave tests and docs out of steps; the page lists them under
-    "Supporting changes".
+    "Supporting changes" and "Tests".
 - `flow` (optional): a before/after diagram of one run through the code, with each point of the
   run drawn as a column: the code before the PR above the code after it. Leave it `null` unless the PR
   changes how something moves through 3 or more changes or files; skip it for a fix inside one
