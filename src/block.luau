@@ -381,10 +381,16 @@ local ACTIONS: { [string]: Handler } = {
    s.models = nil
    return
   end
-  if not run or run.running then return end
+  if not run or Agent.busy(run) then return end
   Fetch.refreshLenses(run.agent)
-  State.openModels(s, run.agent)
+  State.openModels(s, run.agent, "explain")
   frameLater(cx, { { "focus", Page.modelFieldPath } })
+ end,
+ -- The Explanation | Review switch: the other slot's list, from its top, with the filter cleared.
+ ["models-slot"] = function(s, _, slot)
+  local box = s.models :: State.ModelBox
+  if slot == box.slot or (slot ~= "explain" and slot ~= "review") then return end
+  State.openModels(s, (s.ai :: Agent.Run).agent, slot :: Agent.Pass)
  end,
  ["models-filter"] = function(s)
   local box = s.models :: State.ModelBox
@@ -413,14 +419,16 @@ local ACTIONS: { [string]: Handler } = {
   if State.chooseModel(box, agent) then AgentHost.saveChoice(agent) end
  end,
  -- A lens applies at once and leaves the dropdown open, like an effort click.
+ -- The lens shows only on the Review slot with the review on, and acts only there.
  ["models-lens"] = function(s, _, delta)
   local agent = (s.ai :: Agent.Run).agent
+  if not State.showsLens(s.models :: State.ModelBox, agent) then return end
   State.stepLens(agent, tonumber(delta) :: number)
   AgentHost.saveChoice(agent)
  end,
  ["model-lens"] = function(s, _, n)
   local agent = (s.ai :: Agent.Run).agent
-  if State.chooseLens(agent, tonumber(n) :: number) then AgentHost.saveChoice(agent) end
+  if State.showsLens(s.models :: State.ModelBox, agent) and State.chooseLens(agent, tonumber(n) :: number) then AgentHost.saveChoice(agent) end
  end,
  ["edit-lenses"] = function(s, cx)
   local folder, err = Fetch.prepareLensFolder()
@@ -484,9 +492,10 @@ local function nameOf(pr: string?): string
  return if number then "#" .. number else pr
 end
 
--- Offers the reader's agent while the page shows the default walkthrough.
+-- Offers the reader's agent while the page shows the default walkthrough, and shows its review
+-- still going over a guide that arrived first.
 local function offerAgent(b: Block)
- if b.page then b.page.ai = if b.guided then nil else b.ai end
+ if b.page then b.page.ai = if not b.guided or (b.ai and b.ai.reviewing) then b.ai else nil end
 end
 
 -- Keeps the view the reader is in, so the block's next PR with a guide opens in it.
@@ -505,12 +514,23 @@ local function showGuide(b: Block, pr: Pr.PR, guide: Guide.Guide, guided: boolea
  offerAgent(b)
 end
 
+-- The checkout's review file for `pr`, when there is one: nil and why when it can't be used.
+local function reviewFile(b: Block, pr: Pr.PR): (Guide.Draft?, string?)
+ local repo = b.repo
+ if b.opts.guide or not repo then return nil, nil end
+ local path = Fetch.reviewPath(repo, pr.number)
+ if not Host.fs.exists(path) then return nil, nil end
+ local draft, problem = Guide.readDraft(path, pr)
+ if draft then return draft, nil end
+ return nil, "Couldn't use the review comments in " .. path .. ": " .. (problem :: string)
+end
+
 -- Shows `pr` with the guide the options name, else the checkout's guide for it, else the default
--- walkthrough.
-local function showPr(b: Block, pr: Pr.PR)
+-- walkthrough, with the checkout's review file on top. Returns why a review file was left out.
+local function showPr(b: Block, pr: Pr.PR): string?
  if #pr.files == 0 then
   b.notice = Notice.failed(b.name, "This PR has no file changes to show (lockfiles are left out).")
-  return
+  return nil
  end
  local path = b.opts.guide
  if not path and b.repo and Host.fs.exists(Fetch.guidePath(b.repo, pr.number)) then path = Fetch.guidePath(b.repo, pr.number) end
@@ -518,41 +538,70 @@ local function showPr(b: Block, pr: Pr.PR)
  if path then guide, problem = Guide.read(path, pr) end
  if not guide then
   b.notice = Notice.failed(b.name, "Couldn't use the guide " .. (path :: string) .. ": " .. (problem :: string))
-  return
+  return nil
  end
- showGuide(b, pr, guide, path ~= nil)
+ local draft, unusable = reviewFile(b, pr)
+ showGuide(b, pr, if draft then Guide.withDraft(guide, draft) else guide, path ~= nil)
+ return unusable
 end
 
--- Has the reader's agent write a guide for the page's PR, counting the seconds it takes, then
--- shows the PR with it, keeping the reader's own comments. One run at a time, and only while the
--- page has no guide, as the button is.
+-- Has the reader's agent explain the page's PR and, side by side, draft review comments, counting
+-- the seconds they take. The explanation replaces the default walkthrough, keeping what the reader
+-- wrote; the review lands on whichever page is shown once the explanation has settled, or waits in
+-- its file for the explanation to pick it up. One run at a time, and only while the page has no
+-- guide, as the button is.
 local function generate(b: Block, cx: BlockCx)
  local run, s, repo = b.ai, b.page, b.repo
- if not run or run.running or not s or not repo or b.guided then return end
- local pr, own = s.review.pr, s.review.own
+ if not run or Agent.busy(run) or not s or not repo or b.guided then return end
+ local pr = s.review.pr
  local started = Host.now()
  local ticker: TimerHandle
  local function tick()
   run.seconds = math.floor((Host.now() - started) / 1000)
   cx:render()
-  ticker = Host.timer(1000, tick)
+  if Agent.busy(run) then ticker = Host.timer(1000, tick) end
  end
- run.running, run.seconds, run.expected, run.error = true, 0, Fetch.expectedRunSeconds(), nil
+ local function settled()
+  if not Agent.busy(run) then ticker:cancel() end
+  offerAgent(b)
+  cx:render()
+ end
+ Agent.start(run, { explain = Fetch.expectedSeconds("explain"), review = Fetch.expectedSeconds("review") })
  ticker = Host.timer(1000, tick)
- AgentHost.generateGuide(run.agent, repo, pr, function(guide, err)
-  ticker:cancel()
-  run.running, run.error = false, err
+ -- With the review off, a review file left by an earlier run isn't this run's.
+ local reviewed = run.reviewing
+ AgentHost.explain(run.agent, repo, pr, function(guide, err)
+  run.explaining, run.error = false, err
+  local landed = if reviewed and not run.reviewing then reviewFile(b, pr) else nil
   if guide then
-   Fetch.saveRunSeconds(run.seconds)
+   Fetch.saveSeconds("explain", run.seconds)
+   local before = b.page :: State
    b.view = nil
-   showGuide(b, pr, guide, true)
+   showGuide(b, pr, if landed then Guide.withDraft(guide, landed) else guide, true)
    local page = b.page :: State
-   page.review.own = own
+   State.carryOver(before, page)
    page.arrival = "guide"
    cx:toast("success", "AI guided review ready")
+  elseif landed and b.page then
+   State.mergeDraft(b.page, landed)
   end
-  cx:render()
+  settled()
  end)
+ if run.reviewing then
+  AgentHost.draftReview(run.agent, repo, pr, function(draft, err)
+   run.reviewing = false
+   if draft then
+    Fetch.saveSeconds("review", run.seconds)
+    if not run.explaining and b.page then
+     State.mergeDraft(b.page, draft)
+     cx:toast("success", if #draft.comments == 1 then "1 review comment drafted" else #draft.comments .. " review comments drafted")
+    end
+   else
+    cx:toast("error", "Couldn't draft review comments: " .. (err :: string))
+   end
+   settled()
+  end)
+ end
 end
 
 -- With `generate=true`, starts the run as soon as the PR's page and the agent are both ready: the
@@ -580,7 +629,8 @@ local function loadPr(b: Block, cx: BlockCx, pr: string)
  end, function(loaded, err)
   if loaded then
    Fetch.rememberPr(loaded)
-   showPr(b, loaded)
+   local unusable = showPr(b, loaded)
+   if unusable then cx:toast("error", unusable) end
   else
    b.notice = Notice.failed(b.name, err :: string)
   end
@@ -650,7 +700,7 @@ local block: BlockDef<Block> = {
      autoGenerate(b, cx)
      return
     end
-    b.ai = { agent = agent, running = false, seconds = 0, expected = 0, error = nil }
+    b.ai = Agent.idle(agent)
     offerAgent(b)
     autoGenerate(b, cx)
     cx:render()

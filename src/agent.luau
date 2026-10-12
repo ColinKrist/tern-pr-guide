@@ -1,6 +1,7 @@
 --!strict
--- The reader's own AI agent (OMP) writing a guide: the model and effort it reviews with, the models
--- it can pick from, and the files a run reads. src/agent-host.luau finds the agent and runs it.
+-- The reader's own AI agent (OMP) writing a guide in two passes that run side by side: a fast
+-- explanation of the PR, and a review that drafts comments. Holds the model and effort of each, the
+-- models there are to pick from, and the files a run reads. src/agent-host.luau finds the agent and runs it.
 local Lens = require("./lens")
 local Pr = require("./pr")
 
@@ -8,14 +9,27 @@ local Pr = require("./pr")
 -- `--thinking` takes for it (none when it can't think).
 export type Model = { selector: string, name: string, efforts: { string } }
 
--- `omp` as the login shell finds it, that shell's PATH (`omp` runs on an interpreter found there),
--- the model and effort a run uses, the models there are to choose from (empty until listed), the
--- lenses there are to review through and the name of the one a run uses.
-export type Agent = { command: string, path: string, model: string, effort: string?, models: { Model }, lenses: { Lens.Lens }, lens: string }
+-- The two passes of a run: the explanation writes the walkthrough, the review the comments.
+export type Pass = "explain" | "review"
 
--- Writing a guide for the page's PR: whether a run is going, the seconds it has taken so far, how
--- long a run is expected to take, and the first line of why the last run failed.
-export type Run = { agent: Agent, running: boolean, seconds: number, expected: number, error: string? }
+-- A model as `--model` takes it, and the effort `--thinking` gets (none for a model that can't think).
+export type Choice = { model: string, effort: string? }
+
+-- `omp` as the login shell finds it, that shell's PATH (`omp` runs on an interpreter found there),
+-- the review model and effort (agent fixes and the feedback summary run with them too), the
+-- explanation's, whether a run reviews at all, the models there are to choose from (empty until
+-- listed), the lenses there are to review through and the name of the one a review uses.
+export type Agent = {
+ command: string, path: string, model: string, effort: string?, explain: Choice, review: boolean,
+ models: { Model }, lenses: { Lens.Lens }, lens: string,
+}
+
+-- What the reader picked, as kept between starts: `Agent` without what is found or listed.
+export type Picks = { model: string, effort: string?, explain: Choice, review: boolean, lens: string }
+
+-- Writing a guide for the page's PR: which passes are going, the seconds since the run started,
+-- how long each pass is expected to take, and the first line of why the explanation last failed.
+export type Run = { agent: Agent, explaining: boolean, reviewing: boolean, seconds: number, expected: { [Pass]: number }, error: string? }
 
 local MARKS = { ctx = " ", add = "+", del = "-" }
 
@@ -43,18 +57,62 @@ function M.parseChoice(raw: string): (string, string?)
  return raw, nil
 end
 
-function M.new(command: string, path: string, model: string, effort: string?, lens: string): Agent
- return { command = command, path = path, model = model, effort = effort, models = {}, lenses = {}, lens = lens }
+-- The picks kept under the "model" key, `saved`, over OMP's own review model `fallback`: the review
+-- model, the explanation's (the review model until the reader picks one), the review on unless
+-- turned off, and the lens. Nil when there is no model at all.
+function M.picks(saved: any, fallback: Choice?): Picks?
+ local kept = if type(saved) == "table" then saved else {}
+ local review: Choice? = if type(kept.model) == "string"
+  then { model = kept.model, effort = if type(kept.effort) == "string" then kept.effort else nil }
+  else fallback
+ if not review then return nil end
+ local explain: Choice = if type(kept.explainModel) == "string"
+  then { model = kept.explainModel, effort = if type(kept.explainEffort) == "string" then kept.explainEffort else nil }
+  else table.clone(review)
+ return {
+  model = review.model, effort = review.effort, explain = explain, review = kept.review ~= false,
+  lens = if type(kept.lens) == "string" then kept.lens else Lens.DEFAULT,
+ }
 end
 
--- The model without its provider, as the page names it.
-function M.name(agent: Agent): string
- return string.match(agent.model, "[^/]+$") or agent.model
+-- What `M.picks` reads back.
+function M.saved(agent: Agent): { [string]: any }
+ return {
+  model = agent.model, effort = agent.effort, explainModel = agent.explain.model, explainEffort = agent.explain.effort,
+  review = agent.review, lens = agent.lens,
+ }
 end
 
--- The model and effort, as the model button shows them.
-function M.label(agent: Agent): string
- return M.name(agent) .. (if agent.effort then " · " .. agent.effort else "")
+function M.new(command: string, path: string, picks: Picks): Agent
+ return {
+  command = command, path = path, model = picks.model, effort = picks.effort, explain = picks.explain, review = picks.review,
+  models = {}, lenses = {}, lens = picks.lens,
+ }
+end
+
+-- The model and effort `pass` runs with.
+function M.choiceFor(agent: Agent, pass: Pass): Choice
+ return if pass == "review" then { model = agent.model, effort = agent.effort } else agent.explain
+end
+
+-- A model selector without its provider, as the page names it.
+function M.shortName(model: string): string
+ return string.match(model, "[^/]+$") or model
+end
+
+-- A run with no pass going.
+function M.idle(agent: Agent): Run
+ return { agent = agent, explaining = false, reviewing = false, seconds = 0, expected = { explain = 0, review = 0 }, error = nil }
+end
+
+-- Starts both passes of `run`, or only the explanation when the reader turned the review off.
+function M.start(run: Run, expected: { [Pass]: number })
+ run.explaining, run.reviewing, run.seconds, run.expected, run.error = true, run.agent.review, 0, expected, nil
+end
+
+-- Whether either pass is still going.
+function M.busy(run: Run): boolean
+ return run.explaining or run.reviewing
 end
 
 -- The lens a run reviews through.
@@ -102,12 +160,13 @@ function M.effortFor(model: Model, wanted: string?): string?
  return model.efforts[#model.efforts]
 end
 
--- The `omp` command that has `agent` follow the prompt at `promptPath`.
-function M.argv(agent: Agent, promptPath: string): { string }
- local argv = { agent.command, "-p", "--model", agent.model }
- if agent.effort then
+-- The `omp` command that has `agent` follow the prompt at `promptPath` with `pass`'s model.
+function M.argv(agent: Agent, pass: Pass, promptPath: string): { string }
+ local choice = M.choiceFor(agent, pass)
+ local argv = { agent.command, "-p", "--model", choice.model }
+ if choice.effort then
   table.insert(argv, "--thinking")
-  table.insert(argv, agent.effort)
+  table.insert(argv, choice.effort)
  end
  table.insert(argv, M.request(promptPath))
  return argv
@@ -188,12 +247,12 @@ function M.prompt(template: string, values: { [string]: string }): string
  end))
 end
 
--- The prompt section that has the agent review through `lens`: nothing for a lens without
+-- The prompt section that has the review go through `lens`: nothing for a lens without
 -- instructions, so a plain review reads as it always did.
 function M.focus(lens: Lens.Lens): string
  if lens.instructions == "" then return "" end
  return "## Review lens: " .. lens.name .. "\n\n"
-  .. "The reader chose this lens. It changes what you look for and how you word things, never the "
+  .. "The reader chose this lens. It changes what you look for and how you word comments, never the "
   .. "format you write below, which stays exactly the same.\n\n"
   .. lens.instructions .. "\n\n"
 end

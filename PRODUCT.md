@@ -25,7 +25,7 @@ Success means all four of these hold:
 
 ## Positioning
 
-The PR is read as a story, not a wall of files. The overview comes first, then a few changes, each with small steps the reader ticks off, with code and its exact lines highlighted beside each step. Diffs are built locally with git, so GitHub's diff size cap doesn't apply. The page draws only the code near the reader, so an 85-file PR and a 5,600-line file stay fast. The AI reviewer runs on the user's own OMP agent and model, and a lens steers it (Balanced, Security, Architecture, Quick skim, Teaching, or user-written).
+The PR is read as a story, not a wall of files. The overview comes first, then a few changes, each with small steps the reader ticks off, with code and its exact lines highlighted beside each step. Diffs are built locally with git, so GitHub's diff size cap doesn't apply. The page draws only the code near the reader, so an 85-file PR and a 5,600-line file stay fast. The AI runs on the user's own OMP agent in two passes started together: a fast model explains the PR, so the walkthrough shows early, and a stronger one drafts the review comments, which a lens steers (Balanced, Security, Architecture, Quick skim, or user-written).
 
 ## Operating Context
 
@@ -40,7 +40,7 @@ The PR is read as a story, not a wall of files. The overview comes first, then a
 - **AI is optional at runtime.** Without `omp` or a model there is no Generate button, and everything else works.
 - **Follows GitHub's rules.** Comments go only on changed lines, and a comment range stays within one block of changes. The review is Comment, Approve or Request changes, posted as a single review. Nothing is posted if the PR got new commits while the reader was on the page.
 - **Rendering limits (Tern).** Layout is flex only. Pinned elements use `position: sticky`. Plugins get no scroll events. Every color is a `light-dark()` pair. There's no SVG, so icons are text glyphs or the host's named icons. The page draws about 600 lines of code at once at most.
-- **Code layout.** Only `src/fetch.luau` touches the outside world. `src/block.luau` owns window effects. Views in `src/view/` turn state into nodes. All styling lives in `guide.css` with `gp-` classes. `GUIDE.md`, `prompts/guide.md` and `src/guide.luau` change together.
+- **Code layout.** Only `src/fetch.luau` touches the outside world. `src/block.luau` owns window effects. Views in `src/view/` turn state into nodes. All styling lives in `guide.css` with `gp-` classes. `GUIDE.md`, `prompts/explain.md`, `prompts/review.md` and `src/guide.luau` change together.
 - **Terminology:** review, guided review, change, step, supporting changes, suggestion (an AI-suggested comment), lens, Guided | Files, mark reviewed, dry run.
 
 ## Brand Commitments

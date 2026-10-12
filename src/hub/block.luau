@@ -136,12 +136,13 @@ local function closeMenu(b: Block)
 	State.closeMenu(b.s)
 end
 
--- Remembers the agent choice for guides and the hub after the agent menu picked one.
+-- Remembers the agent menu's pick as the review model, which agent fixes and summaries run with too.
+-- The explanation model, review switch and lens stay as saved.
 local function keepAgentChoice(b: Block)
 	local choice, agent = b.s.agent, b.agent
 	if choice and agent then
 		agent.model, agent.effort = choice.model, choice.effort
-		AgentHost.saveChoice(agent)
+		AgentHost.saveReviewModel(choice.model, choice.effort)
 	end
 end
 

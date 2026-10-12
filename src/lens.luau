@@ -1,5 +1,5 @@
 --!strict
--- Review lenses: what the AI reviewer pays attention to. A lens is a markdown file: the first
+-- Review lenses: what the AI reviewer's comments pay attention to. A lens is a markdown file: the first
 -- `# Heading` names it, the paragraph after that describes it in a line, and the rest is what the
 -- reviewer is told. src/fetch.luau reads the files; this module only turns their text into lenses.
 
@@ -10,7 +10,7 @@ local M = {}
 -- The lens a reader starts on, and the one that stands in when a lens can't be found.
 M.DEFAULT = "Balanced"
 
-local FALLBACK: Lens = { name = M.DEFAULT, description = "A clear walkthrough of the whole PR.", instructions = "" }
+local FALLBACK: Lens = { name = M.DEFAULT, description = "The comments worth making on the whole PR.", instructions = "" }
 
 local function lines(text: string): { string }
  local out = {}

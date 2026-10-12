@@ -45,12 +45,8 @@ local function viewSwitch(s: State.State): Node
  return el("span", { class = "gp-vs", key = "views" }, { tabs :: any, Ui.keys("t") })
 end
 
--- What the generating row says it is doing, one after another while the agent works.
-local PHRASES = {
- "Reading the diff", "Following the changes", "Untangling the why", "Sketching the walkthrough",
- "Picking a reading order", "Looking for trouble", "Drafting comments", "Polishing the notes",
-}
-local PHRASE_SECONDS = 7
+-- What each pass's row says it is doing.
+local EXPLAINING, REVIEWING = "Explaining the changes…", "Reviewing for issues…"
 
 -- Steps the bar fill is drawn in; Tern nodes take no inline style, so each step is a class.
 local BAR_STEPS = 50
@@ -67,49 +63,78 @@ local function writing(text: string): { Node }
  return letters
 end
 
--- The run going: a turning spark, the phrase being written in (keyed by phrase, so only a new
--- one animates across the once-a-second redraw) over the one leaving, an estimated progress bar,
--- and the clock.
-local function busyRow(run: Agent.Run): Node
- local clock = string.format("%d:%02d", math.floor(run.seconds / 60), run.seconds % 60)
- local turn = math.floor(run.seconds / PHRASE_SECONDS)
- local n = turn % #PHRASES + 1
- local phrases = { el("span", { class = "gp-ai-phrase", key = "p" .. n }, writing(PHRASES[n])) }
- if turn > 0 and run.seconds % PHRASE_SECONDS == 0 then
-  local leaving = (turn - 1) % #PHRASES + 1
-  table.insert(phrases, 1, el("span", { class = "gp-ai-phrase gp-ai-phrase-out", key = "o" .. leaving, text = PHRASES[leaving] }))
- end
- local step = math.floor(Agent.progress(run.seconds, run.expected) * BAR_STEPS + 0.5)
+local function clock(run: Agent.Run): string
+ return string.format("%d:%02d", math.floor(run.seconds / 60), run.seconds % 60)
+end
+
+local function bar(run: Agent.Run, pass: Agent.Pass, shine: boolean): Node
+ local step = math.floor(Agent.progress(run.seconds, run.expected[pass]) * BAR_STEPS + 0.5)
+ local kids = { el("span", { class = "gp-ai-fill gp-pg" .. step, key = "fill" }) }
+ if shine then table.insert(kids, el("span", { class = "gp-ai-shine", key = "shine" })) end
+ return el("span", { class = "gp-ai-bar", key = "bar" }, kids)
+end
+
+-- The explanation going, with nothing to read yet: a turning spark, the phrase written in once,
+-- an estimated progress bar, and the clock.
+local function explainingRow(run: Agent.Run): Node
  return el("div", { class = "gp-ai gp-ai-busy", key = "ai" }, {
   el("span", { class = "gp-ai-spark", key = "spark" }, { Ui.icon("sparkle") }),
-  el("span", { class = "gp-ai-phrases", key = "phrases" }, phrases),
-  el("span", { class = "gp-ai-bar", key = "bar" }, {
-   el("span", { class = "gp-ai-fill gp-pg" .. step, key = "fill" }),
-   el("span", { class = "gp-ai-shine", key = "shine" }),
-  }),
-  el("span", { class = "gp-ai-meta", key = "meta", text = clock }),
+  el("span", { class = "gp-ai-phrase", key = "phrase" }, writing(EXPLAINING)),
+  bar(run, "explain", true),
+  el("span", { class = "gp-ai-meta", key = "meta", text = clock(run) }),
  })
 end
 
--- A row offering the reader's AI agent to write a guide, with the lens, model and effort it will use
--- (a button opening the model overlay, which Page.layer draws under it) and why the last run failed,
--- or the run going.
+-- The review still going under a page the reader can already read: one still, muted line, and why
+-- the explanation failed when it did.
+local function reviewingRow(run: Agent.Run): Node
+ local kids = {
+  el("span", { class = "gp-ai-quiet-icon", key = "spark" }, { Ui.icon("sparkle") }),
+  span("gp-ai-quiet-text", REVIEWING),
+  bar(run, "review", false),
+  el("span", { class = "gp-ai-meta", key = "meta", text = clock(run) }),
+ }
+ if run.error then table.insert(kids, span("gp-ai-error", "Couldn't explain the changes: " .. run.error)) end
+ return el("div", { class = "gp-ai gp-ai-quiet", key = "ai" }, kids)
+end
+
+-- A pass, its model and its effort, the pass and effort muted.
+local function modelLabel(pass: string, choice: Agent.Choice, key: string): Node
+ local kids = { span("gp-ai-model-role", pass), span("gp-ai-model-name", Agent.shortName(choice.model)) }
+ if choice.effort then table.insert(kids, span("gp-ai-model-effort", choice.effort)) end
+ return el("span", { class = "gp-ai-model-pass", key = key }, kids)
+end
+
+-- What a run will use, left to right as the menu lists it: the explanation's model, then the
+-- review's and its lens, or that there is no review.
+local function modelButton(agent: Agent.Agent, open: boolean): Node
+ local kids: { Node } = { modelLabel("Explain", agent.explain, "explain"), span("gp-ai-model-sep", "·") }
+ if agent.review then
+  table.insert(kids, modelLabel("Review", Agent.choiceFor(agent, "review"), "review"))
+  table.insert(kids, span("gp-ai-model-sep", "·"))
+  table.insert(kids, span("gp-ai-model-lens", Agent.currentLens(agent).name))
+ else
+  table.insert(kids, span("gp-ai-model-name", "No review"))
+ end
+ table.insert(kids, Ui.icon("chev"))
+ table.insert(kids, Ui.keys("⇧M"))
+ return el("span", { class = "gp-ai-model" .. (if open then " gp-ai-model-open" else ""), key = "model", actions = { click = "toggle-models" } }, kids)
+end
+
+-- A row offering the reader's AI agent to write a guide, with the models it will use (a button
+-- opening the model overlay, which Page.layer draws under it) and why the last run failed, or the
+-- run going.
 local function aiRow(run: Agent.Run, open: boolean): Node
- if run.running then return busyRow(run) end
+ if run.explaining then return explainingRow(run) end
+ if run.reviewing then return reviewingRow(run) end
  local kids = {
   el("span", { class = "gp-btn gp-btn-primary gp-ai-button", actions = { click = "generate-guide" } }, {
    span("gp-ai-button-label", "Generate AI Guided Review"),
    Ui.keys("⇧G"),
   }),
-  el("span", { class = "gp-ai-model" .. (if open then " gp-ai-model-open" else ""), key = "model", actions = { click = "toggle-models" } }, {
-   span("gp-ai-model-lens", Agent.currentLens(run.agent).name),
-   span("gp-ai-model-sep", "·"),
-   span("gp-ai-model-name", Agent.label(run.agent)),
-   Ui.icon("chev"),
-   Ui.keys("⇧M"),
-  }),
+  modelButton(run.agent, open),
  }
- if run.error then table.insert(kids, span("gp-ai-error", "Couldn't generate it: " .. run.error)) end
+ if run.error then table.insert(kids, span("gp-ai-error", "Couldn't explain the changes: " .. run.error)) end
  return el("div", { class = "gp-ai", key = "ai" }, kids)
 end
 
@@ -122,6 +147,13 @@ local function status(s: State.State, counts: Review.Counts): Node
   el("div", { class = "gp-meter" }, cells),
   span("gp-status-text", counts.filesReviewed .. " of " .. total .. " files reviewed"),
  }
+ -- The review still going over a guide: said where its suggestions will show, so the header keeps
+ -- its height when it lands.
+ local run = s.ai
+ if run and r.guide.guided and run.reviewing then
+  table.insert(kids, span("gp-status-sep", "·"))
+  table.insert(kids, span("gp-status-text gp-status-lens", "Reviewing for issues… " .. clock(run)))
+ end
  if r.guide.lens then
   table.insert(kids, span("gp-status-sep", "·"))
   table.insert(kids, span("gp-status-text gp-status-lens", r.guide.lens .. " lens"))
@@ -155,7 +187,7 @@ function M.view(s: State.State, motion: Ui.Motion): Node
   el("div", { class = "gp-title", key = "title" }, title),
   status(s, counts),
  }
- if s.ai then table.insert(parts, aiRow(s.ai, s.models ~= nil)) end
+ if s.ai and not s.review.guide.guided then table.insert(parts, aiRow(s.ai, s.models ~= nil)) end
  if s.search then table.insert(parts, SearchPanel.view(s.search, s.review.guide.guided, Ui.entering(motion, "p:search", "gp-enter-panel"))) end
  if s.helpOpen then table.insert(parts, Help.view(s.closing.help == true, { guided = s.review.guide.guided, switch = State.switchable(s) }, Ui.entering(motion, "p:help", "gp-enter-panel"))) end
  if s.reviewOpen then table.insert(parts, ReviewPanel.view(s, motion)) end

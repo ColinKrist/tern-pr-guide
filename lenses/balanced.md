@@ -1,3 +1,3 @@
 # Balanced
 
-A clear walkthrough of the whole PR, with the comments worth making.
+The comments worth making on the whole PR, and none that aren't.

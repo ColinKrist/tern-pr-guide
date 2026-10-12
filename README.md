@@ -148,20 +148,37 @@ first, then go through it in small steps:
 - Guides saved in the repository, so a reopened PR loads its guide right away in every worktree of
   the clone.
 
+Generating a guided review starts two OMP runs at once. The explanation writes the overview and
+steps, and the page turns guided as soon as it lands, with "Reviewing for issues…" in the status line
+while the review is still drafting comments. The comments and summary join the page when the review
+finishes. A summary you already edited is kept.
+
 ![A guided review with an overview, diagram and the first change](docs/screenshots/overview.png)
 
 ![A guided step with its code and a suggested review comment](docs/screenshots/step.png)
 
-## Choose a review lens
+## Choose models and a review lens
 
-Guided reviews need OMP. Before generating one, pick the model, effort and lens. PR Guide ships
-five lenses:
+Guided reviews need OMP. Before generating one, click the model button (or press `⇧M`). The menu
+has two slots, **Explanation** and **Review**, and `Tab` switches between them:
 
-- **Balanced:** a walkthrough of the whole PR with the comments worth making.
+- **Explanation:** the model and effort that write the walkthrough. A fast model at low effort is
+  enough.
+- **Review:** the model and effort that draft comments on problems and questions. A strong model
+  works best, and higher effort finds more. Choose **Off** to get the explanation only, with no
+  drafted comments.
+
+Until you choose an explanation model it uses the review model. The model button shows the
+explanation model, then the review model, each with its effort, then the lens. The PR hub's Settings
+choose the review model, which agent fixes and feedback summaries also use.
+
+The lens control is on the Review slot, because a lens steers only the review comments. PR Guide
+ships four lenses:
+
+- **Balanced:** the comments worth making on the whole PR.
 - **Security:** the change from an attacker's point of view.
 - **Architecture:** boundaries, dependencies and long-term cost.
-- **Quick skim:** the shape of the PR and only the most important comments.
-- **Teaching:** explanations for someone new to the project.
+- **Quick skim:** only the comments that matter.
 
 ![Choosing an OMP model, effort and review lens](docs/screenshots/lenses.png)
 
@@ -177,8 +194,8 @@ Check for repeated work in loops, unnecessary copying, blocking calls on hot pat
 could be batched. Comment only when the cost will matter in practice.
 ```
 
-A custom lens with the same name as a built-in one replaces it. Every lens writes the same guide
-format, so any guide opens the same way.
+A custom lens with the same name as a built-in one replaces it. Every lens writes the same comment
+format, so any review opens the same way.
 
 ## Post the review
 
@@ -217,7 +234,7 @@ Press `?` on any PR Guide page for the keys that apply there.
 | `A` | Show or hide approved PRs, on Review requests |
 | `R` | Show or hide recently opened PRs |
 | `N` | Add a PR by link |
-| `⇧S` | Settings: the agent model and effort, and whether GitHub links open in Tern or the default browser (`L` switches). `⇧M` opens it too |
+| `⇧S` | Settings: the review model and effort (agent fixes use it too), and whether GitHub links open in Tern or the default browser (`L` switches). `⇧M` opens it too |
 | `A` | Run the selected card's main action, on your PRs |
 | `⇧A` | Summarize feedback or return a retained worktree |
 | `C` | Copy the PR title and link |
@@ -253,7 +270,8 @@ Press `?` on any PR Guide page for the keys that apply there.
 | `m` | Mark or unmark everything reviewed |
 | `g` | Open the PR on GitHub |
 | `⇧G` | Generate a guided review |
-| `⇧M` | Choose the model, effort and lens |
+| `⇧M` | Choose the explanation and review models, their effort, and the lens |
+| `Tab` | In that menu, switch between Explanation and Review |
 | `⌃E` | Edit lenses |
 | `r` | Open the review panel |
 | `x` | Include or leave out the selected review comment |
