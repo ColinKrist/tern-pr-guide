@@ -3,6 +3,7 @@
 -- the code excerpts, and the readers of local git output (`git merge-tree`, `git show`, `git log`).
 -- Pure: no network, no files, no clock. `github.parseDetails` builds `FixDetails` from GitHub's JSON,
 -- `fetch` returns git's text, and this module turns both into what the view draws.
+local Log = require("../ci/log")
 local Model = require("./model")
 
 type HubPR = Model.HubPR
@@ -36,6 +37,7 @@ export type FixDetails = {
 	conflicts: { Conflict }?, -- nil until fetch.luau has read local `git merge-tree --write-tree --name-only`
 	conflictNote: string?, -- why `conflicts` is nil: "No local copy of acme/web"
 	files: { [string]: string }?, -- annotated files as the head commit has them, read by `git show`
+	logs: { [string]: Log.Load }?, -- failed-check logs by the check's details link, for checks with no usable annotations
 }
 
 -- A line of code in an excerpt. `old` is nil on an added line and for a plain file excerpt.

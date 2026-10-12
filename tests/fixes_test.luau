@@ -53,7 +53,7 @@ local function steps_()
 	assert(check[2].text == "Failed")
 
 	-- Only noise annotations: the step stays, with no pin and the check's summary or "Failed".
-	assert(ids(steps("noann")) == "check:build@-:nil", ids(steps("noann")))
+	assert(ids(steps("noann")) == "check:build@-:nil | check:buildkite/web@-:nil", ids(steps("noann")))
 	assert(ids(steps("noannReal")) == "check:fail@-:nil", ids(steps("noannReal")))
 	assert(#Fixture.details.noannReal.checks[1].annotations == 2)
 	assert(#Fixes.usable(Fixture.details.noannReal.checks[1].annotations) == 0)

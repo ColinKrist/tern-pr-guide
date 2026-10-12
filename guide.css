@@ -1339,6 +1339,11 @@
 .gp-fx-stack > * { flex-shrink: 0; }
 .gp-fx-stack > .gp-fx-stack > .gp-card { margin: 0; }
 .gp-fx-where { font-family: var(--tv-font); font-size: 12px; color: var(--t3); }
+/* A failed check's log: the excerpt's frame with no gutter, and its left-out runs as bars that do nothing. */
+.gp-fx-log .gp-code { padding-left: 12px; }
+.gp-fx-log .gp-body { padding: 4px 0; }
+.gp-fx-logskip, .gp-fx-logskip:hover { cursor: default; background: var(--sf-shade); }
+.gp-fx-logskip:hover .gp-gap-gut, .gp-fx-logskip:hover .gp-gap-count { color: var(--t3); }
 .gp-fx-chk { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding: 0 4px; }
 .gp-fx-cname { font-family: var(--tv-font); font-size: 15px; font-weight: 650; }
 .gp-fx-cfail { font-family: var(--sans); font-size: 13px; font-weight: 600; color: var(--gp-danger-text); }

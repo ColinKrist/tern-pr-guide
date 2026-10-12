@@ -28,7 +28,8 @@ A Tern plugin (Luau and one stylesheet) with two surfaces: the PR hub organizes 
 
 Each module's header comment names its one job. Put new code in the module that comment already covers. If none covers it, make a new module with its own header comment.
 
-- **Boundary:** only `src/fetch.luau` and `src/github.luau` reach outside the plugin. `fetch.luau`: `gh`, `git`, `omp`, `tern.kv`, and files. `github.luau`: GitHub, only through the runner it is given (`Fetch.runner` in the plugin).
+- **Boundary:** only `src/fetch.luau`, `src/github.luau` and the CI modules in `src/ci/` reach outside the plugin. `fetch.luau`: `gh`, `git`, `omp`, `tern.kv`, and files. `github.luau`: GitHub, only through the runner it is given (`Fetch.runner` in the plugin).
+- **CI logs:** `src/ci/log.luau` is the contract a CI module meets (`owns` a check, `read`s its log) and knows no CI. Each CI is its own module that meets it, through the runner it is given: `ci/actions.luau` (GitHub Actions, `gh`), `ci/buildkite.luau` (Buildkite, `bk`). The modules never require each other; `hub/block.luau`'s `ciProviders` is the only place they meet. A new CI is a new module there.
 - **Glue:** only `src/block.luau` and `src/hub/block.luau` do window effects: scrolling, focus, timers, toasts. A new action is one `ACTIONS` entry, sent by both clicks and `keys.luau`.
 - **Views:** `src/view/*.luau` turn state into nodes and nothing else. Build them with `Ui.el` and `Ui.span`.
 - **Styles:** `guide.css` only, with `gp-` classes and the color tokens `DESIGN.md` names. To change a look, edit the rule where it lives.

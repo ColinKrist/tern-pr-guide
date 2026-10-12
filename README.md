@@ -95,6 +95,12 @@ Open a Needs fixes card to go straight to the problems: requested changes, comme
 and conflicts, each next to its code. Reply to a thread, resolve it, read a check's log or re-run
 failed checks from the same page.
 
+- **Check logs.** A failing check with no annotations shows its log, cut to the lines around the
+  error, with the changed lines it names shown in their files. This works for GitHub Actions
+  (through `gh`) and Buildkite (through the [`bk` CLI](https://github.com/buildkite/cli), signed in
+  with `bk auth login`; PR Guide asks for the organization in the check's link). Other CI shows the
+  check's summary, and `⇧L` opens its page.
+
 - **Agent fixes.** Your OMP agent resolves a conflict or addresses a bot review in an isolated
   worktree, never in your checkout. You follow its progress on the card.
 - **Fewer tokens.** Conflicts are fixed by merging the base branch in. A clean merge costs no
