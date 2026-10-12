@@ -1,7 +1,6 @@
 --!strict
 -- The hub's menus (repositories, sort, a card's other actions) and Settings (agent model, effort, where links
 -- open) as Tern overlays under their buttons. A menu opened by a key draws without animation: Tern's overlay pops only for the mouse.
-local Fields = require("../../text-field")
 local Paths = require("./paths")
 local State = require("../../hub/state")
 local Ui = require("../ui")
@@ -72,7 +71,7 @@ local function mergeFoot(s: State.State): Node?
 		local placeholder = if edit.kind == "comment" then "/merge | /cancel" else "ready-to-merge"
 		return el("div", { class = "gp-md-foot gp-hm-edit", key = "edit" }, {
 			span("gp-md-label", what),
-			el("div", { class = "gp-sr-box gp-hm-field", key = "box" }, { Fields.node(edit.field, "field", placeholder) }),
+			el("div", { class = "gp-sr-box gp-hm-field", key = "box" }, { Ui.field(edit.field, "field", placeholder) }),
 			Ui.keys("⏎"),
 		})
 	end

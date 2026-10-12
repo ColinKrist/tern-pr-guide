@@ -1,5 +1,5 @@
 --!strict
--- Turns the output of the git commands fetch.luau runs into the PR's files.
+-- Turns the output of the git commands prdata.luau runs into the PR's files.
 local FileGroup = require("./file-group")
 local Pr = require("./pr")
 

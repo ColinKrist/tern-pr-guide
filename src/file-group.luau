@@ -1,6 +1,6 @@
 --!strict
 -- Which changed files the page sets apart when no step visits them: tests, found by path, and
--- generated files, which git's `linguist-generated` attribute marks (src/fetch.luau reads it).
+-- generated files, which git's `linguist-generated` attribute marks (src/prdata.luau reads it).
 export type Group = "tests" | "generated"
 
 -- Directories whose files are tests, compared in lower case: "Tests/" and "Test/" count too.

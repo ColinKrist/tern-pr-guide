@@ -1,5 +1,6 @@
 --!strict
 local FileTree = require("./file-tree")
+local Host = require("./host")
 local Pr = require("./pr")
 local Text = require("./text")
 
@@ -350,7 +351,7 @@ end
 -- the plugin.
 function M.read(path: string, pr: Pr.PR): (Guide?, string?)
  local decoded, raw = pcall(function(): any
-  return tern.json.decode(tern.fs.read(path))
+  return Host.json.decode(Host.fs.read(path))
  end)
  if not decoded then return nil, Text.errorLine(raw) end
  local guide = M.parse(raw, pr)

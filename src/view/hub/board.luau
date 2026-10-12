@@ -2,7 +2,6 @@
 -- The hub page: header (title, search, freshness, settings), the tab row, the board's columns, the
 -- card folds and the hint bar. Everything it draws was decided by `State.project`.
 local Card = require("./card")
-local Fields = require("../../text-field")
 local Help = require("./help")
 local Hints = require("./hints")
 local Link = require("./link")
@@ -86,7 +85,7 @@ local function header(s: State.State): Node
 	local searching = s.mode == "search"
 	local search = el("div", { class = "gp-sr-box gp-hub-search" .. (if searching then " gp-hub-search-on" else ""), key = "search", actions = { click = "hub-search" } }, {
 		Ui.icon("search"),
-		Fields.node(s.search, "field", "Search pull requests"),
+		Ui.field(s.search, "field", "Search pull requests"),
 		Ui.keys("/"),
 	})
 	local fresh: { Node } = {}

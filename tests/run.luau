@@ -1,7 +1,8 @@
 --!strict
 -- Runs every test module. A failed assert names its module and exits non-zero.
--- Tests require pure modules. summary_test and fold_test also load block, with `tern` stubbed in block's
--- environment and every effect recorded; no other test touches a host module.
+-- Tests require pure modules. summary_test, tandem_test and fold_test also load block (summary_test and
+-- tandem_test fetch too), with the Host table's fields stubbed and every process effect a recorded callback; no
+-- other test touches a host module.
 
 local modules: { { name: string, run: () -> () } } = {
 	{ name = "model_test", run = require("./model_test") },

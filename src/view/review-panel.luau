@@ -1,7 +1,6 @@
 --!strict
 -- Your review, as GitHub will receive it: the comments it can carry, each ticked in or out, and the
 -- summary and verdict that go with them.
-local Fields = require("../text-field")
 local Review = require("../review")
 local State = require("../state")
 local Text = require("../text")
@@ -194,7 +193,7 @@ local function side(s: State.State, motion: Ui.Motion, included: number): { Node
   }),
   span("gp-rv-sec-explain", "The opening comment of your review." .. (if guide.summary ~= "" then " Drafted by " .. guide.author .. "." else "")),
   el("div", { class = "gp-rv-summary" .. (if editing then " gp-rv-summary-on" else ""), key = "summary", actions = { click = "edit-summary" } }, {
-   Fields.node(s.review.summary, "field", "Say what you think overall…"),
+   Ui.field(s.review.summary, "field", "Say what you think overall…"),
   }),
   el("div", { class = "gp-rv-sec-top gp-rv-gap" }, { span("gp-rv-sec-title", "Verdict") }),
   el("div", { class = "gp-rv-verdicts" }, verdicts(s)),

@@ -1,7 +1,7 @@
 --!strict
 -- The PR hub's pure sync decisions: the cache's shape (validate, cap, merge a refresh into it), the
 -- per-repo merge-method record, the recent store, what changed between two refreshes, and when each
--- poll is due. It reads no clock and no `tern.*`: callers pass `now`, and sizes are injected.
+-- poll is due. It reads no clock and no Host: callers pass `now`, and sizes are injected.
 local Model = require("./model")
 
 type HubPR = Model.HubPR

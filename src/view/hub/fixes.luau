@@ -4,7 +4,6 @@
 -- right shows the code for the step on show with the thread, annotation or conflict pinned in it, and a failed
 -- check's log when it has no annotations.
 -- Everything it draws was decided by `State.fix*` and `Fixes.steps`.
-local Fields = require("../../text-field")
 local Log = require("../../ci/log")
 local Fixes = require("../../hub/fixes")
 local Model = require("../../hub/model")
@@ -304,7 +303,7 @@ local function threadPanel(s: State.State, motion: Ui.Motion, step: Step, pr: Mo
 	local kids: { Node } = { el("div", { class = "gp-fx-msgs", key = "msgs" }, msgs) }
 	local reply = route.reply
 	if reply then
-		table.insert(kids, el("div", { class = "gp-card-body gp-fx-compose", key = "body" }, { Fields.node(reply, "field", "Reply to @" .. thread.author) }))
+		table.insert(kids, el("div", { class = "gp-card-body gp-fx-compose", key = "body" }, { Ui.field(reply, "field", "Reply to @" .. thread.author) }))
 		table.insert(kids, el("div", { class = "gp-card-foot", key = "foot" }, {
 			keyed("gp-fx-ok", if route.busy then "Replying…" else "Reply", "⌘⏎", "fixes-post", false),
 			keyed("gp-btn-ghost", "Cancel", "esc", "fixes-cancel", false),
