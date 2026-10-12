@@ -74,7 +74,7 @@ Each PR appears exactly once.
   - While a card is hovered or selected, its **split button** replaces the checks and age on the repo line, the way Gmail swaps a row's date for its actions.
   - Hovered, the button is quiet. Selected, it's filled and shows its key.
   - Alternatives sit behind the attached ▾. Card heights never change.
-- **Clicks:** a click selects; double-click or ⏎ opens.
+- **Clicks:** a click opens, like ⏎; ⌘-click or ⇧-click selects for a batch.
 
 | Card | Main action | Behind ▾ / other keys |
 |---|---|---|
@@ -177,7 +177,7 @@ To review has its own field: "Paste a pull request link to review" (`N`, from ei
 | Key | Action |
 |---|---|
 | h j k l / arrows | Move: up and down within a column, left and right to the nearest card in the next column |
-| ⏎ / double-click | Open (Needs fixes cards open at the fixes) |
+| ⏎ / click | Open (Needs fixes cards open at the fixes) |
 | ⇧⏎ | Open with the AI guide started |
 | T | Switch tab |
 | I | Show or hide Inactive (either tab) |
@@ -840,7 +840,7 @@ function M.hubAction(s: HubState.State, key: Key): Action?   -- the hub's counte
 function M.hubAfterTyping(mode: HubState.Mode, outcome: Fields.Outcome): Action?   -- after a key typed into the search field
 ```
 
-`I` shows or hides Inactive on either tab, `⇧T` shows or hides Team requests, `A` shows or hides Approved and `R` shows or hides Recently opened (a fold is a control, so it has a key). Opening a fold, by key or by its header, scrolls the board so the fold's header (`Paths.foldHead`) sits at the top, through the same `reveal` frame op that keeps the selected card in view; closing one doesn't scroll. `j`/`k` past the last card walk the open folds in order. A Recently opened row is selected by `State.recentKey` (`rc:<repo>#<n>`), moved to by `j`/`k` after the last card, and opened by ⏎ or a double-click. A card's action keys (`A`, `⇧A`, `C`, `M`, `U`, `,`, `X`) come from the selected card's `main` and `more`, so a click and a key send the same `Card.main.act`.
+`I` shows or hides Inactive on either tab, `⇧T` shows or hides Team requests, `A` shows or hides Approved and `R` shows or hides Recently opened (a fold is a control, so it has a key). Opening a fold, by key or by its header, scrolls the board so the fold's header (`Paths.foldHead`) sits at the top, through the same `reveal` frame op that keeps the selected card in view; closing one doesn't scroll. `j`/`k` past the last card walk the open folds in order. A Recently opened row is selected by `State.recentKey` (`rc:<repo>#<n>`), moved to by `j`/`k` after the last card, and opened by ⏎ or a click. A card's action keys (`A`, `⇧A`, `C`, `M`, `U`, `,`, `X`) come from the selected card's `main` and `more`, so a click and a key send the same `Card.main.act`.
 
 `M.pickerAction` (`:109`) is deleted with the picker. Typing modes (`search`, `link`) return nil for letters, as `searchKey` does (`:22`).
 
@@ -1157,7 +1157,7 @@ All rows are approved by the user; ideas the user didn't pick were dropped. Each
 **Mocked in `index.html`:** Next up (1), Update branch (3, on #181), Merge several (8) and Close stale (9).
 - **Next up:** the tab-row control described in row 1.
 - **Selecting:** Space or ⌘/⇧-click selects; Esc clears. A selected card gets a blue wash, with a blue box in place of its gutter check.
-- **Decisions (#11).** `State.confirm.kind` also takes `"batch-merge"` and `"batch-close"` (`keys` = the marked cards in column order); `State.selection(s)` builds the bar and its confirm (`Selection`, `BatchConfirm`). Marks last while the card stays selectable, in this tab, matching the filter and (Inactive) shown. M and X act only while something is marked; Esc clears the marks first. The batch confirm is a native overlay in the layer (anchored to the bar, scrim click cancels), because Tern ignores `reveal` for nodes this far down; the inline bar stays in the column. A batch runs one PR at a time, each with `s.merges[repo]` as resolved (a learned, unconfirmed comment is used as shown in the confirm), stops at the first failure, leaves the rest marked, and ends in one toast. `⌘`/`⇧`-click arrives as `ev.mods` on the `hub-select` action and becomes `hub-mark`.
+- **Decisions (#11).** `State.confirm.kind` also takes `"batch-merge"` and `"batch-close"` (`keys` = the marked cards in column order); `State.selection(s)` builds the bar and its confirm (`Selection`, `BatchConfirm`). Marks last while the card stays selectable, in this tab, matching the filter and (Inactive) shown. M and X act only while something is marked; Esc clears the marks first. The batch confirm is a native overlay in the layer (anchored to the bar, scrim click cancels), because Tern ignores `reveal` for nodes this far down; the inline bar stays in the column. A batch runs one PR at a time, each with `s.merges[repo]` as resolved (a learned, unconfirmed comment is used as shown in the confirm), stops at the first failure, leaves the rest marked, and ends in one toast. `⌘`/`⇧`-click arrives as `ev.mods` on the `hub-open` action and becomes `hub-mark`.
 - **The selection bar** sits at the top of Ready to merge (or inside Inactive): "2 selected · Merge 2 (M) · Clear (Esc)".
 - **The confirm** lists at most 5 titles plus "and N more", then one line on how they merge (for example "Comments /merge"), or "Closed pull requests can be reopened."
 - **Only mergeable cards can be selected:** a card that's behind main or already queued can't be.

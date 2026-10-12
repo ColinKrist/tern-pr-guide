@@ -179,7 +179,7 @@ local sampleDetails: (pr: Model.HubPR) -> Fixes.FixDetails
 local openFixes: (b: Block, cx: BlockCx, key: string) -> ()
 local openReviewFix: (b: Block, cx: BlockCx, key: string) -> ()
 
--- ⏎ and a double-click open the selected row; ⇧⏎ (or a hub opened for AI guides) starts the AI guide too.
+-- ⏎ and a click open the row; ⇧⏎ (or a hub opened for AI guides) starts the AI guide too.
 local function openRow(b: Block, cx: BlockCx, value: string, withGuide: boolean)
 	local s = b.s
 	if value ~= "" then State.select(s, value) end
@@ -3023,8 +3023,8 @@ local function held(ev: UiEvent, name: string): boolean
 end
 
 local function actionOf(ev: UiEvent): Keys.Action?
-	-- ⌘-click and ⇧-click on a card select it for Merge selected or Close stale instead of moving the selection.
-	if ev.ev == "action" and ev.act == "hub-select" and (held(ev, "meta") or held(ev, "shift")) then
+	-- ⌘-click and ⇧-click on a card select it for Merge selected or Close stale instead of opening it.
+	if ev.ev == "action" and ev.act == "hub-open" and (held(ev, "meta") or held(ev, "shift")) then
 		return { act = "hub-mark", value = ev.value }
 	end
 	if ev.ev == "action" then return { act = ev.act, value = ev.value } end

@@ -200,7 +200,7 @@ Press `?` on any PR Guide page for the keys that apply there.
 | `⌥⇧⌘R` | Open the hub so `⏎` starts a guided review |
 | `h` `j` `k` `l` or arrows | Move between cards |
 | `.` | Select the most urgent PR |
-| `⏎` | Open the PR, its fixes page or a ready agent fix |
+| `⏎` or click | Open the PR, its fixes page or a ready agent fix |
 | `⇧⏎` | Open and start a guided review |
 | `T` | Switch between your PRs and review requests |
 | `/` | Search |
@@ -221,7 +221,7 @@ Press `?` on any PR Guide page for the keys that apply there.
 | `⇧R` | Re-run failed checks |
 | `Q` | Re-request review |
 | `O` | Choose a clone or open a retained worktree |
-| `Space` | Select cards for a batch action |
+| `Space` or ⌘-click | Select cards for a batch action |
 | `⇧X` | Select stale PRs |
 | `X` | Remove an added review request or close selected stale PRs |
 | `⌘R` | Refresh |

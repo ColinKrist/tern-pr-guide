@@ -68,7 +68,7 @@ local function header(s: State.State, pr: Model.HubPR, steps: { Step }): Node
 		end
 	end
 	local title: { Node } = {
-		el("span", { class = "gp-hdr-act", key = "back", actions = { click = "fixes-close" } }, { span("gp-hdr-act-label", "Pull requests"), Ui.keys("esc") }),
+		el("span", { class = "gp-hdr-act gp-back", key = "back", actions = { click = "fixes-close" } }, { el("span", { class = "gp-back-ico" }, { Ui.icon("chev-r") }), span("gp-hdr-act-label", "Pull requests"), Ui.keys("esc") }),
 		span("gp-title-num", "#" .. pr.number),
 		span("gp-title-text", pr.title),
 		Ui.spacer(),

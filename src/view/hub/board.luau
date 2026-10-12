@@ -225,7 +225,7 @@ local function recentRow(s: State.State, opened: State.Opened): Node
 	if opened.author ~= "" then table.insert(main, span("gp-sr-sub", "@" .. opened.author)) end
 	return el("div", {
 		class = "gp-sr-row gp-hub-rc" .. (if s.selected == key then " gp-sr-row-on" else ""), key = Paths.recentKey(key),
-		actions = { click = "hub-select=" .. key, dblclick = "hub-open=" .. key },
+		actions = { click = "hub-open=" .. key },
 	}, {
 		span("gp-hub-rc-ref", name),
 		el("span", { class = "gp-hub-rc-main" }, main),

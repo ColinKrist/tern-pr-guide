@@ -737,6 +737,10 @@
 .gp-hdr-act:hover { background: var(--l1); }
 .gp-hdr-act-label { font-family: var(--sans); font-size: 13px; color: var(--t2); }
 .gp-hdr-act .sf-icon { color: var(--t3); }
+/* Back to the board: Tern has no left chevron, so the right one turns around. */
+.gp-back-ico { display: flex; transform: rotate(180deg); }
+.gp-back-ico .sf-icon, .gp-back-ico .ico { width: 12px; height: 12px; color: var(--t3); }
+.gp-back.gp-hdr-act { padding-left: 4px; gap: 5px; }
 /* writing a guide with the reader's AI agent */
 .gp-ai { display: flex; gap: 10px; align-items: center; min-height: 28px; }
 .gp-ai > .gp-btn, .gp-ai-model { flex-shrink: 0; }
