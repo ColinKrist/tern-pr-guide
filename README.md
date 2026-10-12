@@ -73,12 +73,19 @@ select several and merge them together, or set an In review PR to merge as soon 
 
 The **Review requests** tab sorts the PRs others asked you to review:
 
-- **To review:** new requests, PRs with new commits since you approved them, and PRs you added by
-  pasting a link.
+- **To review:** requests that name you, PRs with new commits since you approved them, and PRs you
+  added by pasting a link.
 - **Waiting on author:** you requested changes or left comments.
 - **Approved.**
 
-A **Recently opened** list keeps any PR you opened before one key away, even after it closes.
+Below the board, three folded lists keep the rest out of the way:
+
+- **Inactive:** requests that name you but have had no activity for 7 days. PRs you added by link
+  always stay in To review.
+- **Team requests:** PRs that ask a team you're on, such as a CODEOWNERS team, and not you by name.
+  They don't count toward the tab's number or Next up. Paste one's link in the add field to move it
+  to To review.
+- **Recently opened:** any PR you opened before stays one key away, even after it closes.
 
 ## Fix what's blocking
 
@@ -197,7 +204,8 @@ Press `?` on any PR Guide page for the keys that apply there.
 | `/` | Search |
 | `F` | Filter by repository |
 | `S` | Sort |
-| `I` | Show or hide inactive PRs |
+| `I` | Show or hide inactive PRs, on either tab |
+| `⇧T` | Show or hide team review requests |
 | `R` | Show or hide recently opened PRs |
 | `N` | Add a PR by link |
 | `⇧M` | Choose the agent model and effort |

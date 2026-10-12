@@ -133,7 +133,8 @@ local function testMerge()
 	local calm = Sync.merge({ prs = {}, viewer = "jubbydev", rateLimit = refresh.rateLimit, calls = {}, truncated = false } :: any, merged, { added = {}, tandem = {} }, NOW + 60)
 	assert(calm.counts.needFixes == 0 and calm.counts.flashAt == NOW and calm.refreshedAt == "2026-10-09T12:01:00Z")
 	-- Counts over the whole fixture.
-	local all = Sync.merge({ prs = Cases.prs, viewer = "jubbydev", rateLimit = refresh.rateLimit, calls = {}, truncated = false } :: any, nil, { added = {}, tandem = {} }, NOW)
+	local added = { ["acme/web#303"] = { repo = "acme/web", number = 303 } }
+	local all = Sync.merge({ prs = Cases.prs, viewer = "jubbydev", rateLimit = refresh.rateLimit, calls = {}, truncated = false } :: any, nil, { added = added, tandem = {} }, NOW)
 	local fixes, review = 0, 0
 	for _, pr in Cases.prs do
 		local column = require("../src/hub/model").classify(pr, NOW)

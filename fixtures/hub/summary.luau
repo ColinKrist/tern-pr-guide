@@ -77,7 +77,7 @@ local function pr(d: Fixes.FixDetails, title: string): Model.HubPR
 		headOid = HEAD, baseBranch = "main", additions = 3, deletions = 1, files = 1,
 		checks = if d == three then { state = "failing", passing = 0, failing = 1, pending = 0 } else { state = "none", passing = 0, failing = 0, pending = 0 },
 		conflicts = d == three, behind = false,
-		reviews = { decision = "none", latest = latest, requested = {}, requestedMe = false, unresolved = #threads, threads = threads, threadsKnown = true, comments = #threads },
+		reviews = { decision = "none", latest = latest, requested = {}, teams = {}, requestedMe = false, unresolved = #threads, threads = threads, threadsKnown = true, comments = #threads },
 		tandem = false, addedByMe = false,
 	}
 end
