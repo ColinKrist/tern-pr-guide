@@ -50,7 +50,7 @@ local PR_FIELDS: { [string]: (any) -> boolean } = {
 	checks = isTable, conflicts = isBool, behind = isBool, reviews = isTable, tandem = isBool, addedByMe = isBool,
 }
 local REVIEW_FIELDS: { [string]: (any) -> boolean } = {
-	decision = isString, latest = isTable, requestedMe = isBool, requested = isTable, unresolved = isNumber,
+	decision = isString, latest = isTable, requestedMe = isBool, requested = isTable, teams = isTable, unresolved = isNumber,
 	threads = isTable, threadsKnown = isBool, comments = isNumber,
 }
 local CHECK_FIELDS: { [string]: (any) -> boolean } = { state = isString, passing = isNumber, failing = isNumber, pending = isNumber }

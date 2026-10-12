@@ -21,7 +21,7 @@ local function pr(repo: string, n: number, title: string, reviews: any, patch: a
 		headOid = "head" .. n, baseBranch = "main", additions = 40, deletions = 8, files = 3,
 		checks = PASSING, conflicts = false, behind = false,
 		reviews = {
-			decision = "review_required", latest = {}, mine = nil, requestedMe = false, requested = {},
+			decision = "review_required", latest = {}, mine = nil, requestedMe = false, requested = {}, teams = {},
 			unresolved = 0, threads = {}, threadsKnown = true, comments = 0,
 		},
 		mergeFailure = nil, pending = nil, tandem = false, addedByMe = false,

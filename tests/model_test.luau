@@ -3,7 +3,7 @@ local Model = require("../src/hub/model")
 local Cases: any = require("../fixtures/hub/cases")
 
 local NOW: number = Cases.asOf
-local COLUMNS = { "needs_fixes", "in_review", "ready", "inactive", "to_review", "waiting_on_author", "approved" }
+local COLUMNS = { "needs_fixes", "in_review", "ready", "inactive", "to_review", "waiting_on_author", "approved", "team" }
 local SORTS = { "repository", "priority", "newest", "oldest", "smallest" }
 
 local byKey: { [string]: any } = {}
@@ -53,7 +53,7 @@ return function()
 		assert(join(Model.reasons(pr, NOW)) == join(wantReasons))
 	end
 	for key in Cases.columns do assert(byKey[key] ~= nil, "expected column for unknown key " .. key) end
-	assert(count == 45, "fixture has 45 cases, got " .. count)
+	assert(count == 47, "fixture has 47 cases, got " .. count)
 
 	-- Every column's order, for each sort, and nothing missing or duplicated.
 	for _, sort in SORTS do
@@ -159,6 +159,40 @@ return function()
 	assert(columnOf("acme/web#305") == "waiting_on_author") -- the viewer commented
 	assert(columnOf("acme/web#306") == "approved") -- approved the current head
 	assert(columnOf("acme/api#307") == "to_review") -- requested again after a comment
+	assert(columnOf("acme/web#309") == "team") -- requested from a team only
+	assert(columnOf("acme/web#310") == "inactive") -- requested from the viewer, quiet for over a week
+
+	-- Review requests: who was asked, and how recently anything happened.
+	local STALE, ACTIVE = "2026-09-25T00:00:00Z", "2026-10-08T00:00:00Z"
+	local function request(fields: { [string]: any }): any
+		local pr = table.clone(byKey["acme/web#301"])
+		pr.reviews = table.clone(pr.reviews)
+		pr.reviews.requestedMe, pr.reviews.requested, pr.reviews.teams = false, { "web-platform" }, { "web-platform" }
+		pr.lastActivityAt = ACTIVE
+		for k, v in fields do
+			if k == "requestedMe" or k == "mine" then pr.reviews[k] = v else pr[k] = v end
+		end
+		return Model.placement(pr, NOW)
+	end
+	local teamOnly = request({})
+	assert(teamOnly.tab == "review" and teamOnly.column == "team")
+	assert(request({ lastActivityAt = STALE }).column == "team", "a team request never goes to Inactive")
+	assert(request({ requestedMe = true }).column == "to_review", "a request naming the viewer wins over the team's")
+	assert(request({ requestedMe = true, lastActivityAt = STALE }).column == "inactive")
+	assert(request({ addedByMe = true, lastActivityAt = STALE }).column == "to_review", "an added PR stays in To review")
+	local approvedOld = { author = Cases.viewer, bot = false, verdict = "approved", at = ACTIVE, oid = "old301" }
+	assert(request({ mine = approvedOld }).column == "to_review", "a re-review with only a team asked")
+	assert(request({ mine = approvedOld, lastActivityAt = STALE }).column == "inactive")
+	local approvedHead = { author = Cases.viewer, bot = false, verdict = "approved", at = ACTIVE, oid = "head301" }
+	assert(request({ mine = approvedHead, lastActivityAt = STALE }).column == "approved", "Approved has no stale gate")
+	-- Neither fold of review requests can be selected or closed as stale.
+	local staleNamed = byKey["acme/web#310"]
+	assert(Model.selectGroup(staleNamed, NOW) == nil and not Model.stale(staleNamed, NOW))
+	assert(Model.selectGroup(byKey["acme/web#309"], NOW) == nil)
+	-- Neither is in Next up.
+	for _, item in Model.queue(Cases.prs, NOW) do
+		assert(item.key ~= "acme/web#309" and item.key ~= "acme/web#310", item.key .. " is queued")
+	end
 
 	-- Mergeable: ready, not behind, nothing pending.
 	assert(Model.mergeable(byKey["acme/api#109"]))

@@ -25,9 +25,16 @@ function M.columnKey(column: string): string
 	return "col_" .. column
 end
 
--- The card's node: in its column, or in the Inactive fold.
+-- The key of a card fold's node under the board ("fold" for Inactive, "team" for Team requests).
+function M.foldKey(column: string): string
+	return if column == "inactive" then "fold" else column
+end
+
+-- The card's node: in its column, or in its fold.
 function M.card(card: State.Card): string
-	if card.column == "inactive" then return M.ROOT .. ".body.fold.rows." .. M.cardKey(card.pr.key) end
+	if State.isFold(card.column) then
+		return M.ROOT .. ".body." .. M.foldKey(card.column) .. ".rows." .. M.cardKey(card.pr.key)
+	end
 	return M.ROOT .. ".body.board." .. M.columnKey(card.column) .. "." .. M.cardKey(card.pr.key)
 end
 
