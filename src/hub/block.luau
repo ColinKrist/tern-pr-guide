@@ -10,6 +10,7 @@ local Fields = require("../text-field")
 local FixesPage = require("../view/hub/fixes")
 local Fixes = require("./fixes")
 local Github = require("../github")
+local Host = require("../host")
 local Keys = require("../keys")
 local Model = require("./model")
 local Paths = require("../view/hub/paths")
@@ -115,7 +116,7 @@ local SAMPLE_AGENT: State.AgentChoice = {
 -- Sends frame ops after the render that draws their targets. A target the render dropped makes the frame
 -- fail, which leaves nothing to do.
 local function frameLater(cx: BlockCx, ops: { any })
-	tern.timer(1, function()
+	Host.timer(1, function()
 		pcall(function() cx:frame(ops) end)
 	end)
 end
@@ -162,7 +163,7 @@ end
 -- routes to the guide (`State.openPlan`). With no checkout and no copy to make, it says why and opens
 -- nothing. A card's open action uses this too.
 local function openPr(b: Block, cx: BlockCx, slug: string, number: number, generate: boolean)
-	local dir = cx.cwd or tern.getenv("HOME") or ""
+	local dir = cx.cwd or Host.getenv("HOME") or ""
 	Fetch.checkoutFor(nil, dir, slug, function(found)
 		if b.closed then return end
 		local _, why = Fetch.savedCopy("github.com", slug)
@@ -238,14 +239,14 @@ local KV_CACHE, KV_ADDED, KV_STATUS = "hub.cache", "hub.added", "hub.status"
 local CACHE_CAP_BYTES = 1024 * 1024
 
 local function kvGet(key: string): any
-	local ok, value = pcall(tern.kv.get, key)
+	local ok, value = pcall(Host.kv.get, key)
 	return if ok then value else nil
 end
 
 -- The cache other windows (or an earlier run) stored, if it is a valid schema 1, and whether the store could be read at
 -- all (false: it threw, which is not the same as holding no valid cache).
 local function readCache(): (Sync.Cache?, boolean)
-	local ok, raw = pcall(tern.kv.get, KV_CACHE)
+	local ok, raw = pcall(Host.kv.get, KV_CACHE)
 	if not ok then return nil, false end
 	return Sync.load(raw), true
 end
@@ -297,7 +298,7 @@ end
 -- The tiny record the window's status segment reads every 2 s, so it never decodes the whole cache.
 local function writeStatus(cache: Sync.Cache)
 	local counts = cache.counts
-	pcall(tern.kv.set, KV_STATUS, {
+	pcall(Host.kv.set, KV_STATUS, {
 		refreshedAt = cache.refreshedAt,
 		counts = { toReview = counts.toReview, needFixes = counts.needFixes, flashAt = counts.flashAt },
 	})
@@ -306,7 +307,7 @@ end
 -- Every write of `hub.cache` carries a `writeId` no other write has: this window's nonce and a count. It is how a stored
 -- cache is told apart from another stored at the same `refreshedAt` (a hand-off keeps the stamp), and it never stands in for
 -- GitHub's freshness. A cache stored before ids existed has none, which `storedId` reads as "".
-local WINDOW = string.format("%x.%x.%s", os.time(), math.random(0, 0x7fffffff), (string.gsub(tostring({}), "%W", "")))
+local WINDOW = string.format("%x.%x.%s", Host.time(), math.random(0, 0x7fffffff), (string.gsub(tostring({}), "%W", "")))
 local writes = 0
 
 -- Writes the cache under the size cap. Returns why it failed; memory state stands either way.
@@ -317,10 +318,10 @@ local function persist(b: Block): string?
 	local id = WINDOW .. "#" .. writes
 	local stored: { [string]: boolean } = {}
 	local ok, err = pcall(function()
-		local value = Sync.save(cache, CACHE_CAP_BYTES, function(value: any): number return #tern.json.encode(value) end)
+		local value = Sync.save(cache, CACHE_CAP_BYTES, function(value: any): number return #Host.json.encode(value) end)
 		value.writeId = id
 		for _, pr in value.prs do stored[pr.key] = true end
-		tern.kv.set(KV_CACHE, value)
+		Host.kv.set(KV_CACHE, value)
 	end)
 	if ok then
 		b.unsaved = false
@@ -392,7 +393,7 @@ local function arm(b: Block, cx: BlockCx, name: "probe" | "refresh" | "checks" |
 	if old then old:cancel() end
 	timers[name] = nil
 	if seconds == nil or b.closed then return end
-	timers[name] = tern.timer(math.max(1, math.ceil(seconds * 1000)), function()
+	timers[name] = Host.timer(math.max(1, math.ceil(seconds * 1000)), function()
 		timers[name] = nil
 		if b.closed then return end
 		fn(b, cx)
@@ -547,7 +548,7 @@ end
 -- is the one retired (`b.retired`), and `sharedCache` ignores a cache that carries it. It is captured before anything is
 -- joined or written, so a write that lands later, whatever its stamp, has another id and is never retired.
 local function storedNow(): (boolean, string?)
-	local ok, raw = pcall(tern.kv.get, KV_CACHE)
+	local ok, raw = pcall(Host.kv.get, KV_CACHE)
 	if not ok then return false, nil end
 	local cache = Sync.load(raw)
 	return true, if cache then storedId(cache) else nil
@@ -719,7 +720,7 @@ local function startAgentEngine(b: Block, cx: BlockCx, flight: AgentFlight, clon
 		if replied then return end
 		replied = true
 		if not carryOn(b, cx, flight) then return end
-		local ok, meta = pcall(tern.json.decode, out.stdout)
+		local ok, meta = pcall(Host.json.decode, out.stdout)
 		local latest = State.prOf(b.s, pr.key)
 		if out.status ~= 0 or out.timed_out or not ok or type(meta) ~= "table" then
 			settleAgent(b, cx, flight, { kind = "failed", reason = if out.timed_out then "Reading PR refs timed out" else reasonOf(out.stderr ~= "" and out.stderr or "No PR refs were returned") })
@@ -807,7 +808,7 @@ local function beginAgent(b: Block, cx: BlockCx, key: string, mode: "fix" | "clo
 		State.agentFailed(b.s, pr.key, "PR refs are missing; refresh the board", if existing and existing.kind == "failed" then existing.worktree else nil)
 		return draw(b, cx)
 	end
-	b.s.now = if b.fixture then b.s.now else os.time()
+	b.s.now = if b.fixture then b.s.now else Host.time()
 	if not State.beginAgent(b.s, pr.key, b.s.now) then return cx:toast("info", "One fix at a time") end
 	local flight: AgentFlight = { key = pr.key, settled = false, stopping = false, releasing = false, bot = b.botKeys[pr.key] == true }
 	b.agentFlight = flight
@@ -822,7 +823,7 @@ local function beginAgent(b: Block, cx: BlockCx, key: string, mode: "fix" | "clo
 		State.project(b.s)
 		return draw(b, cx)
 	end
-	local dir = cx.cwd or tern.getenv("HOME") or ""
+	local dir = cx.cwd or Host.getenv("HOME") or ""
 	local near: Fetch.Repo? = nil
 	local checkout: string? = nil
 	local cancelled, missing, answered = false, false, false
@@ -922,7 +923,7 @@ local function announce(b: Block, cx: BlockCx, old: Sync.Cache?, fresh: { Model.
 	local running: TimerHandle? = timers.ring
 	if running then running:cancel() end
 	local function after(ms: number, fn: () -> ())
-		timers.ring = tern.timer(ms, function()
+		timers.ring = Host.timer(ms, function()
 			timers.ring = nil
 			if b.closed then return end
 			fn()
@@ -978,7 +979,7 @@ end
 -- by every flag this block holds) become the board, and the local edits no write has stored are applied to it again. It reads
 -- no store and draws nothing. Returns whether a flag moved on a PR and whether an edit applied.
 local function layShared(b: Block, cx: BlockCx, shared: Sync.Cache): (boolean, boolean)
-	local now = os.time()
+	local now = Host.time()
 	joinOwnership(b, shared)
 	local prs = flagged(b.watched, shared.prs)
 	local moved = false
@@ -1110,7 +1111,7 @@ local function rearm(b: Block, cx: BlockCx)
 	local sched = b.sched
 	local last, tried = cachedAt(b), sched.refreshTried
 	local plan = Sync.schedule({
-		now = os.time(), refreshedAt = if last and tried then math.max(last, tried) else (last or tried),
+		now = Host.time(), refreshedAt = if last and tried then math.max(last, tried) else (last or tried),
 		refreshing = b.flights.refresh, probedAt = sched.probedAt, probeChanged = sched.probeChanged,
 		focusedAt = sched.focusedAt, checksAt = sched.checksAt, running = running(b),
 	})
@@ -1127,7 +1128,7 @@ onProbe = function(b, cx)
 	b.github.probe(b.sched.lastModified, function(value, err)
 		b.flights.probe = false
 		if b.closed then return end
-		b.sched.probedAt = os.time()
+		b.sched.probedAt = Host.time()
 		-- A failed probe is "no change", never an error on screen and never a retry before the next minute: the
 		-- viewer's gh token often lacks the `notifications` scope, so /notifications answers 404, and the
 		-- five-minute refresh still runs. The first answer only sets the validator.
@@ -1144,7 +1145,7 @@ local startRefresh: (b: Block, cx: BlockCx) -> ()
 
 -- Writes hub.added. Returns why it failed.
 local function writeAdded(added: Sync.Added): string?
-	local ok, err = pcall(tern.kv.set, KV_ADDED, added)
+	local ok, err = pcall(Host.kv.set, KV_ADDED, added)
 	return if ok then nil else tostring(err)
 end
 
@@ -1172,7 +1173,7 @@ end
 local KV_MERGE = "hub.merge."
 
 local function isoNow(): string
-	return os.date("!%Y-%m-%dT%H:%M:%SZ", os.time()) :: string
+	return os.date("!%Y-%m-%dT%H:%M:%SZ", Host.time()) :: string
 end
 
 -- The repo's saved record, read from kv once. A fixture board keeps its records in memory only.
@@ -1198,7 +1199,7 @@ local function saveRecord(b: Block, repo: string, record: Sync.MergeRecord): str
 	b.records[repo] = record
 	local why: string? = nil
 	if not b.fixture then
-		local ok, err = pcall(tern.kv.set, KV_MERGE .. repo, record)
+		local ok, err = pcall(Host.kv.set, KV_MERGE .. repo, record)
 		if not ok then why = tostring(err) end
 	end
 	resolveRepo(b, repo)
@@ -1303,7 +1304,7 @@ local function loadFlakes(b: Block, cx: BlockCx)
 		b.github.details(pr, function(d, _)
 			if b.closed then return end
 			if d == nil then return step(i + 1) end
-			b.histories.read(pr.repo, pr.baseBranch, os.time(), function(history)
+			b.histories.read(pr.repo, pr.baseBranch, Host.time(), function(history)
 				b.github.runs(pr.repo, d.headOid, function(runs, _)
 					if b.closed then return end
 					State.setFlake(b.s, pr.key, flakeOf(pr, d, history, runs))
@@ -1447,7 +1448,7 @@ startRefresh = function(b: Block, cx: BlockCx)
 	b.s.loading = true
 	-- Every head in the answer was seen after this: the cache stores it (`sinceAt`), so a window adopting it can tell a snapshot
 	-- that is the later word on a head from one that only finished later.
-	local requested = os.time()
+	local requested = Host.time()
 	loadTandem(b, cx)
 	-- A read of Tandem that answered at once may have drawn, and the draw closed the block: nothing is read or asked after that.
 	if b.closed then return end
@@ -1456,7 +1457,7 @@ startRefresh = function(b: Block, cx: BlockCx)
 	b.github.refresh({ added = refs, previous = b.s.prs }, function(fresh, err)
 		b.flights.refresh = false
 		if b.closed then return end
-		local now = os.time()
+		local now = Host.time()
 		b.sched.refreshTried = now
 		-- The answer lands on the newest cache there is, looked at again now: another window's may have landed while the request
 		-- was out, and `Sync.merge` carries what only that cache holds (a pending merge). When the store cannot be read, or the
@@ -1543,14 +1544,14 @@ onRefresh = function(b, cx)
 	-- An unreadable store starts no refresh: its answer could not be reconciled. The attempt counts as tried, so the schedule
 	-- waits before the next one.
 	if not safe then
-		b.sched.refreshTried = os.time()
+		b.sched.refreshTried = Host.time()
 		rearm(b, cx)
 		draw(b, cx)
 		return
 	end
 	-- Another window refreshed a moment ago: its cache is the answer.
 	local last = cachedAt(b)
-	if last and os.time() - last < Sync.DEBOUNCE then
+	if last and Host.time() - last < Sync.DEBOUNCE then
 		rearm(b, cx)
 		draw(b, cx)
 		return
@@ -1566,7 +1567,7 @@ onChecks = function(b, cx)
 	b.github.checks(ids, function(update, err)
 		b.flights.checks = false
 		if b.closed then return end
-		b.sched.checksAt = os.time()
+		b.sched.checksAt = Host.time()
 		if update then
 			-- The results land on the newest cache there is: one stored strictly newer than this block's own becomes the board
 			-- first (its stamp stays), and a PR whose head it moved is skipped below like any other moved head.
@@ -1586,7 +1587,7 @@ onChecks = function(b, cx)
 				return changed
 			end
 			if land() then
-				b.s.now = os.time()
+				b.s.now = Host.time()
 				-- A check result is no word on ownership: another window's flags at this stamp or later stay.
 				joinShared(b)
 				applyOwnership(b, cx)
@@ -1618,7 +1619,7 @@ local ACTIONS: { [string]: Handler } = {}
 ACTIONS["hub-focused"] = function(b, cx)
 	if b.fixture then return end
 	State.setRecent(b.s, Fetch.recentPrs())
-	b.sched.focusedAt = os.time()
+	b.sched.focusedAt = Host.time()
 	rearm(b, cx)
 end
 
@@ -1854,7 +1855,7 @@ end
 
 -- A refresh a few seconds on, for changes GitHub's search takes a moment to show (a merge, a branch update).
 local function refetchSoon(b: Block, cx: BlockCx)
-	tern.timer(3000, function()
+	Host.timer(3000, function()
 		if not b.closed then refetch(b, cx) end
 	end)
 end
@@ -1905,7 +1906,7 @@ local function stepFixture(b: Block, cx: BlockCx)
 	b.flights.refresh = true
 	State.replace(b.s, entry.previous, data.asOf, data.asOfIso)
 	draw(b, cx)
-	tern.timer(SETTLE_MS, apply)
+	Host.timer(SETTLE_MS, apply)
 end
 
 -- ⌘R: refresh now. The sample board steps through its `refreshes` instead of asking GitHub.
@@ -1939,13 +1940,13 @@ local function keepCache(b: Block, cx: BlockCx, edit: (() -> ())?, key: string?,
 			-- The PR is absent (a capped cache omits it): the edit has nothing to land on, and is not applied to the absence. It
 			-- waits, unapplied, for the PR to return on this head. Its time is now, which no snapshot requested before it can pass.
 			table.insert(b.replays, {
-				key = key :: string, head = head :: string, at = os.time(), edit = edit, applied = false, present = true, queued = queued,
+				key = key :: string, head = head :: string, at = Host.time(), edit = edit, applied = false, present = true, queued = queued,
 			})
 		elseif not (pr and head and pr.headOid ~= head) then
 			edit()
 			if pr and head and b.cache and not b.fixture then
 				table.insert(b.replays, {
-					key = pr.key, head = head, at = cachedAt(b) or os.time(), edit = edit,
+					key = pr.key, head = head, at = cachedAt(b) or Host.time(), edit = edit,
 					applied = true, present = State.prOf(b.s, pr.key) ~= nil, queued = queued,
 				})
 			end
@@ -2759,7 +2760,7 @@ end
 local function readGit(b: Block, cx: BlockCx, pr: Model.HubPR, d: Fixes.FixDetails)
 	local paths = annotatedPaths(d)
 	if not pr.conflicts and #paths == 0 then return end
-	local dir = cx.cwd or tern.getenv("HOME") or ""
+	local dir = cx.cwd or Host.getenv("HOME") or ""
 	Fetch.checkoutFor(nil, dir, pr.repo, function(found)
 		if b.closed then return end
 		local repo = found or Fetch.readySavedCopy(pr.repo)
@@ -2979,7 +2980,7 @@ end
 
 -- The agent the reader's omp is set to, and the models it can run (a live board only).
 local function loadAgent(b: Block, cx: BlockCx)
-	tern.timer(0, function()
+	Host.timer(0, function()
 		Fetch.findAgent(function(agent)
 			if b.closed or not agent then return end
 			b.agent = agent
@@ -3017,7 +3018,7 @@ local block: BlockDef<Block> = {
 	init = function(cx: BlockCx, args: { string }, saved: any): Block
 		local opts, problem = options(args)
 		local prs: { Model.HubPR } = {}
-		local now = os.time()
+		local now = Host.time()
 		local refreshedAt: string? = nil
 		local fixture = if opts then opts.fixture else nil
 		-- A sample board reads the recorded `tandem watch --json` with no process, and flags every list it shows.
@@ -3053,7 +3054,7 @@ local block: BlockDef<Block> = {
 		if problem then s.error = { operation = "hub", message = problem } end
 		local b: Block = {
 			s = s, cache = cache, fixture = fixture, generate = opts ~= nil and opts.generate, agent = nil, agentFlight = nil, botKeys = {},
-			github = Github.client(Fetch.runner, tern.json.decode), timers = {},
+			github = Github.client(Fetch.runner, Host.json.decode), timers = {},
 			flights = { refresh = false, checks = false, probe = false, flake = false, tandem = false }, watched = watched, handoffs = 0, seen = {}, heard = {}, held = if cache then storedId(cache) else nil, replays = {}, retired = {}, unsaved = false, root = nil, rootWaiters = nil,
 			sched = {
 				probedAt = now, probeChanged = false, focusedAt = if live then now else nil, checksAt = nil,

@@ -1,7 +1,7 @@
 --!strict
 -- The Tandem hand-off: the watch parser, where a watched PR sits and what its card offers, the exact argv and
--- stdin of both Tandem calls, and the real hub block driven through them. `tern` is stubbed in the module
--- environments of block and fetch, and every process effect is a recorded call that a scenario settles by hand.
+-- stdin of both Tandem calls, and the real hub block driven through them. The fields of src/host.luau are
+-- stubbed, and every process effect is a recorded call that a scenario settles by hand.
 local Cases: any = require("../fixtures/hub/cases")
 local AgentFix = require("../src/hub/agent-fix")
 local Model = require("../src/hub/model")
@@ -164,12 +164,12 @@ local function placement()
 	assert(Model.handoffReason(pr("acme/api#114", { tandem = true }), Cases.asOf) == "Hand off from the PR hub")
 end
 
--- The stub `tern` shared by the block's and fetch's module environments. Decoded text is looked up, and an
+-- The stub Host fields that block and fetch both call. Decoded text is looked up, and an
 -- encoded value is recorded so the test can compare the exact request table that would be written.
 local REPO_ROOT = "/Users/reader/project"
 local SUBFOLDER = REPO_ROOT .. "/src/deep"
 
-local function stubTern(w: any): any
+local function stubHost(w: any): any
 	return {
 		json = {
 			decode = function(text: string): any
@@ -215,29 +215,26 @@ local function stubTern(w: any): any
 	}
 end
 
--- Block's clock is frozen at `w.now` for the whole scenario (an hour after the recorded boards' `asOf`, so the stamps
--- the scenarios store, up to `asOf + 120`, are all older than a refresh and no result depends on the machine's date). A
--- scenario moves it by setting `w.now`. The real `os` comes back even when the scenario errors.
+-- Block's clock (`Host.time`) is frozen at `w.now` for the whole scenario (an hour after the recorded boards' `asOf`, so the
+-- stamps the scenarios store, up to `asOf + 120`, are all older than a refresh and no result depends on the machine's date). A
+-- scenario moves it by setting `w.now`. The real Host fields come back even when the scenario errors.
 local function withWorld(run: (w: any, Fetch: any, Block: any) -> ())
 	local Block: any = require("../src/hub/block")
 	local Fetch: any = require("../src/fetch")
-	local blockEnv: any, fetchEnv: any = getfenv(Block.init), getfenv(Fetch.tandemWatch)
-	local hostBlock, hostFetch, hostRunner, hostFind = blockEnv.tern, fetchEnv.tern, Fetch.runner, Fetch.findRepo
-	local hostOs = rawget(blockEnv, "os")
-	local realOs = os
+	local Host: any = require("../src/host")
+	local hostRunner, hostFind = Fetch.runner, Fetch.findRepo
 	local hostClone, hostStart = Fetch.findAgentClone, Fetch.startAgentFix
 	local w: any = {
 		decoded = {}, encoded = {}, timers = {}, calls = {}, toasts = {}, renders = 0, throws = false, Block = Block,
 		finds = {}, holdRoot = false, rootFails = false, findThrows = false, kv = {}, now = Cases.asOf + 3600,
 	}
-	local stub = stubTern(w)
-	blockEnv.tern, fetchEnv.tern = stub, stub
-	blockEnv.os = setmetatable({
-		time = function(t: any?): number
-			if t then return realOs.time(t) end
-			return w.now
-		end,
-	}, { __index = realOs })
+	local stub = stubHost(w)
+	stub.time = function(): number return w.now end
+	local hostFields: { [string]: any } = {}
+	for name, value in stub do
+		hostFields[name] = Host[name]
+		Host[name] = value
+	end
 	-- Finding the repository root is a recorded call too: answered at once with REPO_ROOT unless a scenario holds
 	-- it (settled by hand through `finds[n].done`) or makes it fail or throw.
 	Fetch.findRepo = function(dir: string, done: (any, string?) -> ())
@@ -252,8 +249,8 @@ local function withWorld(run: (w: any, Fetch: any, Block: any) -> ())
 		if w.throws then error("spawn failed", 0) end
 	end
 	local ok, err = pcall(run, w, Fetch, Block)
-	blockEnv.tern, fetchEnv.tern, Fetch.runner, Fetch.findRepo = hostBlock, hostFetch, hostRunner, hostFind
-	blockEnv.os = hostOs
+	for name in stub do Host[name] = hostFields[name] end
+	Fetch.runner, Fetch.findRepo = hostRunner, hostFind
 	Fetch.findAgentClone, Fetch.startAgentFix = hostClone, hostStart
 	if not ok then error(err, 0) end
 end
@@ -1637,7 +1634,7 @@ local function mixedAge()
 		w.kv["hub.cache"] = added(storedCache({ WEB, API114 }, Cases.asOf))
 		-- Every store of the cache, in order.
 		local writes: { { stamp: number, key: boolean, other: boolean, title: string? } } = {}
-		local kv = getfenv(Block.init).tern.kv
+		local kv = require("../src/host").kv
 		local set = kv.set
 		kv.set = function(name: string, value: any)
 			if name == "hub.cache" then

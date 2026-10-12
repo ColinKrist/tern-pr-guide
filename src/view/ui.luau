@@ -2,6 +2,7 @@
 -- Node builders every view shares.
 local Guide = require("../guide")
 local Text = require("../text")
+local TextField = require("../text-field")
 
 -- Remembers each animated node's entrance class across renders: views read the last render's
 -- `born` and record this render's into `next` (see `entering`). Nodes first drawn in a render a
@@ -91,6 +92,20 @@ function M.keyLine(class: string, hints: { { string } }): Node
   table.insert(parts, span("gp-keyline-label", hint[2]))
  end
  return el("span", { class = "gp-keyline " .. class }, parts)
+end
+
+-- A text field's native input (or editor, when multiline). Tern counts the cursor and anchor in UTF-16 units.
+function M.field(field: TextField.Field, key: string, placeholder: string?): Node
+ local function units(position: number): number
+  local count = 0
+  for _, code in utf8.codes(string.sub(field.text, 1, (utf8.offset(field.text, position + 1) or (#field.text + 1)) - 1)) do
+   count += if code >= 0x10000 then 2 else 1
+  end
+  return count
+ end
+ return tern.ui.node(if field.multiline then "editor" else "input", {
+  key = key, text = field.text, cursor = units(field.cursor), anchor = units(field.anchor), placeholder = placeholder,
+ })
 end
 
 function M.spacer(): Node

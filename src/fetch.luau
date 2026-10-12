@@ -10,6 +10,7 @@ local Fixes = require("./hub/fixes")
 local Github = require("./github")
 local GitOutput = require("./git-output")
 local Guide = require("./guide")
+local Host = require("./host")
 local Lens = require("./lens")
 local Links = require("./links")
 local Model = require("./hub/model")
@@ -54,7 +55,7 @@ local LENS_BYTES = 64 * 1024
 local function reason(result: ProcessResult): string
  if result.timed_out then return "timed out" end
  local line = string.match(result.stderr, "%S[^\r\n]*") or ("exit status " .. result.status)
- local decoded, body = pcall(tern.json.decode, result.stdout)
+ local decoded, body = pcall(Host.json.decode, result.stdout)
  if decoded and type(body) == "table" and type(body.errors) == "table" then
   local details = {}
   for _, err in body.errors do
@@ -81,14 +82,14 @@ local function withShellPath(go: (path: string) -> ())
  end
  waitingForPath = { go }
  local function settle(path: string?)
-  local base = if path and path ~= "" then path else (tern.getenv("PATH") or "/usr/bin:/bin")
+  local base = if path and path ~= "" then path else (Host.getenv("PATH") or "/usr/bin:/bin")
   shellPath = base .. ":" .. FALLBACK_DIRS
   local waiting = waitingForPath :: { (path: string) -> () }
   waitingForPath = nil
   for _, resume in waiting do resume(shellPath :: string) end
  end
- local shell = tern.getenv("SHELL") or "/bin/zsh"
- local spawned = pcall(tern.process.run, { shell, "-lic", "printf '\\n%s%s' PRGUIDE_PATH= \"$PATH\"" }, { timeout_ms = 15_000 }, function(result: ProcessResult)
+ local shell = Host.getenv("SHELL") or "/bin/zsh"
+ local spawned = pcall(Host.process.run, { shell, "-lic", "printf '\\n%s%s' PRGUIDE_PATH= \"$PATH\"" }, { timeout_ms = 15_000 }, function(result: ProcessResult)
   settle(string.match(result.stdout, "PRGUIDE_PATH=([^\n]*)%s*$"))
  end)
  if not spawned then settle(nil) end
@@ -100,7 +101,7 @@ local function located(program: string, path: string): string
  if string.find(program, "/", 1, true) then return program end
  for dir in string.gmatch(path, "[^:]+") do
   local candidate = dir .. "/" .. program
-  if tern.fs.exists(candidate) then return candidate end
+  if Host.fs.exists(candidate) then return candidate end
  end
  return program
 end
@@ -115,7 +116,7 @@ local function run(argv: { string }, opts: ProcessOptions, fail: Fail, ok: (stdo
   local env = if opts.env then table.clone(opts.env) else {}
   env.PATH = env.PATH or path
   withPath.env = env
-  local spawned, err = pcall(tern.process.run, resolved, withPath, function(result: ProcessResult)
+  local spawned, err = pcall(Host.process.run, resolved, withPath, function(result: ProcessResult)
    if result.status ~= 0 then
     fail(reason(result))
     return
@@ -147,7 +148,7 @@ end
 local function readMeta(job: Job, pr: string, ok: (meta: Meta) -> ())
  local argv = { "gh", "pr", "view", pr, "--json", "number,title,body,url,author,baseRefName,headRefOid,mergeCommit" }
  run(argv, { cwd = job.repo, timeout_ms = GH_MS }, named("gh pr view", job.fail), function(stdout)
-  ok(tern.json.decode(stdout))
+  ok(Host.json.decode(stdout))
  end)
 end
 
@@ -272,12 +273,12 @@ end
 -- The review as GitHub's create-review request body; `comments` stays an array when empty.
 local function requestJson(payload: Review.Payload): string
  local body = table.clone(payload)
- body.comments = tern.json.array(table.clone(payload.comments))
- return tern.json.encode(body, true)
+ body.comments = Host.json.array(table.clone(payload.comments))
+ return Host.json.encode(body, true)
 end
 
 local function saveDryRun(path: string, payload: Review.Payload, done: (Review.Delivery?, string?) -> ())
- local written, err = pcall(tern.fs.write, path, requestJson(payload))
+ local written, err = pcall(Host.fs.write, path, requestJson(payload))
  if written then done({ kind = "saved", path = path }, nil) else done(nil, "saving " .. path .. ": " .. tostring(err)) end
 end
 
@@ -285,7 +286,7 @@ local function post(repo: string, pr: Pr.PR, payload: Review.Payload, done: (Rev
  local fail = function(message: string) done(nil, message) end
  local argv = { "gh", "api", "--method", "POST", "repos/" .. pr.repo .. "/pulls/" .. pr.number .. "/reviews", "--input", "-" }
  run(argv, { cwd = repo, stdin = requestJson(payload), timeout_ms = GH_MS }, named("gh api", fail), function(stdout)
-  local review = tern.json.decode(stdout)
+  local review = Host.json.decode(stdout)
   done({ kind = "posted", url = review.html_url }, nil)
  end)
 end
@@ -323,8 +324,8 @@ local READY, DOWNLOADED = "/prguide-ready", "/prguide-downloaded"
 -- again after an interrupted attempt does the same steps over. Calls `done` once, with why it
 -- failed or nil.
 local function prepareCache(root: string, slug: string, done: (err: string?) -> ())
- if tern.fs.exists(root .. READY) then return done(nil) end
- local made, err = pcall(tern.fs.mkdir, root)
+ if Host.fs.exists(root .. READY) then return done(nil) end
+ local made, err = pcall(Host.fs.mkdir, root)
  if not made then return done("making " .. root .. ": " .. Text.errorLine(err)) end
  local job: Job = { repo = root, fail = done }
  withShellPath(function(path)
@@ -334,7 +335,7 @@ local function prepareCache(root: string, slug: string, done: (err: string?) -> 
     -- The empty value drops the reader's own credential helpers, which would ask for a password.
     git(job, "git config", { "config", "--replace-all", "credential.helper", "" }, nil, function()
      git(job, "git config", { "config", "--add", "credential.helper", helper }, nil, function()
-      local marked, problem = pcall(tern.fs.write, root .. READY, "")
+      local marked, problem = pcall(Host.fs.write, root .. READY, "")
       done(if marked then nil else "writing " .. root .. READY .. ": " .. Text.errorLine(problem))
      end)
     end)
@@ -356,7 +357,7 @@ end
 -- Finds the checkout `dir` is in. Calls `done` once, with it or with what failed.
 function M.findRepo(dir: string, done: (repo: Repo?, err: string?) -> ())
  local job: Job = { repo = dir, fail = function(message: string) done(nil, message) end }
- if not tern.fs.exists(dir) then return job.fail("No checkout at " .. dir) end
+ if not Host.fs.exists(dir) then return job.fail("No checkout at " .. dir) end
  git(job, "git rev-parse", { "rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir" }, nil, function(stdout)
   local root, common = string.match(stdout, "^([^\n]+)\n([^\n]+)")
   done({ root = root :: string, guides = (common :: string) .. "/prguide" }, nil)
@@ -399,13 +400,13 @@ function M.checkoutFor(near: Repo?, dir: string, slug: string, done: (repo: Repo
    folders = { dir, parentOf(dir) }
   end
   for _, folder in folders do
-   if folder and not seen[folder] and tern.fs.exists(folder) then
+   if folder and not seen[folder] and Host.fs.exists(folder) then
     seen[folder] = true
-    local listed, found = pcall(tern.fs.list, folder)
+    local listed, found = pcall(Host.fs.list, folder)
     local names: { string } = if listed then found else {}
     for _, name in names do
      local path = folder .. "/" .. name
-     if not seen[path] and tern.fs.exists(path .. "/.git") then
+     if not seen[path] and Host.fs.exists(path .. "/.git") then
       seen[path] = true
       table.insert(candidates, { path = path, name = name })
      end
@@ -448,7 +449,7 @@ function M.savedCopy(host: string?, slug: string): (Repo?, string?)
  if not owner or not name or string.lower(host or "") ~= "github.com" then
   return nil, "No checkout of " .. slug .. " was found next to this one, and PR Guide only downloads its own copy of repos on github.com."
  end
- local root = tern.plugin.data .. "/repos/" .. string.lower(owner) .. "/" .. string.lower(name) .. ".git"
+ local root = Host.plugin.data .. "/repos/" .. string.lower(owner) .. "/" .. string.lower(name) .. ".git"
  return { root = root, guides = root .. "/prguide", cache = slug }, nil
 end
 
@@ -456,7 +457,7 @@ end
 local function fetchStage(target: Target): string
  local slug = target.cache
  if not slug then return "Fetching its commits into " .. target.repo end
- if tern.fs.exists(target.repo .. DOWNLOADED) then return "Checking " .. slug .. " for new commits" end
+ if Host.fs.exists(target.repo .. DOWNLOADED) then return "Checking " .. slug .. " for new commits" end
  return "Downloading " .. slug .. " (first time only)"
 end
 
@@ -477,7 +478,7 @@ function M.openPr(target: Target, progress: (stage: string) -> (), done: (pr: Pr
   readMeta(job, target.pr, function(meta)
    progress(fetchStage(target))
    fetchRefs(job, meta, function(head, mergeBase)
-    if target.cache then pcall(tern.fs.write, target.repo .. DOWNLOADED, "") end
+    if target.cache then pcall(Host.fs.write, target.repo .. DOWNLOADED, "") end
     release()
     progress("Reading the changes")
     listChanges(job, mergeBase, head, function(changes)
@@ -512,7 +513,7 @@ end
 -- PR Guide's saved copy of the GitHub repo `slug` when it is already set up (the fixes page never sets one up), else nil.
 function M.readySavedCopy(slug: string): Repo?
  local copy = M.savedCopy("github.com", slug)
- if copy and tern.fs.exists(copy.root .. READY) then return copy end
+ if copy and Host.fs.exists(copy.root .. READY) then return copy end
  return nil
 end
 
@@ -618,7 +619,7 @@ function M.submitReview(pr: Pr.PR, payload: Review.Payload, to: Destination, don
  if not repo then return deliver() end
  local fail = function(message: string) done(nil, message) end
  run({ "gh", "pr", "view", pr.url, "--json", "headRefOid" }, { cwd = repo, timeout_ms = GH_MS }, named("gh pr view", fail), function(stdout)
-  local head = tern.json.decode(stdout).headRefOid
+  local head = Host.json.decode(stdout).headRefOid
   if head ~= pr.head then
    fail("The PR moved on to " .. string.sub(head, 1, 7) .. " since this page loaded, so nothing was sent. Reopen it to review the new commits.")
    return
@@ -631,7 +632,7 @@ end
 local CHOICE_KEY = "model"
 
 local function savedChoice(): { [string]: any }
- local ok, saved = pcall(tern.kv.get, CHOICE_KEY)
+ local ok, saved = pcall(Host.kv.get, CHOICE_KEY)
  return if ok and type(saved) == "table" then saved else {}
 end
 
@@ -642,7 +643,7 @@ local function chosenModel(config: string): (string?, string?)
  if type(saved.model) == "string" then
   return saved.model, if type(saved.effort) == "string" then saved.effort else nil
  end
- local raw = if tern.fs.exists(config) then Agent.reviewModel(tern.fs.read(config)) else nil
+ local raw = if Host.fs.exists(config) then Agent.reviewModel(Host.fs.read(config)) else nil
  if not raw then return nil, nil end
  return Agent.parseChoice(raw)
 end
@@ -651,10 +652,10 @@ end
 -- model, and the lens they last picked. Calls `done` once, with nil and why when `omp` or the
 -- model is missing. `omp` is looked up as a file because an interactive shell may define it as an alias.
 function M.findAgent(done: (agent: Agent.Agent?, why: string?) -> ())
- local home = tern.getenv("HOME")
+ local home = Host.getenv("HOME")
  if not home then return done(nil, "your home directory is unknown") end
  withShellPath(function(path)
-  local command = Agent.findOnPath(path, tern.fs.exists)
+  local command = Agent.findOnPath(path, Host.fs.exists)
   if not command then return done(nil, "omp isn't installed (it isn't on your shell's PATH)") end
   local model, effort = chosenModel(home .. Agent.CONFIG)
   if not model then return done(nil, "omp has no model set (pick one in omp first)") end
@@ -667,23 +668,23 @@ end
 
 -- Remembers `agent`'s model, effort and lens for every PR and the next start.
 function M.saveChoice(agent: Agent.Agent)
- pcall(tern.kv.set, CHOICE_KEY, { model = agent.model, effort = agent.effort, lens = agent.lens })
+ pcall(Host.kv.set, CHOICE_KEY, { model = agent.model, effort = agent.effort, lens = agent.lens })
 end
 
 -- The folder the reader's own lenses live in.
 function M.lensFolder(): string
- return tern.plugin.data .. "/lenses"
+ return Host.plugin.data .. "/lenses"
 end
 
 -- The text of every lens file in `dir`: the `.md` files but the README, none when it can't be read.
 local function lensTexts(dir: string): { string }
  local texts = {}
- if not tern.fs.exists(dir) then return texts end
- local listed, names = pcall(tern.fs.list, dir)
+ if not Host.fs.exists(dir) then return texts end
+ local listed, names = pcall(Host.fs.list, dir)
  if not listed then return texts end
  for _, name in names do
   if string.lower(string.sub(name, -3)) == ".md" and string.lower(name) ~= "readme.md" and string.sub(name, 1, 1) ~= "." then
-   local read, text = pcall(tern.fs.read, dir .. "/" .. name, LENS_BYTES)
+   local read, text = pcall(Host.fs.read, dir .. "/" .. name, LENS_BYTES)
    if read then table.insert(texts, text) end
   end
  end
@@ -701,9 +702,9 @@ end
 function M.prepareLensFolder(): (string?, string?)
  local dir = M.lensFolder()
  local ok, err = pcall(function()
-  tern.fs.mkdir(dir)
+  Host.fs.mkdir(dir)
   local readme = dir .. "/README.md"
-  if not tern.fs.exists(readme) then tern.fs.write(readme, tern.fs.read(LENSES .. "/README.md")) end
+  if not Host.fs.exists(readme) then Host.fs.write(readme, Host.fs.read(LENSES .. "/README.md")) end
  end)
  if ok then return dir, nil end
  return nil, Text.errorLine(err)
@@ -714,12 +715,12 @@ end
 local RUN_SECONDS_KEY, DEFAULT_RUN_SECONDS = "runSeconds", 180
 
 function M.expectedRunSeconds(): number
- local ok, seconds = pcall(tern.kv.get, RUN_SECONDS_KEY)
+ local ok, seconds = pcall(Host.kv.get, RUN_SECONDS_KEY)
  return if ok and type(seconds) == "number" and seconds > 0 then seconds else DEFAULT_RUN_SECONDS
 end
 
 function M.saveRunSeconds(seconds: number)
- pcall(tern.kv.set, RUN_SECONDS_KEY, seconds)
+ pcall(Host.kv.set, RUN_SECONDS_KEY, seconds)
 end
 
 -- The PRs the reader opened lately, newest first, which the hub lists under Review requests. They
@@ -727,7 +728,7 @@ end
 local RECENT_KEY, LEGACY_RECENT_KEY = "hub.recent", "recent"
 
 local function kvGet(key: string): any
- local ok, saved = pcall(tern.kv.get, key)
+ local ok, saved = pcall(Host.kv.get, key)
  return if ok then saved else nil
 end
 
@@ -742,22 +743,22 @@ end
 function M.migrateRecent()
  local legacy = kvGet(LEGACY_RECENT_KEY)
  if legacy == nil then return end
- if kvGet(RECENT_KEY) == nil then pcall(tern.kv.set, RECENT_KEY, Sync.openedList(legacy)) end
- pcall(tern.kv.set, LEGACY_RECENT_KEY, nil)
+ if kvGet(RECENT_KEY) == nil then pcall(Host.kv.set, RECENT_KEY, Sync.openedList(legacy)) end
+ pcall(Host.kv.set, LEGACY_RECENT_KEY, nil)
 end
 
 -- Puts `pr` first in the recently opened list.
 function M.rememberPr(pr: Pr.PR)
  if pr.repo == "" then return end
  local opened = { repo = pr.repo, number = pr.number, title = pr.title, author = pr.author, at = os.date("!%Y-%m-%dT%H:%M:%SZ") :: string }
- pcall(tern.kv.set, RECENT_KEY, Sync.remember(M.recentPrs(), opened))
+ pcall(Host.kv.set, RECENT_KEY, Sync.remember(M.recentPrs(), opened))
 end
 
 -- The models `agent` can run with, from `omp models`. Calls `done` once; the list is empty when
 -- listing fails, which leaves the current model as the only choice.
 function M.listModels(agent: Agent.Agent, done: (models: { Agent.Model }) -> ())
  run({ agent.command, "models", "--json" }, { env = { PATH = agent.path }, timeout_ms = GH_MS }, function() done({}) end, function(stdout)
-  local ok, raw = pcall(tern.json.decode, stdout)
+  local ok, raw = pcall(Host.json.decode, stdout)
   done(if ok then Agent.parseModels(raw) else {})
  end)
 end
@@ -773,28 +774,28 @@ function M.generateGuide(agent: Agent.Agent, repo: Repo, pr: Pr.PR, done: (Guide
  local lens = Agent.currentLens(agent)
  local fail = function(message: string) done(nil, message) end
  local prepared, err = pcall(function()
-  tern.fs.mkdir(dir)
-  tern.fs.mkdir(repo.guides)
-  tern.fs.write(diffPath, Agent.numberedDiff(pr.files))
-  tern.fs.write(promptPath, Agent.prompt(tern.fs.read(PROMPT), {
+  Host.fs.mkdir(dir)
+  Host.fs.mkdir(repo.guides)
+  Host.fs.write(diffPath, Agent.numberedDiff(pr.files))
+  Host.fs.write(promptPath, Agent.prompt(Host.fs.read(PROMPT), {
    repo = pr.repo, number = tostring(pr.number), title = pr.title, head = pr.head,
    base = refPrefix(pr.number) .. "/base", diffPath = diffPath, guidePath = guidePath, author = Agent.name(agent),
-   lens = tern.json.encode(lens.name), focus = Agent.focus(lens),
+   lens = Host.json.encode(lens.name), focus = Agent.focus(lens),
   }))
  end)
  if not prepared then return fail(Text.errorLine(err)) end
  run(Agent.argv(agent, promptPath), { cwd = repo.root, env = { PATH = agent.path }, timeout_ms = AGENT_MS }, fail, function()
-  if not tern.fs.exists(guidePath) then return fail(Agent.name(agent) .. " finished without writing " .. guidePath) end
+  if not Host.fs.exists(guidePath) then return fail(Agent.name(agent) .. " finished without writing " .. guidePath) end
   local guide, problem = Guide.read(guidePath, pr)
   if guide then return done(guide, nil) end
   local kept = dir .. "/guide.json"
-  tern.fs.write(kept, tern.fs.read(guidePath))
-  tern.fs.remove(guidePath)
+  Host.fs.write(kept, Host.fs.read(guidePath))
+  Host.fs.remove(guidePath)
   fail("the guide it wrote isn't usable: " .. (problem :: string) .. " (kept at " .. kept .. ")")
  end)
 end
 
--- `Github.Runner` over `tern.process.run`: `argv[1]` is found on the shell's PATH like `run` does,
+-- `Github.Runner` over `Host.process.run`: `argv[1]` is found on the shell's PATH like `run` does,
 -- and the result is always handed back, a failed spawn as status -1.
 function M.runner(argv: { string }, opts: { cwd: string?, stdin: string?, timeout_ms: number? }, done: (out: Github.Out) -> ())
  local called = false
@@ -806,7 +807,7 @@ function M.runner(argv: { string }, opts: { cwd: string?, stdin: string?, timeou
  withShellPath(function(path)
   local resolved = table.clone(argv)
   resolved[1] = located(argv[1], path)
-  local spawned, err = pcall(tern.process.run, resolved, { cwd = opts.cwd, stdin = opts.stdin, timeout_ms = opts.timeout_ms, env = { PATH = path } }, function(result: ProcessResult)
+  local spawned, err = pcall(Host.process.run, resolved, { cwd = opts.cwd, stdin = opts.stdin, timeout_ms = opts.timeout_ms, env = { PATH = path } }, function(result: ProcessResult)
    settle({ status = result.status, stdout = result.stdout, stderr = result.stderr, timed_out = result.timed_out })
   end)
   if not spawned then settle({ status = -1, stdout = "", stderr = Text.errorLine(err), timed_out = false }) end
@@ -871,7 +872,7 @@ function M.tandemWatch(root: string, done: ({ [string]: boolean }?, string?) -> 
  if string.sub(root, 1, 1) ~= "/" then return finish(nil, "The project folder is not an absolute path") end
  runTandem({ "tandem", "watch", "--json" }, { cwd = root, timeout_ms = TANDEM_MS }, function(stdout, err)
   if not stdout then return finish(nil, err) end
-  local decoded, value = pcall(tern.json.decode, stdout)
+  local decoded, value = pcall(Host.json.decode, stdout)
   local watched = if decoded then Model.parseTandemWatch(value) else nil
   if not watched then return finish(nil, "Tandem returned output this version can't read") end
   finish(watched, nil)
@@ -888,11 +889,11 @@ function M.tandemHandoff(root: string, repo: string, number: number, reason: str
   return finish(nil, "The hand-off request is incomplete")
  end
  local request = { v = 1, origin = { plugin = "prguide", repoPath = root }, action = { verb = "pr-fix", repo = repo, number = number, reason = why } }
- local encoded, stdin = pcall(tern.json.encode, request)
+ local encoded, stdin = pcall(Host.json.encode, request)
  if not encoded then return finish(nil, Text.errorLine(stdin)) end
  runTandem({ "tandem", "native", "act" }, { cwd = root, stdin = stdin :: string, timeout_ms = TANDEM_MS }, function(stdout, err)
   if not stdout then return finish(nil, err) end
-  local decoded, value = pcall(tern.json.decode, stdout)
+  local decoded, value = pcall(Host.json.decode, stdout)
   if not decoded or type(value) ~= "table" or not TANDEM_STATUS[value.status] then
    return finish(nil, "Tandem returned an answer this version can't read")
   end
@@ -922,20 +923,20 @@ end
 function M.rememberAgentClone(slug: string, path: string): string?
  local clones = M.agentClones()
  clones[string.lower(slug)] = path
- local ok, err = pcall(tern.kv.set, CLONES_KEY, clones)
+ local ok, err = pcall(Host.kv.set, CLONES_KEY, clones)
  return if ok then nil else "Couldn't save the clone folder: " .. Text.errorLine(err)
 end
 
 -- A read-only SELECT, with SQL quoting and no migration or write to Tandem's store.
 function M.tandemClone(slug: string, done: (string?) -> ())
- local home = tern.getenv("TANDEM_HOME") or ((tern.getenv("HOME") or "") .. "/.tandem")
+ local home = Host.getenv("TANDEM_HOME") or ((Host.getenv("HOME") or "") .. "/.tandem")
  local database = home .. "/state.sqlite"
- if not tern.fs.exists(database) then return done(nil) end
+ if not Host.fs.exists(database) then return done(nil) end
  local quoted = string.gsub(string.lower(slug), "'", "''")
  local sql = "SELECT path FROM repo_locations WHERE repo = '" .. quoted .. "' LIMIT 1;"
  M.runner({ "sqlite3", "-readonly", "-json", database, sql }, { timeout_ms = 15_000 }, function(out)
   if out.status ~= 0 then return done(nil) end
-  local ok, rows = pcall(tern.json.decode, out.stdout)
+  local ok, rows = pcall(Host.json.decode, out.stdout)
   local path = if ok and type(rows) == "table" and type(rows[1]) == "table" then rows[1].path else nil
   done(if type(path) == "string" and path ~= "" then path else nil)
  end)
@@ -972,16 +973,16 @@ export type AgentFixRequest = {
 function M.startAgentFix(request: AgentFixRequest, agent: Agent.Agent, now: number, changed: (AgentFix.Outcome) -> (), done: (AgentFix.Fix?, string?) -> ()): AgentFix.Engine?
  if activeAgentFix and activeAgentFix.busy() then done(nil, "An agent fix already holds a worktree"); return nil end
  activeAgentFix = nil
- local home = tern.getenv("HOME")
+ local home = Host.getenv("HOME")
  if not home then done(nil, "The home directory is unknown"); return nil end
  if request.number < 1 or request.number % 1 ~= 0 or not string.match(request.headOid, "^%x+$") or string.sub(request.base, 1, 1) == "-" or request.base == "" then
   done(nil, "Invalid PR refs"); return nil
  end
  local spec: AgentFix.Spec = {
   key = request.key, clone = request.clone, checkout = request.checkout,
-  pool = tern.getenv("TANDEM_POOL_ROOT") or (home .. "/.tandem/pool"),
+  pool = Host.getenv("TANDEM_POOL_ROOT") or (home .. "/.tandem/pool"),
   branch = request.branch, base = request.base, headOid = request.headOid, number = request.number,
-  tool = tern.plugin.dir .. "/tools/conflicts", omp = agent.command, model = agent.model,
+  tool = Host.plugin.dir .. "/tools/conflicts", omp = agent.command, model = agent.model,
   effort = agent.effort, regenerate = request.regenerate, input = request.input,
   -- A bot edit runs in macOS Seatbelt; where it is missing the run fails and nothing is applied.
   sandbox = if request.input then { exec = "/usr/bin/sandbox-exec", home = home } else nil,
@@ -999,7 +1000,7 @@ function M.startAgentFix(request: AgentFixRequest, agent: Agent.Agent, now: numb
   M.runner({ "git", "-C", path, "rev-parse", "--absolute-git-dir" }, { timeout_ms = GIT_MS }, function(out)
    if out.status ~= 0 then return callback(nil, "Couldn't locate the conflict journal") end
    local ok, rows = pcall(function()
-    local journal = tern.json.decode(tern.fs.read(trimmed(out.stdout) .. "/prguide-conflicts.json", 16 * 1024 * 1024))
+    local journal = Host.json.decode(Host.fs.read(trimmed(out.stdout) .. "/prguide-conflicts.json", 16 * 1024 * 1024))
     local resolved = {}
     for _, hunk in journal.hunks do
      if hunk.resolved then table.insert(resolved, { id = hunk.id, lines = hunk.resolved.lines }) end
@@ -1011,7 +1012,7 @@ function M.startAgentFix(request: AgentFixRequest, agent: Agent.Agent, now: numb
  end
  local engine: AgentFix.Engine
  activeBotFix = nil
- engine = AgentFix.engine(spec, { runner = M.runner, decode = tern.json.decode, samePath = samePath, resolutions = resolutions }, now, changed, function(fix, err)
+ engine = AgentFix.engine(spec, { runner = M.runner, decode = Host.json.decode, samePath = samePath, resolutions = resolutions }, now, changed, function(fix, err)
   if fix and request.input then activeBotFix = fix end
   if not fix and not engine.busy() then activeAgentFix = nil end
   done(fix, err)
@@ -1073,7 +1074,7 @@ function M.readAgentFix(fix: AgentFix.Fix, done: (AgentFixRead?, string?) -> ())
      return nextCommand()
     end
     local ok, originals = pcall(function()
-     local journal = tern.json.decode(tern.fs.read(trimmed(out.stdout) .. "/prguide-conflicts.json", 16 * 1024 * 1024))
+     local journal = Host.json.decode(Host.fs.read(trimmed(out.stdout) .. "/prguide-conflicts.json", 16 * 1024 * 1024))
      assert(type(journal.identity) == "string" and string.sub(journal.identity, 1, #fix.headOid + 1) == fix.headOid .. ":", "The conflict journal belongs to a different pull request head")
      local snapshots: { [string]: ReviewFix.Original } = {}
      local function lines(value: any): { string }
@@ -1133,7 +1134,7 @@ function M.pushAgentFix(plan: ReviewFix.Plan, canPush: () -> boolean, done: (boo
   if not ok then reply({ status = -1, stdout = "", stderr = tostring(err), timed_out = false }) end
  end
  run({ "gh", "pr", "view", tostring(request.number), "--repo", request.repo, "--json", "headRefName,headRefOid,headRepository,headRepositoryOwner" }, function(out)
-  local ok, meta = pcall(tern.json.decode, out.stdout)
+  local ok, meta = pcall(Host.json.decode, out.stdout)
   if not ok or type(meta) ~= "table" or meta.headRefName ~= fix.branch or type(meta.headRepository) ~= "table" then
    return finish(nil, "The pull request branch changed or is missing")
   end

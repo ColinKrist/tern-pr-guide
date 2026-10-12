@@ -6,6 +6,7 @@ local Diff = require("./diff")
 local Fetch = require("./fetch")
 local Fields = require("./text-field")
 local Guide = require("./guide")
+local Host = require("./host")
 local Keys = require("./keys")
 local Links = require("./links")
 local Notice = require("./view/notice")
@@ -52,7 +53,7 @@ local CLOSE_MS = 190
 -- Sends frame ops after the render that draws their targets. A target the render dropped makes
 -- the frame fail, which leaves nothing to do.
 local function frameLater(cx: BlockCx, ops: { any })
- tern.timer(1, function()
+ Host.timer(1, function()
   pcall(function() cx:frame(ops) end)
  end)
 end
@@ -85,7 +86,7 @@ local function closeAfter(s: State, cx: BlockCx, ids: { string }, apply: () -> (
  if s.keyed then return apply() end
  for _, id in ids do s.closing[id] = true end
  cx:render()
- tern.timer(CLOSE_MS, function()
+ Host.timer(CLOSE_MS, function()
   for _, id in ids do s.closing[id] = nil end
   apply()
   cx:render()
@@ -502,7 +503,7 @@ local function showPr(b: Block, pr: Pr.PR)
   return
  end
  local path = b.opts.guide
- if not path and b.repo and tern.fs.exists(Fetch.guidePath(b.repo, pr.number)) then path = Fetch.guidePath(b.repo, pr.number) end
+ if not path and b.repo and Host.fs.exists(Fetch.guidePath(b.repo, pr.number)) then path = Fetch.guidePath(b.repo, pr.number) end
  local guide, problem = Guide.defaultGuide(pr), nil
  if path then guide, problem = Guide.read(path, pr) end
  if not guide then
@@ -519,15 +520,15 @@ local function generate(b: Block, cx: BlockCx)
  local run, s, repo = b.ai, b.page, b.repo
  if not run or run.running or not s or not repo or b.guided then return end
  local pr, own = s.review.pr, s.review.own
- local started = tern.now()
+ local started = Host.now()
  local ticker: TimerHandle
  local function tick()
-  run.seconds = math.floor((tern.now() - started) / 1000)
+  run.seconds = math.floor((Host.now() - started) / 1000)
   cx:render()
-  ticker = tern.timer(1000, tick)
+  ticker = Host.timer(1000, tick)
  end
  run.running, run.seconds, run.expected, run.error = true, 0, Fetch.expectedRunSeconds(), nil
- ticker = tern.timer(1000, tick)
+ ticker = Host.timer(1000, tick)
  Fetch.generateGuide(run.agent, repo, pr, function(guide, err)
   ticker:cancel()
   run.running, run.error = false, err
@@ -632,7 +633,7 @@ local block: BlockDef<Block> = {
    return b
   end
   -- Starts after init returns, so each stage renders over a block that exists.
-  tern.timer(0, function()
+  Host.timer(0, function()
    Fetch.findAgent(function(agent, why)
     if not agent then
      b.noAgent = why or "the AI agent isn't available"

@@ -44,16 +44,4 @@ function M.key(field: Field, key: Key): Outcome
  replace(field, if field.multiline then text else (string.gsub(text, "[\r\n]+", " ")), from, to)
  return "changed"
 end
-function M.node(field: Field, key: string, placeholder: string?): Node
- local function units(position: number): number
-  local count = 0
-  for _, code in utf8.codes(string.sub(field.text, 1, byte(field.text, position) - 1)) do
-   count += if code >= 0x10000 then 2 else 1
-  end
-  return count
- end
- return tern.ui.node(if field.multiline then "editor" else "input", {
-  key = key, text = field.text, cursor = units(field.cursor), anchor = units(field.anchor), placeholder = placeholder,
- })
-end
 return M
