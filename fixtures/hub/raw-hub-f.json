@@ -4,12 +4,12 @@
    "login": "jubbydev"
   },
   "rateLimit": {
-   "cost": 11,
+   "cost": 1,
    "remaining": 2288,
    "resetAt": "2026-10-09T19:20:33Z",
    "limit": 5000,
    "used": 2712,
-   "nodeCount": 21750
+   "nodeCount": 2900
   },
   "mine": {
    "issueCount": 13,

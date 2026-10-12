@@ -69,7 +69,7 @@ export type Refresh = {
 	prs: { HubPR }, -- `tandem` and `addedByMe` false, `pending` nil: the block fills them from local facts
 	viewer: string,
 	rateLimit: RateLimit, -- the last call's envelope
-	calls: { RateLimit }, -- every call's envelope, in order: hub-f, then threads
+	calls: { RateLimit }, -- every call's envelope, in order: each hub-f page as it answered, then threads
 	truncated: boolean, -- a search returned more than 50
 	partial: Error?, -- threads failed: `prs` still stands, with threadsKnown = false
 }

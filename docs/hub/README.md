@@ -195,7 +195,7 @@ To review has its own field: "Paste a pull request link to review" (`N`, from ei
 
 | Call | Cost | Time | When |
 |---|---|---|---|
-| `docs/hub/queries/hub-f.graphql`: 3 searches (author, review-requested, reviewed-by), check counts, author types, and the fields `HubPR` needs (size, dates, base branch, auto-merge, last queue removal) | 11 pts (9 before the extensions; the queue-removal timeline adds 2) | 6–9 s | On a change, on focus (debounced to 30 s), and every 5 min while the hub block exists (a block can't observe visibility) |
+| `docs/hub/queries/hub-f.graphql`: one page of one search, run for each of the 3 searches (author, review-requested, reviewed-by) at once, 20 PRs a page up to 50, with check counts, author types, and the fields `HubPR` needs (size, dates, base branch, auto-merge, last queue removal) | 1 pt a page: 4 for 40 PRs (2 + 1 + 1), at most 9 (the old single query was 11 for any count) | 0.9–3.6 s a page on 40 PRs, 4.4–6.6 s on busy repos | On a change, on focus (debounced to 30 s), and every 5 min while the hub block exists (a block can't observe visibility) |
 | `threads.graphql`: thread authors via `nodes(ids:)`, only for PRs with an unresolved thread whose `updatedAt` changed | 5 pts for 17 PRs (the first 30 threads of each; 9 pts at 50) | 0.7–0.8 s | After hub-f |
 | `checks.graphql`: CI state for PRs with running checks | 1 pt for 5 or 42 PRs | 1–1.6 s | Every 30 s while any check is running |
 | REST `/notifications` with `If-Modified-Since` | free (304) | | Every 60 s, as the change probe |
@@ -204,8 +204,9 @@ To review has its own field: "Paste a pull request link to review" (`N`, from ei
 | `merge-failure.graphql`: latest comments and head check contexts, via `nodes(ids:)` | 1 pt for any number of PRs (measured for 2) | | After hub-f, only when a comment or label merge is in flight on the same head |
 
 - **Don't** put thread authors inside the search query. Measured at **159 points** per call.
-- **Per refresh:** hub-f 11 + threads 5 + checks 1 = 17 on real data (18 with a merge failure lookup, which is the limit) (42 PRs, 17 with unresolved threads, no cache), under the 18-point limit the tests hold. A cost depends on the connections a query selects times the PRs it can return (`first:` on a connection under a search doesn't change it), so an added connection is paid 150 times per hub-f call. Alias-added PRs didn't change the 11.
-- **Budget:** about 220 pts/hr while the hub block exists (12 refreshes at the 18-point limit; measured 12 × 17 = 204). Even the 30 s debounce ceiling (about 2,200/hr) fits the 5,000/hr GraphQL budget, which Tandem's pr-watch shares.
+- **Pages, not one query.** GitHub stops a GraphQL query at about 10 s and answers HTTP 502. Measured 2026-10-12 on busy repos (vscode, next.js): the three searches at 50 each in one query got 502 after about 11 s every time, and so did a single search at 50; a 20-PR page took 4.4–6.6 s. A page that fails with a 502, 503 or 504, GitHub's "Something went wrong" timeout body, or the 30 s client timeout is asked again with half the PRs, down to 5; later pages of that search keep the smaller size. Every other GraphQL read retries those failures once; writes never retry.
+- **Per refresh:** hub-f 4 (40 PRs) + threads 5 + checks 1 = 10, under the 18-point limit the tests hold. A cost depends on the connections a query selects times the PRs it can return (`first:` on a connection under a search doesn't change it), so a page's `$n` sets its cost and an added connection is paid 20 times per page. Alias-added PRs ride on the first `mine` page.
+- **Budget:** about 130 pts/hr while the hub block exists (12 refreshes at 10, plus checks). Even the 30 s debounce ceiling (about 2,200/hr at the 18-point limit) fits the 5,000/hr GraphQL budget, which Tandem's pr-watch shares.
 - **Latency is the real cost.** Always render from the kv cache first, then refresh in the background.
 - **Check annotations include noise.** Drop paths under `.github/` and messages like "Process completed with exit code". Measured on Tagalingo-App #1013, the useful one was `src/lib/query-persister.ts:39 Type …`.
 - **Conflicted files** come from local `git merge-tree --write-tree --name-only`, not GitHub.
@@ -338,7 +339,7 @@ export type Refresh = {
 	prs: { HubPR },                   -- `tandem` and `addedByMe` false, `pending` nil: the block fills them from local facts
 	viewer: string,
 	rateLimit: RateLimit,             -- the last call's envelope
-	calls: { RateLimit },             -- every call's envelope, in order: hub-f, then threads
+	calls: { RateLimit },             -- every call's envelope, in order: each hub-f page as it answered, then threads
 	truncated: boolean,               -- a search returned more than 50
 	partial: Error?,                  -- threads failed: `prs` still stands, with threadsKnown = false
 }
@@ -1002,7 +1003,7 @@ tern plugin reload
 - **Frozen clock.** Every rules test passes a fixed `now`, and `cases.luau` records it as `asOf`. No test reads the clock.
 - **Specific assertions the early issues must hold:**
   - `model`: every fixture key lands in its expected column and order, including 16 conflict cases (stale, active, draft), and the negatives: a bot's comment, "LGTM", and an approved PR with a leftover thread never make Needs fixes.
-  - `github`: `parseHub`, `parseThreads` and `parseChecks` consume the recorded responses. A fake runner asserts that `hub-f` sends no thread authors, and that the summed `rateLimit.cost` over a refresh is at most 18 (measured: hub-f 11, threads 5, checks 1). Each call keeps its own envelope; the figure is re-measured after the query changes and updated here.
+  - `github`: `parseHub`, `parseThreads` and `parseChecks` consume the recorded responses. A fake runner asserts that `hub-f` sends no thread authors, that each search pages by cursor up to 50 and halves a page GitHub drops, and that the summed `rateLimit.cost` over a refresh is at most 18 (measured: hub-f 1 a page, threads 5, checks 1). Each call keeps its own envelope; the figure is re-measured after the query changes and updated here.
   - `sync`: `schedule` and `diff` run on a fake clock from 0 to 3600 s. The probe fires at 60 s, a change or focus triggers a refresh within the 30 s debounce, checks poll at 30 s only while a check runs, and the total cost stays at most 220 points.
 
 ### Fixture plan
@@ -1011,7 +1012,7 @@ tern plugin reload
 
 | File | What it is |
 |---|---|
-| `fixtures/hub/raw-hub-f.json` | A recorded `hub-f.graphql` response, redacted. It needs the extended query below. |
+| `fixtures/hub/raw-hub-f.json` | A recorded hub-f response holding all three searches, redacted. The fake runner answers every search's page with it (each search reads its own alias); its envelope is a 20-PR page's, 1 point and 2,900 nodes. |
 | `fixtures/hub/raw-threads.json` | A recorded `threads.graphql` response, with unresolved threads by people and by bots. |
 | `fixtures/hub/raw-checks.json` | A recorded `checks.graphql` response with running, failing and passing PRs. |
 | `fixtures/hub/raw-*.luau` | Generated by `tools/luau-fixtures` from the JSON: `return { … }`, with null members dropped as `tern.json.decode` does. Both files are committed. `--check` fails when a twin is stale. |
