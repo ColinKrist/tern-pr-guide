@@ -12,6 +12,7 @@ Each module's header comment names its one job. Put new code in the module that 
 - **Views:** `src/view/*.luau` turn state into nodes and nothing else, and may call `tern.ui`. Build them with `Ui.el` and `Ui.span`, and a text field's input with `Ui.field`.
 - **Styles:** `guide.css` only, with `gp-` classes and the color tokens `DESIGN.md` names. To change a look, edit the rule where it lives.
 - `GUIDE.md`, `prompts/guide.md` and `src/guide.luau` change together.
+- `docs/port.md` is the hand-off for the TypeScript web port: every module's verdict, the seams as TypeScript, and each GitHub call. A change to a seam, a kv key or an `ACTIONS` entry updates it.
 - Mockups and scratch files go in `/tmp`, except an approved design's reference mockups, which live with its spec (the PR hub's are in `docs/hub/`). A mockup links `docs/tern-tokens.css` (Tern's variable values), then `guide.css`, inside a `.gp-root` wrapper. `docs/screenshots/` is only for README images.
 
 ## UI
