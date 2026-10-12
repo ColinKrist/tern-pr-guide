@@ -127,8 +127,9 @@ local function hubMenuKey(s: HubState.State, key: Key): Action?
 	if name == "enter" then return act("hub-menu-enter") end
 	if name == "space" then return act("hub-menu-select") end
 	if name == "escape" then return act("hub-menu-close") end
-	if s.menu == "agent" and name == "left" then return act("hub-menu-effort", -1) end
-	if s.menu == "agent" and name == "right" then return act("hub-menu-effort", 1) end
+	if s.menu == "settings" and name == "left" then return act("hub-menu-effort", -1) end
+	if s.menu == "settings" and name == "right" then return act("hub-menu-effort", 1) end
+	if s.menu == "settings" and name == "l" and not (key.ctrl or key.meta or key.alt) then return act("hub-links") end
 	return nil
 end
 
@@ -193,8 +194,7 @@ local function hubBoardKey(s: HubState.State, key: Key): Action?
 	if label == "A" and s.tab == "review" then return act("hub-fold", "approved") end
 	if label == "F" then return act("hub-menu", "repositories") end
 	if label == "S" then return act("hub-menu", "sort") end
-	if label == "⇧M" then return act("hub-menu", "agent") end
-	if label == "⇧S" then return act("hub-menu", "settings") end
+	if label == "⇧S" or label == "⇧M" then return act("hub-menu", "settings") end
 	if label == "N" then return act("hub-link") end
 	local card = HubState.selectedCard(s)
 	if card and label then

@@ -95,9 +95,9 @@ local function header(s: State.State): Node
 	elseif s.loading then
 		table.insert(fresh, span("gp-hub-fresh", "Loading…"))
 	end
-	local open = s.menu == "settings" or s.menu == "agent"
-	table.insert(fresh, el("span", { class = "gp-hub-ctl gp-hub-ctl-icon" .. (if open then " gp-hub-ctl-open" else ""), key = "settings", attrs = { ["aria-label"] = "Settings" }, actions = { click = "hub-menu=settings" } }, {
+	table.insert(fresh, el("span", { class = "gp-hub-ctl gp-hub-ctl-icon" .. (if s.menu == "settings" then " gp-hub-ctl-open" else ""), key = "settings", actions = { click = "hub-menu=settings" } }, {
 		Ui.icon("settings"),
+		span("gp-hub-ctl-label", "Settings"),
 	}))
 	local up = nextUp(s)
 	local rows: { Node } = {
