@@ -99,7 +99,7 @@ local specs: { Spec } = {
 	{ repo = "acme/api", n = 110, created = at("09-20"), active = at("10-07"), add = 350, del = 50, checks = PASSING,
 		reviews = { decision = "approved", latest = { review("alice", "approved") } } },
 	-- An approval doesn't clear a failing check or a conflict.
-	{ repo = "acme/web", n = 111, created = at("10-03"), active = at("10-08"), add = 50, del = 10, checks = FAILING,
+	{ repo = "acme/web", n = 111, created = at("10-03"), active = at("10-08"), add = 50, del = 10, checks = { state = "failing", passing = 2, failing = 2, pending = 0 },
 		reviews = { decision = "approved", latest = { review("alice", "approved") } } },
 	{ repo = "acme/api", n = 112, created = at("10-05", 12), active = at("10-09", 4), add = 40, del = 5, checks = FAILING, conflicts = true,
 		reviews = { decision = "approved", latest = { review("alice", "approved") } } },

@@ -2,15 +2,18 @@
 -- The PR hub block: reads its arguments, loads the board's pull requests (for now only the recorded
 -- fixture), draws it, and turns clicks and keys into state changes plus the scrolling, focusing and toasts
 -- only a live window can do. Clicks (`event`) and keys (`key`) both run one ACTIONS table.
+local Actions = require("../ci/actions")
 local Agent = require("../agent")
 local AgentFix = require("./agent-fix")
 local Board = require("../view/hub/board")
+local Buildkite = require("../ci/buildkite")
 local Fetch = require("../fetch")
 local Fields = require("../text-field")
 local FixesPage = require("../view/hub/fixes")
 local Fixes = require("./fixes")
 local Github = require("../github")
 local Keys = require("../keys")
+local Log = require("../ci/log")
 local Model = require("./model")
 local Paths = require("../view/hub/paths")
 local ReviewFix = require("./review-fix")
@@ -59,6 +62,7 @@ export type Block = {
 	agentFlight: AgentFlight?, -- lookup, engine and retained lease; never serialized
 	botKeys: { [string]: boolean }, -- retains the bot input kind across clone/stop/retry, never saved
 	github: Github.Client, timers: Timers,
+	ci: { Log.Provider }, -- who reads a failing check's log: Buildkite, then GitHub Actions
 	flights: { refresh: boolean, checks: boolean, probe: boolean, flake: boolean, tandem: boolean }, -- one call of each kind at a time
 	watched: { [string]: boolean }, -- the PRs Tandem watches (lowercase "owner/repo#123"): the cache's flags until a read of Tandem succeeds, then that read
 	handoffs: number, -- hand-offs Tandem has taken this session: a read that began before one cannot name that PR
@@ -710,7 +714,7 @@ local function readFeedback(b: Block, pr: Model.HubPR, done: (Fixes.FixDetails?,
 			return done(nil, if err then err.message else "Feedback changed or is unavailable; refresh the board")
 		end
 		-- The same commit keeps what git said last time, as the fixes page does.
-		if known and known.headOid == d.headOid then d.conflicts, d.conflictNote, d.files = known.conflicts, known.conflictNote, known.files end
+		if known and known.headOid == d.headOid then d.conflicts, d.conflictNote, d.files, d.logs = known.conflicts, known.conflictNote, known.files, known.logs end
 		State.setDetails(b.s, d)
 		done(Summary.current(d, latest), nil)
 	end
@@ -2820,6 +2824,49 @@ local function readGit(b: Block, cx: BlockCx, pr: Model.HubPR, d: Fixes.FixDetai
 	end)
 end
 
+-- Failed-check logs: each failing check with no usable annotations has its log read by the CI that owns it, once per
+-- commit. The files the log names are read like annotated ones, so the page can show those lines in place.
+local function readLogFiles(b: Block, cx: BlockCx, pr: Model.HubPR, d: Fixes.FixDetails, log: Log.Log)
+	if b.fixture then return end
+	local paths: { string } = {}
+	for _, ref in Log.refs(log, d.changedPaths) do
+		if (d.files == nil or d.files[ref.path] == nil) and table.find(paths, ref.path) == nil then table.insert(paths, ref.path) end
+	end
+	if #paths == 0 then return end
+	local filesOnly = table.clone(pr)
+	filesOnly.conflicts = false
+	Fetch.checkoutFor(nil, cx.cwd or tern.getenv("HOME") or "", pr.repo, function(found)
+		if b.closed then return end
+		local repo = found or Fetch.readySavedCopy(pr.repo)
+		if repo == nil then return end
+		Fetch.readFixes(repo, filesOnly, paths, function(read)
+			if b.closed or read == nil then return end
+			local files = d.files or {}
+			for path, text in read.files do files[path] = text end
+			d.files = files
+			draw(b, cx)
+		end)
+	end)
+end
+
+local function readLogs(b: Block, cx: BlockCx, pr: Model.HubPR, d: Fixes.FixDetails)
+	local logs = d.logs or {}
+	d.logs = logs
+	for _, check in d.checks do
+		local provider = if check.url ~= "" and #Fixes.usable(check.annotations) == 0 then Log.providerFor(b.ci, check) else nil
+		if provider and logs[check.url] == nil then
+			logs[check.url] = { state = "loading" }
+			local ok, err = pcall(provider.read, check, pr.repo, function(log, why)
+				if b.closed then return end
+				logs[check.url] = if log then { state = "loaded", log = log } else { state = "failed", reason = why or "no answer" }
+				draw(b, cx)
+				if log then readLogFiles(b, cx, pr, d, log) end
+			end)
+			if not ok then logs[check.url] = { state = "failed", reason = tostring(err) } end
+		end
+	end
+end
+
 -- The sample board's details: the fixture for the card's key, with the recorded git output for its conflicts.
 sampleDetails = function(pr: Model.HubPR): Fixes.FixDetails
 	local summaries: any = require("../../fixtures/hub/summary")
@@ -2856,7 +2903,9 @@ openFixes = function(b: Block, cx: BlockCx, key: string)
 	if not State.openFixes(s, key) then return end
 	local pr = State.prOf(s, key) :: Model.HubPR
 	if b.fixture then
-		State.setDetails(s, sampleDetails(pr))
+		local d = sampleDetails(pr)
+		State.setDetails(s, d)
+		readLogs(b, cx, pr, d)
 		return
 	end
 	local route = s.route :: State.Route
@@ -2869,10 +2918,11 @@ openFixes = function(b: Block, cx: BlockCx, key: string)
 		end
 		d.fetchedAt = isoNow()
 		-- The same commit keeps what git said last time while it is read again.
-		if known and known.headOid == d.headOid then d.conflicts, d.conflictNote, d.files = known.conflicts, known.conflictNote, known.files end
+		if known and known.headOid == d.headOid then d.conflicts, d.conflictNote, d.files, d.logs = known.conflicts, known.conflictNote, known.files, known.logs end
 		State.setDetails(s, d)
 		draw(b, cx)
 		readGit(b, cx, pr, d)
+		readLogs(b, cx, pr, d)
 	end)
 end
 
@@ -3046,6 +3096,19 @@ local function actionOf(ev: UiEvent): Keys.Action?
 	return nil
 end
 
+-- Who reads a failing check's log; the first to claim a check reads it. The CI modules never meet but here.
+local function ciProviders(run: Log.Run): { Log.Provider }
+	return { Buildkite.provider(run, tern.json.decode), Actions.provider(run) }
+end
+
+-- The sample board's CI: recorded `gh` and `bk` output, answered at once for the command it was recorded for.
+local function sampleRun(argv: { string }, _opts: any, done: (out: Log.Out) -> ())
+	local recorded: any = require("../../fixtures/hub/ci-logs")
+	local stdout = recorded.outputs[table.concat(argv, " ")]
+	if stdout then return done({ status = 0, stdout = stdout, stderr = "", timed_out = false }) end
+	done({ status = 1, stdout = "", stderr = "no recording for " .. table.concat(argv, " "), timed_out = false })
+end
+
 local block: BlockDef<Block> = {
 	init = function(cx: BlockCx, args: { string }, saved: any): Block
 		local opts, problem = options(args)
@@ -3088,6 +3151,7 @@ local block: BlockDef<Block> = {
 		local b: Block = {
 			s = s, cache = cache, fixture = fixture, generate = opts ~= nil and opts.generate, agent = nil, agentFlight = nil, botKeys = {},
 			github = Github.client(Fetch.runner, tern.json.decode), timers = {},
+			ci = ciProviders(if fixture then sampleRun else Fetch.runner),
 			flights = { refresh = false, checks = false, probe = false, flake = false, tandem = false }, watched = watched, handoffs = 0, seen = {}, heard = {}, held = if cache then storedId(cache) else nil, replays = {}, retired = {}, unsaved = false, root = nil, rootWaiters = nil,
 			sched = {
 				probedAt = now, probeChanged = false, focusedAt = if live then now else nil, checksAt = nil,

@@ -1,9 +1,11 @@
 --!strict
 -- The fixes page: a Needs fixes card opened at what needs fixing, in the guided review's layout. The left
 -- column lists the problems as steps (requested changes, comments, failing checks, merge conflicts); the
--- right shows the code for the step on show with the thread, annotation or conflict pinned in it.
+-- right shows the code for the step on show with the thread, annotation or conflict pinned in it, and a failed
+-- check's log when it has no annotations.
 -- Everything it draws was decided by `State.fix*` and `Fixes.steps`.
 local Fields = require("../../text-field")
+local Log = require("../../ci/log")
 local Fixes = require("../../hub/fixes")
 local Model = require("../../hub/model")
 local State = require("../../hub/state")
@@ -342,6 +344,70 @@ local function annotationCard(check: Fixes.FailingCheck, annotation: Fixes.Annot
 	})
 end
 
+-- One excerpt per marked file (the first three), each with its marks pinned under their lines; a file the page has
+-- no copy of shows its marks alone.
+local function pinned(check: Fixes.FailingCheck, marks: { Fixes.Annotation }, details: Fixes.FixDetails): { Node }
+	local out: { Node } = {}
+	local paths: { string } = {}
+	for _, mark in marks do
+		if #paths < 3 and table.find(paths, mark.path) == nil then table.insert(paths, mark.path) end
+	end
+	for n, path in paths do
+		local text = if details.files then details.files[path] else nil
+		local ofPath: { Fixes.Annotation } = {}
+		for _, mark in marks do
+			if mark.path == path then table.insert(ofPath, mark) end
+		end
+		local shown = if text then Fixes.fileExcerpt(text, ofPath[1].line) else nil
+		local pins: { Pin } = {}
+		local alone: { Node } = {}
+		for _, mark in ofPath do
+			local index = if shown then rowOf(shown.rows, mark.line) else nil
+			if index then
+				table.insert(pins, { row = index, node = annotationCard(check, mark), class = "gp-fx-err" })
+			else
+				table.insert(alone, annotationCard(check, mark))
+			end
+		end
+		-- Each file keeps its own key: an excerpt's own is always "ex".
+		if shown then table.insert(out, el("div", { class = "gp-fx-stack", key = "f" .. n }, { excerpt(path, shown, pins, {}) })) end
+		if #alone > 0 then
+			table.insert(out, span("gp-fx-where", path))
+			for _, node in alone do table.insert(out, node) end
+		end
+	end
+	return out
+end
+
+-- A failed job's log in the excerpt's frame: its name, then its lines in the terminal font; the runs a CI left out
+-- are muted bars like the excerpt's hidden lines.
+local function logBlock(section: Log.Section, index: number): Node
+	local body: { Node } = {}
+	local run: { Node } = {}
+	local function flush()
+		if #run == 0 then return end
+		table.insert(body, lineRun(run, "h" .. #body))
+		run = {}
+	end
+	for k, text in section.lines do
+		local omitted = string.match(text, "^%[?… (%d+) lines? omitted")
+		if omitted then
+			flush()
+			local count = tonumber(omitted) :: number
+			table.insert(body, el("div", { class = "gp-gap gp-fx-gap gp-fx-logskip", key = "skip" .. k }, {
+				span("gp-gap-gut", "⋯"), span("gp-gap-count", count .. " " .. (if count == 1 then "line" else "lines") .. " left out"),
+			}))
+		else
+			table.insert(run, el("div", { class = "gp-row", key = "r" .. k }, { el("span", { class = "gp-code", text = text }) }))
+		end
+	end
+	flush()
+	return el("div", { class = "gp-excerpt gp-fx-log", key = "log" .. index }, {
+		el("div", { class = "gp-fhead", key = "fhead" }, { span("gp-fbase", if section.title ~= "" then section.title else "Log") }),
+		el("div", { class = "gp-body", key = "body" }, body),
+	})
+end
+
 local function checkPanel(s: State.State, step: Step, pr: Model.HubPR, details: Fixes.FixDetails): Node
 	local check = step.check :: Fixes.FailingCheck
 	local total = pr.checks.passing + pr.checks.failing + pr.checks.pending
@@ -362,40 +428,26 @@ local function checkPanel(s: State.State, step: Step, pr: Model.HubPR, details: 
 		}))
 	end
 	local usable = Fixes.usable(check.annotations)
-	if #usable == 0 then
-		table.insert(kids, el("div", { class = "gp-panel gp-fx-note", key = "note" }, {
-			span("gp-fx-t", check.summary or "The check failed."), span("gp-fx-n", "No annotations on source files."),
-		}))
+	if #usable > 0 then
+		for _, node in pinned(check, usable, details) do table.insert(kids, node) end
 		return el("div", { class = "gp-fx-stack", key = "ex" }, { el("div", { class = "gp-fx-stack", key = "body" }, kids) })
 	end
-	-- One excerpt per annotated file (the first three), each with its annotations pinned; a file the page has
-	-- no copy of shows its annotations alone.
-	local paths: { string } = {}
-	for _, annotation in usable do
-		if #paths < 3 and table.find(paths, annotation.path) == nil then table.insert(paths, annotation.path) end
-	end
-	for _, path in paths do
-		local text = if details.files then details.files[path] else nil
-		local ofPath: { Fixes.Annotation } = {}
-		for _, annotation in usable do
-			if annotation.path == path then table.insert(ofPath, annotation) end
+	-- No annotations: the log, read by the CI that ran the check, then the changed lines it names pinned in their files.
+	local load = if details.logs then details.logs[check.url] else nil
+	if load and load.state == "loaded" then
+		local marks: { Fixes.Annotation } = {}
+		for _, ref in Log.refs(load.log, details.changedPaths) do
+			table.insert(marks, { path = ref.path, line = ref.line, level = "failure", title = nil, message = ref.text })
 		end
-		local shown = if text then Fixes.fileExcerpt(text, ofPath[1].line) else nil
-		local pins: { Pin } = {}
-		local alone: { Node } = {}
-		for _, annotation in ofPath do
-			local index = if shown then rowOf(shown.rows, annotation.line) else nil
-			if index then
-				table.insert(pins, { row = index, node = annotationCard(check, annotation), class = "gp-fx-err" })
-			else
-				table.insert(alone, annotationCard(check, annotation))
-			end
-		end
-		if shown then table.insert(kids, excerpt(path, shown, pins, {})) end
-		if #alone > 0 then
-			table.insert(kids, span("gp-fx-where", path))
-			for _, node in alone do table.insert(kids, node) end
-		end
+		for index, section in load.log.sections do table.insert(kids, logBlock(section, index)) end
+		for _, node in pinned(check, marks, details) do table.insert(kids, node) end
+	else
+		local said = if load == nil then "No annotations on source files."
+			elseif load.state == "loading" then "Reading the log…"
+			else "Couldn't read the log: " .. (load :: any).reason
+		table.insert(kids, el("div", { class = "gp-panel gp-fx-note", key = "note" }, {
+			span("gp-fx-t", check.summary or "The check failed."), span("gp-fx-n", said),
+		}))
 	end
 	return el("div", { class = "gp-fx-stack", key = "ex" }, { el("div", { class = "gp-fx-stack", key = "body" }, kids) })
 end

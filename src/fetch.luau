@@ -816,9 +816,9 @@ function M.generateGuide(agent: Agent.Agent, repo: Repo, pr: Pr.PR, done: (Guide
  end)
 end
 
--- `Github.Runner` over `tern.process.run`: `argv[1]` is found on the shell's PATH like `run` does,
+-- `Github.Runner` (and `Log.Run`) over `tern.process.run`: `argv[1]` is found on the shell's PATH like `run` does,
 -- and the result is always handed back, a failed spawn as status -1.
-function M.runner(argv: { string }, opts: { cwd: string?, stdin: string?, timeout_ms: number? }, done: (out: Github.Out) -> ())
+function M.runner(argv: { string }, opts: { cwd: string?, stdin: string?, timeout_ms: number?, env: { [string]: string }? }, done: (out: Github.Out) -> ())
  local called = false
  local function settle(out: Github.Out)
   if called then return end
@@ -828,7 +828,9 @@ function M.runner(argv: { string }, opts: { cwd: string?, stdin: string?, timeou
  withShellPath(function(path)
   local resolved = table.clone(argv)
   resolved[1] = located(argv[1], path)
-  local spawned, err = pcall(tern.process.run, resolved, { cwd = opts.cwd, stdin = opts.stdin, timeout_ms = opts.timeout_ms, env = { PATH = path } }, function(result: ProcessResult)
+  local env = if opts.env then table.clone(opts.env) else {}
+  env.PATH = path
+  local spawned, err = pcall(tern.process.run, resolved, { cwd = opts.cwd, stdin = opts.stdin, timeout_ms = opts.timeout_ms, env = env }, function(result: ProcessResult)
    settle({ status = result.status, stdout = result.stdout, stderr = result.stderr, timed_out = result.timed_out })
   end)
   if not spawned then settle({ status = -1, stdout = "", stderr = Text.errorLine(err), timed_out = false }) end

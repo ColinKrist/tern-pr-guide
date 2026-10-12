@@ -99,10 +99,11 @@ This opens the PR at what needs fixing, in the guided review layout.
 | Step | Shows | Actions |
 |---|---|---|
 | Comment or requested change | The thread pinned at its line in the diff | Reply (R), Resolve (E) |
-| Failing check | The annotation pinned at its line | View log (⇧L) |
+| Failing check | The annotation pinned at its line; with no usable annotation, the log cut to its errors, then the changed lines it names pinned in their files | View log (⇧L) |
 | Merge conflict | "Your branch" and "main" blocks, plus "Main changed this in #415 by @devon" | Fix with agent (A), Resolve on GitHub (G) |
 
 - **Keys:** h/l move between the steps and the code panel; j/k move within either one; ⏎ goes into the panel, then chooses the highlighted action; R reply, E resolve, ⇧L view log, G open on GitHub (the conflict editor for a conflict), B bot comments, A the card's own action, Esc back to the board with the card still selected.
+- **Check logs:** a failing check with no usable annotation has its log read when the page opens, once per commit, by the CI module that owns it (`src/ci/`): GitHub Actions runs `gh run view <run> --repo <repo> --log-failed --job <job>` and keeps 12 lines before and 3 after each error line (the last 30 when none reads as one, 120 a job at most); Buildkite runs `bk build view <org>/<pipeline>/<n> --recursive --json`, then `bk job log <job> --agent --max-tokens 1500` for the first 3 failed jobs (one job when the link names it), with `BUILDKITE_ORGANIZATION_SLUG` set to the link's org so `bk` uses that org's saved token. `Log.refs` finds `path:line` mentions of changed files (a build machine's folder prefix allowed) and the page pins up to 5 of them like annotations, reading those files with `Fetch.readFixes`. The sample board's #111 runs both modules on `fixtures/hub/ci-logs.luau` (the Actions log recorded from the smoke repo; the Buildkite output synthetic in `bk`'s documented shape).
 - **Data:** one `details.graphql` call when the page opens (1 point, measured 2026-10-10), cached in `s.details[key]`. A thread's code is its first comment's diff hunk. Conflicts and annotated source come from `Fetch.readFixes` on the repo's checkout (or PR Guide's saved copy when already set up); with neither, the conflict step shows "No local copy of owner/repo". Bot threads are listed apart as "Not counted". Reply and Resolve write to GitHub (`commands.reply`, `commands.resolve`); the sample block applies them to the page only.
 
 ### Agent fixes (v2)
@@ -439,6 +440,7 @@ export type FixDetails = {
 	conflicts: { Conflict }?,         -- nil until fetch.luau has read local `git merge-tree --write-tree --name-only`
 	conflictNote: string?,            -- why `conflicts` is nil: "No local copy of acme/web", "Couldn't read the conflicts: …"
 	files: { [string]: string }?,     -- annotated files as the head commit has them (`git show`), for the pinned annotations
+	logs: { [string]: Log.Load }?,    -- failed-check logs by the check's details link, for checks with no usable annotation
 }
 
 export type Row = { kind: "ctx" | "add" | "del", old: number?, new: number?, text: string }
