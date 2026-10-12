@@ -1,7 +1,6 @@
 --!strict
 -- The add-by-link box at the top of To review: a dashed field ("Paste a pull request link to review", N) and,
 -- once something is typed, what the text names and the two things ⏎ and ⇧⏎ do with it.
-local Fields = require("../../text-field")
 local State = require("../../hub/state")
 local Ui = require("../ui")
 
@@ -53,7 +52,7 @@ function M.view(s: State.State): Node
 	local on = s.mode == "link"
 	local row = el("div", { class = "gp-hub-add" .. (if on then " gp-hub-add-on" else ""), key = "row", actions = { click = "hub-link" } }, {
 		span("gp-hub-add-plus", "+"),
-		Fields.node(s.link, "field", "Paste a pull request link to review"),
+		Ui.field(s.link, "field", "Paste a pull request link to review"),
 		Ui.keys("N"),
 	})
 	local kids: { Node } = { row }

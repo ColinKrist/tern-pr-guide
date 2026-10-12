@@ -47,6 +47,11 @@ function M.initial(name: string): string
  return string.upper(string.match(name, utf8.charpattern) or "?")
 end
 
+-- `text` without trailing whitespace.
+function M.trimEnd(text: string): string
+ return (string.gsub(text, "%s+$", ""))
+end
+
 -- A raised error as one readable line: its first line, without Luau's `runtime error:` and
 -- source position prefixes.
 function M.errorLine(err: any): string
