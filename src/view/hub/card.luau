@@ -164,7 +164,7 @@ function M.view(card: State.Card, now: number): Node
 	if card.ring then class ..= " gp-hc-ring-" .. card.ring end
 	return el("div", {
 		class = class, key = Paths.cardKey(pr.key),
-		actions = { click = "hub-select=" .. pr.key, dblclick = "hub-open=" .. pr.key },
+		actions = { click = "hub-open=" .. pr.key },
 	}, kids)
 end
 

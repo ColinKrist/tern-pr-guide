@@ -333,7 +333,7 @@ New UI reuses one of these components or an earlier one in this section. A chang
 
 ## Interaction and density
 
-- **A click selects; ⏎ or double-click opens.** The cursor moves only when the reader moves it: nothing auto-selects or jumps on open.
+- **A click or ⏎ opens; ⌘-click or ⇧-click selects.** The cursor moves only when the reader moves it: nothing auto-selects or jumps on open.
 - **Keys never animate.** Mouse-driven entrances may.
 - **Every visible string changes a decision.** If a chip, header, column or card already says it, cut it. No explanatory notes for what the layout already shows.
 - **Controls appear only where they act:** on the selected or hovered card, never on every card at rest.

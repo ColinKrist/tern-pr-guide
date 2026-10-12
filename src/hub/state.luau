@@ -689,7 +689,7 @@ local function toCard(pr: HubPR, placement: Model.Placement, s: State): Card
 			end
 			if agent.worktree then table.insert(more, action("card-agent-worktree", "Open worktree", "O")) end
 		else
-			-- Enter and double-click use hub-open for Review fix; keep the lifecycle card's stable action slot.
+			-- Enter and a click use hub-open for Review fix; keep the lifecycle card's stable action slot.
 			main, more, chips = nil, {}, { chip(if agent.kind == "ready" then "Fix ready" else "Pushing fix…", "done") }
 		end
 	end
