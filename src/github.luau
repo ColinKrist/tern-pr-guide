@@ -762,6 +762,10 @@ M.commands = {
 	close = function(pr: HubPR): Command
 		return { argv = prArgv("close", pr), stdin = nil }
 	end,
+	-- The branch names and head an agent fix starts from, read again just before it starts.
+	refs = function(pr: HubPR): Command
+		return { argv = prArgv("view", pr, "--json", "headRefName,baseRefName,headRefOid"), stdin = nil }
+	end,
 	updateBranch = function(pr: HubPR): Command
 		return { argv = { "gh", "pr", "update-branch", tostring(pr.number), "--repo", pr.repo }, stdin = nil }
 	end,

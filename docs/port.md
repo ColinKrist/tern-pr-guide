@@ -376,6 +376,7 @@ type GithubCommand =
 	| { kind: "autoMerge"; pr: HubPR; method: MergeMethod }
 	| { kind: "requestReview"; pr: HubPR; logins: string[] }
 	| { kind: "close"; pr: HubPR }
+	| { kind: "refs"; pr: HubPR } // returns { headRefName, baseRefName, headRefOid }
 	| { kind: "updateBranch"; pr: HubPR }
 	| { kind: "rerun"; repo: string; runId: number }
 	| { kind: "reply"; pr: HubPR; threadId: string; body: string }
@@ -396,6 +397,7 @@ type GithubCommand =
 | `autoMerge` other kinds | Same as `merge`. | Same as `merge`. |
 | `requestReview` | `gh pr edit N --repo R --add-reviewer a,b` | `POST /repos/{o}/{r}/pulls/{n}/requested_reviewers` with `{ reviewers }`. |
 | `close` | `gh pr close N --repo R` | `PATCH /repos/{o}/{r}/pulls/{n}` with `{ state: "closed" }`. |
+| `refs` | `gh pr view N --repo R --json headRefName,baseRefName,headRefOid` | `GET /repos/{o}/{r}/pulls/{n}`: `head.ref`, `base.ref`, `head.sha`. `hub/agent-run` reads it just before an engine starts and refuses when the head or base moved. |
 | `updateBranch` | `gh pr update-branch N --repo R` | `PUT /repos/{o}/{r}/pulls/{n}/update-branch` (a merge, not a rebase). |
 | `rerun` | `gh run rerun <runId> --failed --repo R` | `POST /repos/{o}/{r}/actions/runs/{id}/rerun-failed-jobs`. |
 | `reply` | `gh api graphql` with `REPLY_MUTATION` | GraphQL `addPullRequestReviewThreadReply`, unchanged. |
@@ -495,7 +497,7 @@ interface AgentHost {
 
 `pushAgentFix` checks the plan again, reads the PR (`gh pr view N --repo R --json headRefName,headRefOid,headRepository,headRepositoryOwner`, which is `GET /pulls/{n}`: `head.ref`, `head.sha`, `head.repo.full_name`), refuses when the head moved, then runs `git ls-remote` so a push whose answer was lost is never sent twice, then `git push`. It calls `canPush()` before every command. Keep all three checks.
 
-`hub/agent-run.luau` also reads the PR's refs before an engine starts (`gh pr view N --repo R --json headRefName,baseRefName,headRefOid`). That call goes through `Fetch.runner` from a hub module, not through the client. In the port it is `GET /pulls/{n}` on the `GithubClient`.
+`hub/agent-run.luau` reads the PR's refs before an engine starts with `Github.commands.refs` (see B.3). It runs that command through `Fetch.runner` directly, because it needs the raw JSON rather than the client's error mapping. In the port it is the same `GithubClient` call.
 
 ### B.6 The shared cache store
 

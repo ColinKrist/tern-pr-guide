@@ -131,7 +131,7 @@ local function startAgentEngine(b: Block, cx: BlockCx, flight: AgentFlight, clon
 	end
 	local function refs()
 		if not carryOn(b, cx, flight) then return end
-		local ok, err = pcall(Fetch.runner, { "gh", "pr", "view", tostring(pr.number), "--repo", pr.repo, "--json", "headRefName,baseRefName,headRefOid" }, { timeout_ms = 30_000 }, metadata)
+		local ok, err = pcall(Fetch.runner, Github.commands.refs(pr).argv, { timeout_ms = 30_000 }, metadata)
 		if not ok then metadata({ status = -1, stdout = "", stderr = tostring(err), timed_out = false }) end
 	end
 	if flight.bot then
