@@ -53,7 +53,7 @@ export type Card = {
 	agentMessage: string?, agentPath: string?, agentCommit: string?,
 	summary: Summary?,
 	merge: Model.MergeResolution?,
-	note: string?, -- a merge in flight ("Commented /merge · waiting for the merge"); shown under the title
+	note: string?, -- a merge in flight ("Commented /merge · waiting for the merge") or new commits on an approval; shown under the title
 	asking: string?, -- an inline question the card is waiting on ("Squash and merge #412?"); the split button gives way to Confirm and Cancel
 	busy: string?, -- an action in flight ("Merging…"); the split button gives way to it
 	ring: Ring?, -- the arrival ring or wash; the "-out" kinds are fading
@@ -67,7 +67,7 @@ export type Selection = { group: Model.Group, count: number, verb: string, key: 
 export type MethodEdit = { repo: string, kind: "comment" | "label", field: Fields.Field }
 export type RepoOption = { repo: string, count: number, on: boolean }
 
--- A fold of cards under the board (Inactive, Team requests). `open`: it shows its rows.
+-- A fold of cards under the board (Inactive, Team requests, Approved). `open`: it shows its rows.
 export type CardFold = { column: Column, cards: { Card }, open: boolean }
 
 -- Everything a view reads, built by `project`.
@@ -255,13 +255,13 @@ M.TABS = {
 
 M.COLUMNS = {
 	mine = { "needs_fixes", "in_review", "ready" },
-	review = { "to_review", "waiting_on_author", "approved" },
+	review = { "to_review", "waiting_on_author" },
 } :: { [Tab]: { Column } }
 
 -- The card folds under each tab's board, top to bottom. Recently opened follows them on Review requests.
 M.FOLDS = {
 	mine = { "inactive" },
-	review = { "inactive", "team" },
+	review = { "inactive", "team", "approved" },
 } :: { [Tab]: { Column } }
 
 M.SORTS = {
@@ -296,7 +296,7 @@ function M.new(prs: { HubPR }, now: number, saved: any): State
 	local tab: Tab = "mine"
 	local sort: Sort = "repository"
 	local repositories: { [string]: boolean }? = nil
-	local folded: { [string]: boolean } = { inactive = true, team = true, recent = true }
+	local folded: { [string]: boolean } = { inactive = true, team = true, approved = true, recent = true }
 	if type(saved) == "table" then
 		tab = validTab(saved.tab) or tab
 		sort = validSort(saved.sort) or sort
@@ -549,9 +549,9 @@ local function chipsFor(pr: HubPR, placement: Model.Placement, now: number): ({ 
 	elseif column == "to_review" then
 		kind = "info"
 		local mine = pr.reviews.mine
-		if mine and mine.oid ~= pr.headOid and not pr.reviews.requestedMe then
+		if mine and (pr.reviews.requestedMe or mine.verdict == "dismissed") then
 			table.insert(chips, chip("Re-review", "info"))
-			detail = "New commits since you " .. (if mine.verdict == "approved" then "approved" else "reviewed")
+			detail = if pr.reviews.requestedMe then "Requested again" else "Review dismissed"
 		else
 			table.insert(chips, chip("Review", "info"))
 			if pr.reviews.requestedMe then
@@ -619,6 +619,13 @@ function M.pendingNote(s: State, pr: HubPR): string?
 	local command = if method and method.kind == "comment" then method.command else "/merge"
 	if string.sub(command, 1, 8) == "/aviator" then return "Queued in Aviator" end
 	return "Commented " .. command .. " · waiting for the merge"
+end
+
+-- The quiet line under a card's title: a merge in flight, or commits the viewer's approval predates.
+local function noteFor(s: State, pr: HubPR, column: Column): string?
+	local mine = pr.reviews.mine
+	if column == "approved" and mine and mine.oid ~= "" and mine.oid ~= pr.headOid then return "New commits since you approved" end
+	return M.pendingNote(s, pr)
 end
 
 -- What M does on a card: a GitHub method asks first ("confirm"), a suggested comment asks once ("ask"), and
@@ -691,7 +698,7 @@ local function toCard(pr: HubPR, placement: Model.Placement, s: State): Card
 		pr = pr, chips = chips, detail = detail, detailKind = detailKind, column = placement.column, reasons = placement.reasons, main = main, more = more,
 		agent = agent, agentSlot = agent ~= nil or placement.column == "needs_fixes" or (placement.column == "in_review" and not pr.tandem and M.botActionable(pr)),
 		agentMessage = message, agentPath = path, agentCommit = commit,
-		summary = if agent then nil else summary, merge = s.merges[pr.repo], note = M.pendingNote(s, pr),
+		summary = if agent then nil else summary, merge = s.merges[pr.repo], note = noteFor(s, pr, placement.column),
 		asking = askingOf(s, pr), busy = s.busy[pr.key],
 		ring = s.ringed[pr.key], selected = s.selected == pr.key, marked = s.marked[pr.key] == true,
 	}
@@ -906,7 +913,7 @@ end
 
 -- Whether cards in `column` show in a fold under the board instead of a column.
 function M.isFold(column: Column): boolean
-	return column == "inactive" or column == "team"
+	return column == "inactive" or column == "team" or column == "approved"
 end
 
 -- Opens the fold `column` is shown in, so a card about to be selected there shows.
@@ -1585,7 +1592,7 @@ function M.linkTarget(s: State): LinkTarget
 	local pr = M.find(s, ref.repo, ref.number)
 	if pr then
 		local placement = Model.placement(pr, s.now)
-		if placement.tab == "review" and M.isFold(placement.column) then
+		if placement.tab == "review" and (placement.column == "inactive" or placement.column == "team") then
 			return { kind = "folded", repo = pr.repo, number = pr.number, pr = pr, column = placement.column }
 		end
 		return { kind = "board", repo = pr.repo, number = pr.number, pr = pr }

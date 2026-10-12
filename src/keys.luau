@@ -190,6 +190,7 @@ local function hubBoardKey(s: HubState.State, key: Key): Action?
 	if label == "I" then return act("hub-fold", "inactive") end
 	if label == "R" and s.tab == "review" then return act("hub-fold", "recent") end
 	if label == "⇧T" and s.tab == "review" then return act("hub-fold", "team") end
+	if label == "A" and s.tab == "review" then return act("hub-fold", "approved") end
 	if label == "F" then return act("hub-menu", "repositories") end
 	if label == "S" then return act("hub-menu", "sort") end
 	if label == "⇧M" then return act("hub-menu", "agent") end

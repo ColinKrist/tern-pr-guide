@@ -69,6 +69,7 @@ local TITLES: { [number]: string } = {
 	[308] = "Auth: refresh the session before a long lesson ends",
 	[309] = "Design tokens: rename the surface colors to match the spec",
 	[310] = "Checkout: log the payment provider's decline code",
+	[311] = "Lessons: keep the audio player's position across pages",
 }
 
 -- One case: the fields that differ from a quiet PR. `size` splits into additions and deletions.
@@ -149,7 +150,7 @@ local specs: { Spec } = {
 	-- Review requests
 	{ repo = "acme/web", n = 301, role = "review", created = at("10-07"), active = at("10-09", 10), add = 30, del = 0,
 		reviews = { decision = "review_required", requestedMe = true, requested = { VIEWER } } },
-	-- New commits since the viewer approved.
+	-- New commits since the viewer approved, and no new request: it stays in Approved.
 	{ repo = "acme/web", n = 302, role = "review", created = at("10-01"), active = at("10-08"), add = 50, del = 0,
 		reviews = { decision = "approved", mine = review(VIEWER, "approved", "old302") } },
 	{ repo = "acme/web", n = 303, role = "review", created = at("10-05"), active = at("10-05"), add = 20, del = 0, addedByMe = true },
@@ -170,6 +171,9 @@ local specs: { Spec } = {
 	-- Requested from the viewer, with no activity for over a week.
 	{ repo = "acme/web", n = 310, role = "review", created = at("09-20"), active = at("09-25"), add = 35, del = 0,
 		reviews = { decision = "review_required", requestedMe = true, requested = { VIEWER } } },
+	-- The viewer approved an older commit and was asked again by name: a re-review.
+	{ repo = "acme/web", n = 311, role = "review", created = at("10-03"), active = at("10-08"), add = 40, del = 0,
+		reviews = { decision = "review_required", requestedMe = true, requested = { VIEWER }, mine = review(VIEWER, "approved", "old311") } },
 }
 
 -- `patch` changes a case: a field set to false is removed, and `reviews` merges into the case's own.
@@ -328,9 +332,9 @@ local orders = {
 		in_review = a({ 114, 120, 106, 121, 115, 107 }),
 		ready = a({ 110, 108, 109 }),
 		inactive = cat(a({ 122 }), m({ 216, 215, 214, 213, 212, 211, 210, 209, 208, 207 }), w({ 113, 310, 102 })),
-		to_review = cat(a({ 307, 308 }), w({ 302, 301, 303 })),
+		to_review = cat(a({ 307, 308 }), w({ 311, 301, 303 })),
 		waiting_on_author = w({ 305, 304 }),
-		approved = w({ 306 }),
+		approved = w({ 306, 302 }),
 		team = w({ 309 }),
 	},
 	priority = {
@@ -341,9 +345,9 @@ local orders = {
 		in_review = a({ 114, 120, 106, 121, 115, 107 }),
 		ready = a({ 110, 108, 109 }),
 		inactive = cat(w({ 113, 310 }), m({ 216, 215 }), w({ 102 }), m({ 214, 213, 212, 211, 210, 209, 208, 207 }), a({ 122 })),
-		to_review = cat(w({ 302 }), a({ 307 }), w({ 301 }), a({ 308 }), w({ 303 })),
+		to_review = cat(w({ 311 }), a({ 307 }), w({ 301 }), a({ 308 }), w({ 303 })),
 		waiting_on_author = w({ 305, 304 }),
-		approved = w({ 306 }),
+		approved = w({ 306, 302 }),
 		team = w({ 309 }),
 	},
 	newest = {
@@ -354,9 +358,9 @@ local orders = {
 		in_review = a({ 114, 120, 106, 121, 115, 107 }),
 		ready = a({ 109, 108, 110 }),
 		inactive = cat(w({ 113, 310 }), m({ 216, 215 }), w({ 102 }), m({ 214, 213, 212, 211, 210, 209, 208, 207 }), a({ 122 })),
-		to_review = cat(a({ 308 }), w({ 301, 303, 302 }), a({ 307 })),
+		to_review = cat(a({ 308 }), w({ 301, 303, 311 }), a({ 307 })),
 		waiting_on_author = w({ 305, 304 }),
-		approved = w({ 306 }),
+		approved = w({ 306, 302 }),
 		team = w({ 309 }),
 	},
 	oldest = {
@@ -367,9 +371,9 @@ local orders = {
 		in_review = a({ 107, 115, 121, 106, 120, 114 }),
 		ready = a({ 110, 108, 109 }),
 		inactive = cat(a({ 122 }), m({ 207, 208, 209, 210, 211, 212, 213, 214 }), w({ 102 }), m({ 215, 216 }), w({ 310, 113 })),
-		to_review = cat(a({ 307 }), w({ 302, 303, 301 }), a({ 308 })),
+		to_review = cat(a({ 307 }), w({ 311, 303, 301 }), a({ 308 })),
 		waiting_on_author = w({ 304, 305 }),
-		approved = w({ 306 }),
+		approved = w({ 302, 306 }),
 		team = w({ 309 }),
 	},
 	smallest = {
@@ -380,9 +384,9 @@ local orders = {
 		in_review = a({ 107, 106, 120, 121, 114, 115 }),
 		ready = a({ 109, 108, 110 }),
 		inactive = cat(a({ 122 }), w({ 113, 102, 310 }), m({ 207, 208, 209, 210, 211, 212, 213, 214, 215, 216 })),
-		to_review = cat(w({ 303 }), a({ 308 }), w({ 301, 302 }), a({ 307 })),
+		to_review = cat(w({ 303 }), a({ 308 }), w({ 301, 311 }), a({ 307 })),
 		waiting_on_author = w({ 305, 304 }),
-		approved = w({ 306 }),
+		approved = w({ 306, 302 }),
 		team = w({ 309 }),
 	},
 }
@@ -408,9 +412,10 @@ return {
 		["acme/mono#213"] = "inactive", ["acme/mono#214"] = "inactive", ["acme/mono#215"] = "inactive",
 		["acme/mono#216"] = "inactive",
 		-- Review requests
-		["acme/web#301"] = "to_review", ["acme/web#302"] = "to_review", ["acme/web#303"] = "to_review",
+		["acme/web#301"] = "to_review", ["acme/web#302"] = "approved", ["acme/web#303"] = "to_review",
 		["acme/web#304"] = "waiting_on_author", ["acme/web#305"] = "waiting_on_author", ["acme/web#306"] = "approved",
 		["acme/api#307"] = "to_review", ["acme/api#308"] = "to_review", ["acme/web#309"] = "team", ["acme/web#310"] = "inactive",
+		["acme/web#311"] = "to_review",
 	},
 	reasons = {
 		["acme/web#101"] = { "merge_failed" }, ["acme/web#103"] = { "feedback" }, ["acme/web#104"] = { "checks" },
@@ -423,7 +428,7 @@ return {
 	orders = orders,
 	-- Next up: merge failures, then a person waiting on the viewer, then machines and added PRs; longest waiting first in each.
 	nextUp = cat(
-		w({ 101 }), a({ 116 }), w({ 103, 302 }), a({ 118, 119, 307 }), w({ 301 }), a({ 308 }),
+		w({ 101 }), a({ 116 }), w({ 103, 311 }), a({ 118, 119, 307 }), w({ 301 }), a({ 308 }),
 		m({ 206 }), w({ 303 }), m({ 205 }), a({ 105 }), m({ 204, 203 }), w({ 111 }), m({ 202 }), a({ 112 }), m({ 201 }), w({ 104 })
 	),
 	refreshes = refreshes,

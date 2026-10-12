@@ -27,7 +27,7 @@ Two Tern tabs, one board each. `T` switches between them.
 | Tab | Columns | Below |
 |---|---|---|
 | Your pull requests | Needs fixes · In review · Ready to merge | Inactive (folded) |
-| Review requests | To review · Waiting on author · Approved | Inactive, Team requests, Recently opened (each folded) |
+| Review requests | To review · Waiting on author | Inactive, Team requests, Approved, Recently opened (each folded) |
 
 - **Tab counts:** blue, counting only the cards in the your-turn column. Folds never count.
 - **Card looks:**
@@ -55,12 +55,12 @@ Each PR appears exactly once.
 - **Ready to merge:** approved, checks passing, no conflicts.
 - **Inactive:** drafts, and PRs with no activity for 7 days, including stale conflicts. Your real data has 16 conflicted PRs, which is why the 7-day gate exists.
 - **Review requests tab:**
-  - **To review:** reviews requested of you by name, PRs with new commits since you approved (re-review), and PRs you added by link. A request that names both you and your team is yours.
+  - **To review:** reviews requested of you by name (a re-review when you had already reviewed), PRs whose review of yours was dismissed, and PRs you added by link. A request that names both you and your team is yours.
   - **Inactive (folded):** what would be in To review but has had no activity for 7 days. PRs you added by link never go here. Nothing here can be selected or closed: these are other people's PRs.
   - **Waiting on author:** you requested changes or commented.
-  - **Approved.**
+  - **Approved (folded, `A`):** your latest review approved. New commits alone keep it here, with the quiet note "New commits since you approved" under the title. Green done cards, never counted, never in Next up and never selectable. Pasting its link shows it rather than adding it.
   - **Team requests (folded, `⇧T`):** `review-requested:@me` also returns PRs that ask only a team you're on (CODEOWNERS). Those, with no review of yours, not a re-review and not added by link, wait here with a quiet "Requested from @org/team" chip. They are never Inactive, never counted, never in Next up and never selectable. Adding one by link moves it to To review.
-- **Re-review rule:** `my latest review's commit oid != headRefOid`. No LLM is involved.
+- **Re-review rule:** a review request returns to To review only when the viewer is needed again: a request names them (`reviews.requestedMe`) or their latest review was dismissed. A push alone never does. The card reads "Re-review" with "Requested again" (or "Review dismissed"). No LLM is involved.
 - **Priority order:**
   - Your-turn columns: by kind first (a person waiting on you beats a machine), then the longest waiting.
   - Ready to merge: the oldest first, since conflicts grow with time.
@@ -182,6 +182,7 @@ To review has its own field: "Paste a pull request link to review" (`N`, from ei
 | T | Switch tab |
 | I | Show or hide Inactive (either tab) |
 | ⇧T | Show or hide Team requests (Review requests) |
+| A | Show or hide Approved (Review requests; no Review requests card uses A) |
 | R | Show or hide Recently opened (Review requests) |
 | F / S | Repository filter / Sort menu (menus: j/k, ⏎ or Space, Esc) |
 | ⇧M | Agent model menu (↑↓ model, ←→ effort) |
@@ -723,7 +724,7 @@ export type CardFold = { column: Column, cards: { Card }, open: boolean }   -- c
 export type BoardData = {
 	tab: Tab,
 	columns: { { column: Column, cards: { Card } } },   -- the tab's columns, left to right, filtered and ordered
-	folds: { CardFold },                                -- the tab's card folds in State.FOLDS order: Inactive on Your pull requests; Inactive, Team requests on Review requests
+	folds: { CardFold },                                -- the tab's card folds in State.FOLDS order: Inactive on Your pull requests; Inactive, Team requests, Approved on Review requests
 	recent: { Opened },                                 -- the fold under "Review requests", after the card folds
 	grid: { { string } },                               -- keys per column, for h j k l
 	counts: { mine: number, review: number },           -- your-turn cards per tab: the blue counts
@@ -820,7 +821,7 @@ function M.linkTarget(s: State): LinkTarget              -- "empty" | "invalid" 
 function M.markAdded(s: State, key: string)              -- ⏎ on a "folded" target, after the block wrote hub.added: the PR moves to To review
 function M.openLink(s: State) / M.closeLink(s: State, clear: boolean)   -- N: Review requests with mode "link"
 function M.show(s: State, key: string): boolean          -- selects a PR, clearing a search or filter that hides it and opening its fold
-function M.fold(s: State, column: Column): CardFold?      -- the tab's Inactive or Team requests fold
+function M.fold(s: State, column: Column): CardFold?      -- the tab's Inactive, Team requests or Approved fold
 function M.isFold(column: Column): boolean               -- "inactive" and "team" show in folds, not columns
 function M.walk(s: State): boolean                       -- `.` and the banner: selects BoardData.nextUp's item, switching tab, clearing a search or filter only if it hides it; sets `walking`. Any other selection clears `walking`
 function M.nextCard(s: State): Card?                      -- the banner's item as a Card (its chip), whichever tab it sits on
@@ -835,11 +836,11 @@ Every file in `src/view/hub/` exports `function M.view(s: State.State, motion: U
 ### `src/keys.luau` (hub keys)
 
 ```luau
-function M.hubAction(s: HubState.State, key: Key): Action?   -- the hub's counterpart of `M.action` (keys.luau:98). ⇧⏎ sends `hub-open-generate`; `R` sends `hub-fold=recent` and `⇧T` sends `hub-fold=team` on the Review requests tab
+function M.hubAction(s: HubState.State, key: Key): Action?   -- the hub's counterpart of `M.action` (keys.luau:98). ⇧⏎ sends `hub-open-generate`; `R` sends `hub-fold=recent`, `⇧T` sends `hub-fold=team` and `A` sends `hub-fold=approved` on the Review requests tab
 function M.hubAfterTyping(mode: HubState.Mode, outcome: Fields.Outcome): Action?   -- after a key typed into the search field
 ```
 
-`I` shows or hides Inactive on either tab, `⇧T` shows or hides Team requests and `R` shows or hides Recently opened (a fold is a control, so it has a key). `j`/`k` past the last card walk the open folds in order. A Recently opened row is selected by `State.recentKey` (`rc:<repo>#<n>`), moved to by `j`/`k` after the last card, and opened by ⏎ or a double-click. A card's action keys (`A`, `⇧A`, `C`, `M`, `U`, `,`, `X`) come from the selected card's `main` and `more`, so a click and a key send the same `Card.main.act`.
+`I` shows or hides Inactive on either tab, `⇧T` shows or hides Team requests, `A` shows or hides Approved and `R` shows or hides Recently opened (a fold is a control, so it has a key). Opening a fold, by key or by its header, scrolls the board so the fold's header (`Paths.foldHead`) sits at the top, through the same `reveal` frame op that keeps the selected card in view; closing one doesn't scroll. `j`/`k` past the last card walk the open folds in order. A Recently opened row is selected by `State.recentKey` (`rc:<repo>#<n>`), moved to by `j`/`k` after the last card, and opened by ⏎ or a double-click. A card's action keys (`A`, `⇧A`, `C`, `M`, `U`, `,`, `X`) come from the selected card's `main` and `more`, so a click and a key send the same `Card.main.act`.
 
 `M.pickerAction` (`:109`) is deleted with the picker. Typing modes (`search`, `link`) return nil for letters, as `searchKey` does (`:22`).
 

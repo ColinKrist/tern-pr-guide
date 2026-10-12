@@ -25,9 +25,14 @@ function M.columnKey(column: string): string
 	return "col_" .. column
 end
 
--- The key of a card fold's node under the board ("fold" for Inactive, "team" for Team requests).
+-- The key of a fold's node under the board: "fold" for Inactive, else its name ("team", "approved", "recent").
 function M.foldKey(column: string): string
 	return if column == "inactive" then "fold" else column
+end
+
+-- A fold's header, which the block scrolls to the top when the fold opens.
+function M.foldHead(column: string): string
+	return M.ROOT .. ".body." .. M.foldKey(column) .. ".head"
 end
 
 -- The card's node: in its column, or in its fold.
