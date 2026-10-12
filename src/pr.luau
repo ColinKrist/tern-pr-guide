@@ -1,4 +1,6 @@
 --!strict
+local FileGroup = require("./file-group")
+
 export type Hunk = { kind: "hunk", oldStart: number, newStart: number, label: string? }
 export type Line = { kind: "ctx" | "add" | "del", text: string, old: number?, new: number? }
 export type Row = Hunk | Line
@@ -14,6 +16,8 @@ export type File = {
  src: { string }?,
  -- Git shows no lines for a binary file.
  binary: boolean?,
+ -- Set for a test file or a generated one; a step that visits the file still shows it among its change.
+ group: FileGroup.Group?,
 }
 
 export type PR = {
@@ -37,6 +41,7 @@ function M.sample(): PR
  local raw = tern.json.decode(tern.fs.read("fixtures/pr-350.json"))
  local pr = raw.pr
  pr.files = raw.files
+ for _, file in pr.files do file.group = FileGroup.of(file.path, false) end
  return pr
 end
 

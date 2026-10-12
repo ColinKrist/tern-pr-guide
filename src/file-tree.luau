@@ -1,9 +1,14 @@
 --!strict
 -- Changed files as a folder tree, laid out the way GitHub lists them: folders before files, each
--- sorted by name, and a folder holding only one folder shown as one row ("src/service").
+-- sorted by name, and a folder holding only one folder shown as one row ("src/service"). Tests and
+-- generated files come after the others, each as a tree of its own.
+local FileGroup = require("./file-group")
 local Pr = require("./pr")
 
 export type Row = { kind: "folder", name: string, depth: number, path: string } | { kind: "file", file: Pr.File, depth: number }
+
+-- The files of one group (nil: those in none) and their tree rows.
+export type Section = { group: FileGroup.Group?, files: { Pr.File }, rows: { Row } }
 
 type Folder = { folders: { [string]: Folder }, files: { Pr.File } }
 
@@ -59,11 +64,29 @@ function M.rows(files: { Pr.File }): { Row }
  return rows
 end
 
--- `files` in the order the tree lists them.
+-- The sections, in the order the page lists them: the ungrouped files, then tests, then generated files.
+local SECTION_GROUPS: { { group: FileGroup.Group? } } = { {}, { group = "tests" }, { group = "generated" } }
+
+-- `files` cut into those sections; a section with no file is left out.
+function M.sections(files: { Pr.File }): { Section }
+ local sections: { Section } = {}
+ for _, wanted in SECTION_GROUPS do
+  local own = {}
+  for _, file in files do
+   if file.group == wanted.group then table.insert(own, file) end
+  end
+  if #own > 0 then table.insert(sections, { group = wanted.group, files = own, rows = M.rows(own) }) end
+ end
+ return sections
+end
+
+-- `files` in the order the tree lists them, section after section.
 function M.order(files: { Pr.File }): { Pr.File }
  local ordered = {}
- for _, row in M.rows(files) do
-  if row.kind == "file" then table.insert(ordered, row.file) end
+ for _, section in M.sections(files) do
+  for _, row in section.rows do
+   if row.kind == "file" then table.insert(ordered, row.file) end
+  end
  end
  return ordered
 end

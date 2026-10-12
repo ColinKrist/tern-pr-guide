@@ -2,10 +2,12 @@
 -- What the page shows on top of the review itself, and the changes to it that need no window.
 local Agent = require("./agent")
 local Diff = require("./diff")
+local FileGroup = require("./file-group")
 local FileTree = require("./file-tree")
 local Fields = require("./text-field")
 local Guide = require("./guide")
 local Lens = require("./lens")
+local Moves = require("./moves")
 local Pr = require("./pr")
 local Review = require("./review")
 local Search = require("./search")
@@ -132,7 +134,8 @@ local M = {}
 
 function M.new(pr: Pr.PR, guide: Guide.Guide, to: { repo: string?, dryRunPath: string? }): State
  local diffs = {}
- for _, file in pr.files do diffs[file.path] = Diff.analyze(file) end
+ local moves = Moves.detect(pr.files)
+ for _, file in pr.files do diffs[file.path] = Diff.analyze(file, moves[file.path]) end
  local review = Review.new(pr, guide)
  local spans = {}
  if guide.guided then
@@ -152,7 +155,7 @@ function M.new(pr: Pr.PR, guide: Guide.Guide, to: { repo: string?, dryRunPath: s
  return {
   review = review, view = "guided", other = other, diffs = diffs, spans = spans,
   peek = {}, folded = {}, reveals = {}, whole = {}, closing = {},
-  flowOpen = true, descriptionOpen = not guide.guided, foldedFolders = {}, supportingOpen = false, fileOpen = {}, pinned = {},
+  flowOpen = true, descriptionOpen = not guide.guided, foldedFolders = if guide.guided then FileGroup.folded() else {}, supportingOpen = false, fileOpen = {}, pinned = {},
   flash = nil, flashStep = nil, flashCount = 0,
   composer = nil, search = nil, hit = nil,
   helpOpen = false, models = nil, reviewOpen = false, reviewCursor = 1, editingSummary = false,
@@ -264,19 +267,22 @@ function M.show(s: State, file: string, blockId: string, steps: { Guide.Step }?)
  return { spans = spans, whole = s.whole[blockId] == true, annotated = annotated, hit = hit, reveals = reveals }
 end
 
--- Whether a folded folder of the file tree hides `path`.
+-- Whether a folded folder of the file tree, or the folded group the file is in, hides `path`.
 function M.inFoldedFolder(s: State, path: string): boolean
  for folder in string.gmatch(path, "()/") do
   if s.foldedFolders[string.sub(path, 1, folder - 1)] then return true end
  end
- return false
+ local file = s.diffs[path]
+ return file ~= nil and file.file.group ~= nil and s.foldedFolders[FileGroup.foldKey(file.file.group)] == true
 end
 
--- Opens every folder above `path`, so a jump to it lands on a shown file.
+-- Opens every folder above `path`, and the group it is in, so a jump to it lands on a shown file.
 function M.unfoldFoldersOf(s: State, path: string)
  for folder in string.gmatch(path, "()/") do
   s.foldedFolders[string.sub(path, 1, folder - 1)] = nil
  end
+ local file = s.diffs[path]
+ if file and file.file.group then s.foldedFolders[FileGroup.foldKey(file.file.group)] = nil end
 end
 
 -- Whether the reader has block `blockId` open, budget aside: unreviewed blocks start open and
@@ -390,17 +396,23 @@ function M.openSupportingFile(s: State, path: string)
  M.setOpen(s, M.supportingBlock(path), true)
 end
 
--- Opens every supporting file, or closes them all when all are already open. Opening all leaves
--- them to the budget.
+-- Opens every supporting file but the generated ones, which stay as they are, and unfolds Tests; or
+-- closes them all when all those are already open. Opening all leaves them to the budget.
 function M.toggleAllSupporting(s: State)
  local files = Review.supportingFiles(s.review)
  local open = not s.supportingOpen
  for _, file in files do
-  if not s.fileOpen[file.path] then open = true end
+  if file.group ~= "generated" and not s.fileOpen[file.path] then open = true end
+  if file.group == "tests" and s.foldedFolders[FileGroup.foldKey("tests")] then open = true end
  end
  for _, file in files do
-  if open then s.fileOpen[file.path] = true else M.setOpen(s, M.supportingBlock(file.path), false) end
+  if not open then
+   M.setOpen(s, M.supportingBlock(file.path), false)
+  elseif file.group ~= "generated" then
+   s.fileOpen[file.path] = true
+  end
  end
+ if open then s.foldedFolders[FileGroup.foldKey("tests")] = nil end
  s.supportingOpen = true
 end
 

@@ -104,7 +104,8 @@ them. Comments, reviewed marks and the summary carry over.
 
 **Files** works like GitHub's PR page: the description, the changed files as a folder tree,
 search across the changed code, and comments on any line. The diff comes from local git, so
-GitHub's diff size limit doesn't apply, and large PRs stay responsive.
+GitHub's diff size limit doesn't apply, and large PRs stay responsive. Tests and generated files
+come last, under their own folding rows.
 
 ![The PR file browser with the changed files and description](docs/screenshots/pr-view.png)
 
@@ -113,7 +114,18 @@ first, then go through it in small steps:
 
 - A plain-language overview and, for some PRs, a before-and-after diagram.
 - The PR split into a few changes, and each change into steps pinned to their lines.
+- Code blocks that start at the enclosing function, method or class, so a step reads in context. When
+  that line is far above the change, the block keeps a few lines of context and the hidden lines
+  above it are labeled with it.
 - Suggested review comments placed next to the code they're about.
+- Moved code shown as moved. A block cut from one place and pasted in another, in the same file or
+  a different one, is drawn in neutral gray instead of red and green, with a label such as "Moved
+  from src/a.ts:12" or "Moved to line 40".
+- Supporting changes folded away. Files no step visits sit under "Supporting changes", followed by
+  a folded "Tests" group and a folded "Generated" group (files marked `linguist-generated` in
+  `.gitattributes`). A test file a step visits stays in its step. The guide agent never reads
+  generated files, so no step or comment points at one, and lockfiles are left out of the PR
+  altogether.
 - Guides saved in the repository, so a reopened PR loads its guide right away in every worktree of
   the clone.
 
@@ -213,7 +225,7 @@ Press `?` on any PR Guide page for the keys that apply there.
 | `t` | Switch between Guided and Files |
 | `/` | Search steps, files, comments and code |
 | `s` | Show supporting changes |
-| `o` | Open all supporting files |
+| `o` | Open all supporting files and unfold Tests; generated files stay as they are |
 | `c` | Comment on the current step |
 | `a` `d` | Keep or dismiss a suggested comment |
 | `i` | Show the PR description |

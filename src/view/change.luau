@@ -3,6 +3,7 @@
 -- Without a guide it is the PR's changed files as a folder tree instead.
 -- Every change's row carries its own card pinned with position: sticky, so scrolling into the next
 -- row swaps in the next card: Tern gives plugins no scroll events to drive one shared copy.
+local FileGroup = require("../file-group")
 local FileTree = require("../file-tree")
 local Guide = require("../guide")
 local Review = require("../review")
@@ -63,40 +64,55 @@ local MAX_DEPTH = 8
 
 -- The unguided page's one step per file: a GitHub-style tree whose file rows tick and jump like
 -- steps, and whose folders fold on a click. A folded folder hiding the file you are on is marked.
+-- Tests and generated files come last, each under a row that folds the group.
 local function fileTree(s: State.State): Node
  local r = s.review
  local stepOf: { [string]: Guide.Step } = {}
  for _, step in r.steps do stepOf[step.file] = step end
  local current = State.currentStep(s)
  local rows = {}
- -- The depth of the folded folder whose contents are being skipped.
- local hiddenBelow = math.huge
- for _, row in FileTree.rows(r.pr.files) do
-  if row.depth > hiddenBelow then continue end
-  hiddenBelow = math.huge
-  local depth = " gp-tree-d" .. math.min(row.depth, MAX_DEPTH)
-  if row.kind == "folder" then
-   local folded = s.foldedFolders[row.path] == true
-   if folded then hiddenBelow = row.depth end
-   local holds = folded and string.sub(current.file, 1, #row.path + 1) == row.path .. "/"
-   table.insert(rows, el("div", { class = "gp-tree-row gp-tree-folder" .. depth .. (if holds then " gp-tree-holds" else ""), key = "td-" .. Text.keyOf(row.path), actions = { click = "toggle-folder=" .. row.path } }, {
+ for _, section in FileTree.sections(r.pr.files) do
+  local inset, group = 0, section.group
+  if group then
+   local folded = s.foldedFolders[FileGroup.foldKey(group)] == true
+   local holds = folded and s.diffs[current.file].file.group == group
+   table.insert(rows, el("div", { class = "gp-tree-row gp-tree-folder" .. (if holds then " gp-tree-holds" else ""), key = "tg-" .. group, actions = { click = "toggle-folder=" .. FileGroup.foldKey(group) } }, {
     el("span", { class = "gp-tree-glyph" }, { Ui.icon(if folded then "chev-r" else "chev") }),
-    el("span", { class = "gp-tree-go" }, { Ui.icon(if folded then "folder" else "folder-open"), span("gp-tree-folder-name", row.name) }),
+    el("span", { class = "gp-tree-go" }, { Ui.icon(if folded then "folder" else "folder-open"), span("gp-tree-folder-name", FileGroup.LABELS[group]), span("gp-sup-count", tostring(#section.files)) }),
    }))
-  else
-   local file = row.file
-   local step = stepOf[file.path]
-   local here = step == current
-   table.insert(rows, el("div", { class = "gp-tree-row gp-tree-file" .. depth .. (if here then " gp-tree-here" else ""), key = "tf-" .. Text.keyOf(file.path) }, {
-    tick(r.reviewed[step.key] == true, "gp-tree-glyph gp-tree-tick", "review-step=" .. step.key),
-    el("span", { class = "gp-tree-go", actions = { click = "goto-step=" .. step.position } }, {
-     Ui.fileIcon(file.path),
-     span("gp-cfile-name", Text.baseName(file.path)),
-     Ui.spacer(),
-     span("gp-adds gp-num-adds", if file.adds > 0 then "+" .. file.adds else ""),
-     span("gp-dels gp-num-dels", if file.dels > 0 then "−" .. file.dels else ""),
-    }),
-   }))
+   if folded then continue end
+   inset = 1
+  end
+  local scope = group or "plain"
+  -- The depth of the folded folder whose contents are being skipped.
+  local hiddenBelow = math.huge
+  for _, row in section.rows do
+   if row.depth > hiddenBelow then continue end
+   hiddenBelow = math.huge
+   local depth = " gp-tree-d" .. math.min(row.depth + inset, MAX_DEPTH)
+   if row.kind == "folder" then
+    local folded = s.foldedFolders[row.path] == true
+    if folded then hiddenBelow = row.depth end
+    local holds = folded and string.sub(current.file, 1, #row.path + 1) == row.path .. "/"
+    table.insert(rows, el("div", { class = "gp-tree-row gp-tree-folder" .. depth .. (if holds then " gp-tree-holds" else ""), key = "td-" .. scope .. "-" .. Text.keyOf(row.path), actions = { click = "toggle-folder=" .. row.path } }, {
+     el("span", { class = "gp-tree-glyph" }, { Ui.icon(if folded then "chev-r" else "chev") }),
+     el("span", { class = "gp-tree-go" }, { Ui.icon(if folded then "folder" else "folder-open"), span("gp-tree-folder-name", row.name) }),
+    }))
+   else
+    local file = row.file
+    local step = stepOf[file.path]
+    local here = step == current
+    table.insert(rows, el("div", { class = "gp-tree-row gp-tree-file" .. depth .. (if here then " gp-tree-here" else ""), key = "tf-" .. Text.keyOf(file.path) }, {
+     tick(r.reviewed[step.key] == true, "gp-tree-glyph gp-tree-tick", "review-step=" .. step.key),
+     el("span", { class = "gp-tree-go", actions = { click = "goto-step=" .. step.position } }, {
+      Ui.fileIcon(file.path),
+      span("gp-cfile-name", Text.baseName(file.path)),
+      Ui.spacer(),
+      span("gp-adds gp-num-adds", if file.adds > 0 then "+" .. file.adds else ""),
+      span("gp-dels gp-num-dels", if file.dels > 0 then "−" .. file.dels else ""),
+     }),
+    }))
+   end
   end
  end
  return el("div", { class = "gp-outline gp-ccard gp-tree", key = "outline" }, {

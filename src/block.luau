@@ -498,7 +498,7 @@ end
 -- walkthrough.
 local function showPr(b: Block, pr: Pr.PR)
  if #pr.files == 0 then
-  b.notice = Notice.failed(b.name, "This PR has no file changes to show (lockfiles and generated files are left out).")
+  b.notice = Notice.failed(b.name, "This PR has no file changes to show (lockfiles are left out).")
   return
  end
  local path = b.opts.guide
