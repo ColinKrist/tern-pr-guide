@@ -1,6 +1,7 @@
 --!strict
 -- The page: header, description, overview, each change's card beside its code, the supporting
 -- files, and the hint bar. Also the node paths the block scrolls to and focuses, which follow these keys.
+local Agent = require("../agent")
 local Change = require("./change")
 local Code = require("./code")
 local Comments = require("./comments")
@@ -134,7 +135,7 @@ M.modelFieldPath = LAYER .. ".models.body.box.field"
 -- the menu as an overlay under the model button.
 function M.layer(s: State.State): Node?
  local run, box = s.ai, s.models
- if not run or not box or run.running then return nil end
+ if not run or not box or Agent.busy(run) then return nil end
  return el("div", {}, {
   el("div", { class = "gp-md-scrim", key = "scrim", actions = { click = "toggle-models" } }),
   ModelPanel.view(box, run.agent, MODEL_BUTTON, not s.keyed),

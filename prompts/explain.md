@@ -1,8 +1,9 @@
-# Write a guided review for {{repo}}#{{number}}
+# Explain {{repo}}#{{number}}
 
-You are helping someone review a GitHub pull request. Write a guide: a plain-language walkthrough of
-the PR and draft review comments they can choose to post. The review page shows the code itself;
-you only point at it.
+You are helping someone read a GitHub pull request. Write an explanation: a plain-language
+walkthrough of what the PR changes and why, in the order that makes it easiest to follow. The page
+shows the code itself; you only point at it. Another pass reviews the PR for problems, so don't
+judge the code here.
 
 ## Where things are
 
@@ -15,16 +16,21 @@ you only point at it.
   number in the old file (before the PR) and in the new file (after it), then a mark and the code:
   context lines (space) have both numbers, added lines (`+`) only the new one, removed lines (`-`)
   only the old one. Take every line number you write from it, from the column the rules below name.
-- Read the repository's own guidance (AGENTS.md, CLAUDE.md, CONTRIBUTING.md) when present, with
-  `git show {{head}}:<file>`.
 
 ## Rules
 
-- Read-only. Use read-only `git` and `gh` commands (log, show, blame, `gh pr view`). Don't run
-  tests, builds, installs or formatters, and change no file except the guide.
-- Only claim what the code supports; say so when you're unsure.
+- Work from the diff. Open another file only when a step can't be explained without it, and read
+  just the part you need. Speed matters more than completeness here.
+- Read-only: use read-only `git` and `gh` commands. Run nothing else and change no file except the
+  explanation.
+- Write for someone who doesn't know the project. Use everyday words and short sentences. Define a
+  project term or abbreviation the first time it appears.
+- Titles name what the code does, verb first, in a few plain words: "Verify and gate shipping",
+  "Retry failed uploads", "Drop the legacy parser". No metaphors, no drama, no colons or taglines.
+  Step titles follow the same rule at a smaller scale: "Check the token", "Return early on empty".
+- Only claim what the code shows. When you're inferring how something works, say so.
 
-{{focus}}## Write
+## Write
 
 Write one valid JSON object (no comments, no trailing commas) to `{{guidePath}}` and nothing else
 there. Format:
@@ -34,20 +40,15 @@ there. Format:
   "schema": 1,
   "head": "{{head}}",
   "author": "{{author}}",
-  "lens": {{lens}},
   "overview": "...",
   "flow": null,
   "changes": [
     { "title": "...", "why": "...", "steps": [ { "file": "...", "side": "new", "from": 1, "to": 2, "title": "...", "note": "..." } ] }
-  ],
-  "comments": [ { "id": "c1", "file": "...", "line": 1, "kind": "question", "body": "..." } ],
-  "summary": "..."
+  ]
 }
 ```
 
-- `lens`: the review lens you were asked to use; keep it exactly as written above.
-- `overview`: a TL;DR in 2-4 plain sentences for someone who doesn't know the project: what the PR
-  does and why, at a high level. Everyday words; skip internal names unless unavoidable.
+- `overview`: 2-4 plain sentences: what problem the PR solves and the approach it takes.
 - `changes`: in reading order, each with a short `title` and a one-sentence `why`. Keep each change
   bite-sized, 1-3 steps: when a change needs more, split it into two changes the reader can take one
   at a time. Size them to the PR, never pad: a PR that changes a handful of lines is 1 change with
@@ -74,12 +75,5 @@ there. Format:
   `{ "text": "fn()", "kind": "added" | "changed" | "removed", "change": <change number>, "note": "..." }`
   (kind, change and note optional), arrows `{ "edge": "label" }`, and forks
   `{ "branch": [ { "edge": "label", "text": "box" } ] }`.
-- `comments`: draft inline comments, each on one new-file `line` inside the diff (a number from the
-  new column; removed lines can't take a comment). `kind` is
-  `problem`, `question`, `suggestion` or `nit`. Write like a kind, busy teammate: short, specific,
-  phrased as a question or suggestion. Start minor points with "nit:". For a small exact fix, put
-  the replacement in a GitHub ```suggestion block. No headings or bullet lists in a comment. Skip
-  comments that don't matter; zero is fine.
-- `summary`: the opening comment of the review, 1-4 sentences in the same voice.
 
-When the file is written, reply with one line: `guide written`.
+When the file is written, reply with one line: `explanation written`.

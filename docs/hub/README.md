@@ -1080,7 +1080,7 @@ Every PR passes these before review:
 2. `tern plugin reload` exits 0 and loads both `prguide.guide` and `prguide.hub`.
 3. The UI-checklist rows the PR touches pass in light and dark, wide and split, and the screenshots are attached.
 4. A PR with live GitHub actions has them tried in `GH_HUB_SMOKE_REPO`, nowhere else.
-5. `GUIDE.md`, `prompts/guide.md` and `src/guide.luau` still change together when the guide changes; a new key is in `view/help.luau` and the README Keys table.
+5. `GUIDE.md`, `prompts/explain.md`, `prompts/review.md` and `src/guide.luau` still change together when the guide changes; a new key is in `view/help.luau` and the README Keys table.
 
 ## How to build this
 
@@ -1131,7 +1131,7 @@ Ship in stages that each work end to end. Each stage is a commit series that `te
 **Build checks:**
 - `tern plugin reload` exits 1 if the plugin fails to load.
 - Check UI in light and dark.
-- `GUIDE.md`, `prompts/guide.md` and `src/guide.luau` change together.
+- `GUIDE.md`, `prompts/explain.md`, `prompts/review.md` and `src/guide.luau` change together.
 
 ## Open questions
 

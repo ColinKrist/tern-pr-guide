@@ -158,6 +158,11 @@ function M.guidePath(repo: Repo, number: number): string
  return repo.guides .. "/" .. number .. ".json"
 end
 
+-- Where the review pass's comments and summary for PR `number` are kept, beside its guide.
+function M.reviewPath(repo: Repo, number: number): string
+ return repo.guides .. "/" .. number .. ".review.json"
+end
+
 -- Finds the checkout `dir` is in. Calls `done` once, with it or with what failed.
 function M.findRepo(dir: string, done: (repo: Repo?, err: string?) -> ())
  local job: Job = { repo = dir, fail = function(message: string) done(nil, message) end }
@@ -322,17 +327,18 @@ function M.openInBrowser(url: string, done: (err: string?) -> ())
  end)
 end
 
--- How long the last finished run took, which the next run's progress is estimated from; three
--- minutes before there is one.
-local RUN_SECONDS_KEY, DEFAULT_RUN_SECONDS = "runSeconds", 180
+-- How long the last finished run took, which the next run's progress is estimated from, before
+-- there is one a guess. Each pass keeps its own.
+local SECONDS_KEYS: { [Agent.Pass]: string } = { explain = "runSeconds", review = "reviewSeconds" }
+local DEFAULT_SECONDS: { [Agent.Pass]: number } = { explain = 90, review = 180 }
 
-function M.expectedRunSeconds(): number
- local ok, seconds = pcall(Host.kv.get, RUN_SECONDS_KEY)
- return if ok and type(seconds) == "number" and seconds > 0 then seconds else DEFAULT_RUN_SECONDS
+function M.expectedSeconds(pass: Agent.Pass): number
+ local ok, seconds = pcall(Host.kv.get, SECONDS_KEYS[pass])
+ return if ok and type(seconds) == "number" and seconds > 0 then seconds else DEFAULT_SECONDS[pass]
 end
 
-function M.saveRunSeconds(seconds: number)
- pcall(Host.kv.set, RUN_SECONDS_KEY, seconds)
+function M.saveSeconds(pass: Agent.Pass, seconds: number)
+ pcall(Host.kv.set, SECONDS_KEYS[pass], seconds)
 end
 
 -- The PRs the reader opened lately, newest first, which the hub lists under Review requests. They

@@ -145,7 +145,7 @@ Each module's one job comes from its header comment. A verdict says what the por
 | `src/block.luau` | The review page block: opens the PR its arguments name (or the bundled sample), draws the page, and turns clicks and keys into state changes plus the scrolling, focusing and animation timing only a live window can do. | Rewrite for the web host. Keep its `ACTIONS` table as the page's action vocabulary. | none |
 | `src/state.luau` | What the page shows on top of the review itself, and the changes to it that need no window. | Port 1:1. | none |
 | `src/review.luau` | The review: steps in reading order, decisions on suggestions, own comments, the verdict and the `Payload` for GitHub's create-review call. No header comment. | Port 1:1. | none |
-| `src/guide.luau` | Parses and validates a guide file against a PR (`parse`, `read`, `defaultGuide`, `isStale`). No header comment. `read` uses `Host.fs`. | Port 1:1. Change with `GUIDE.md` and `prompts/guide.md`. | none |
+| `src/guide.luau` | Parses and validates a guide file against a PR (`parse`, `read`, `defaultGuide`, `isStale`), and the review pass's file (`parseDraft`, `readDraft`, `withDraft`). No header comment. `read` uses `Host.fs`. | Port 1:1. Change with `GUIDE.md`, `prompts/explain.md` and `prompts/review.md`. | none |
 | `src/diff.luau` | Diff analysis for one file: spans, commentable ranges, the layout with hidden runs, tokens. No header comment. | Port 1:1. | `diff_test`, `moves_test` |
 | `src/moves.luau` | Move detection: code the PR cut from one place and pasted in another, matched by whole runs of trimmed lines, so a block that only moved reads as moved. | Port 1:1. | `moves_test` |
 | `src/file-group.luau` | Which changed files the page sets apart when no step visits them: tests, found by path, and generated files, which git's `linguist-generated` attribute marks. | Port 1:1. The port reads `linguist-generated` on the worker or from `.gitattributes` ([B.4](#b4-prdata)). | `groups_test` |
@@ -158,7 +158,7 @@ Each module's one job comes from its header comment. A verdict says what the por
 | `src/text.luau` | String helpers. No header comment. | Port 1:1. | none |
 | `src/text-field.luau` | A text field's editing model (`Field`, `key`, cursor and selection). No header comment. | Port 1:1, or replace with native inputs. `keys.luau` reads its `Outcome`. | through `state_test`, `agent_state_test`, `review_fix_test` |
 | `src/keys.luau` | What each key does in each mode, as the same actions the page's clicks send. | Port 1:1. | `agent_state_test`, `review_fix_test`, `summary_test` |
-| `prompts/guide.md` | The prompt `omp` follows to write a guide. | Port 1:1 as text. Changes with `GUIDE.md` and `src/guide.luau`. | none |
+| `prompts/explain.md`, `prompts/review.md` | The prompts `omp` follows: the explanation (overview, flow, changes) and the review (comments, summary, through a lens). | Port 1:1 as text. Change with `GUIDE.md` and `src/guide.luau`. | none |
 
 ### The hub
 
@@ -520,9 +520,11 @@ type AgentFixRead = { files: Record<string, string>; diff: string; originals?: R
 
 interface AgentHost {
 	findAgent(): Promise<Result<Agent>> // `omp` on PATH and the model from kv "model" or ~/.omp/agent/config.yml
-	saveChoice(agent: Agent): void // kv "model": { model, effort, lens }
+	saveChoice(agent: Agent): void // kv "model": { model, effort, lens, explainModel, explainEffort, review }
+	saveReviewModel(model: string, effort?: string): void // kv "model": only model and effort, the rest kept
 	listModels(agent: Agent): Promise<AgentModel[]> // `omp models --json`; [] on failure
-	generateGuide(agent: Agent, repo: Repo, pr: PR): Promise<Result<Guide>> // `omp -p --model M [--thinking E] <request>` in the checkout
+	explain(agent: Agent, repo: Repo, pr: PR): Promise<Result<Guide>> // prompts/explain.md, `omp -p --model M [--thinking E] <request>` with the explanation model, writes <n>.json
+	draftReview(agent: Agent, repo: Repo, pr: PR): Promise<Result<GuideDraft>> // prompts/review.md with the review model and lens, writes <n>.review.json; runs alongside explain
 	summarizeFeedback(agent: { command: string; model: string; effort?: string }, prompt: string): Promise<Result<string>> // `Summary.plan` argv only
 	startAgentFix(request: AgentFixRequest, agent: Agent, now: number, changed: (o: AgentOutcome) => void): { engine?: AgentEngine; done: Promise<Result<AgentFix>> }
 	returnAgentFix(path: string): Promise<Result<true>>
@@ -550,8 +552,9 @@ The store is the `Host.kv` keys the plugin writes. Every window of a Tern sessio
 | `hub.merge.<owner>/<repo>` | `MergeRecord` | `Lookups.saveRecord` | one per repo |
 | `hub.recent` | `Opened[]` | `Fetch.rememberPr`, `Fetch.migrateRecent` | 8 (`Sync.RECENT_CAP`) |
 | `hub.clones` | `Record<slug, path>` | `AgentHost.rememberAgentClone` | Plugin only. Drop. |
-| `model` | `{ model, effort?, lens }` | `AgentHost.saveChoice` | one |
-| `runSeconds` | number | `Fetch.saveRunSeconds` | one |
+| `model` | `{ model, effort?, lens, explainModel?, explainEffort?, review? }`: `model` and `effort` are the review model, which agent fixes also use | `AgentHost.saveChoice`, `AgentHost.saveReviewModel` | one |
+| `runSeconds` | number: the last explanation's seconds | `Fetch.saveSeconds("explain")` | one |
+| `reviewSeconds` | number: the last review's seconds | `Fetch.saveSeconds("review")` | one |
 | `links` | `"tern" \| "browser"`: where GitHub links open | `Fetch.saveLinkTarget` (Settings, `hub-links`) | one. Drop: a web app opens links in a new tab. |
 | `recent` | legacy list, deleted by `Fetch.migrateRecent` | none | Drop. |
 
@@ -664,10 +667,10 @@ Port the table as is, as a `Record<string, (b, cx, value) => void>` and one `dis
 | `hub-actions` | `State.select`, then `State.openMenu(s, "actions")` or `"merge"` |
 | `hub-menu-move` | `State.menuMove` |
 | `hub-menu-close` | `closeMenu` |
-| `hub-menu-pick`, `hub-menu-select` | `pickRow`, which runs the row's own action, or `chooseMergeRow` (`Lookups.setUserMethod`, `State.beginMethodEdit`), or in Settings remembers the model (`AgentHost.saveChoice`) |
+| `hub-menu-pick`, `hub-menu-select` | `pickRow`, which runs the row's own action, or `chooseMergeRow` (`Lookups.setUserMethod`, `State.beginMethodEdit`), or in Settings remembers the review model (`AgentHost.saveReviewModel`) |
 | `hub-menu-enter` | `pickRow`, except in the repository list, where it closes |
-| `hub-menu-effort` | `State.stepEffort`, `AgentHost.saveChoice` |
-| `hub-menu-effort-set` | `State.setEffort`, `AgentHost.saveChoice` |
+| `hub-menu-effort` | `State.stepEffort`, `AgentHost.saveReviewModel` |
+| `hub-menu-effort-set` | `State.setEffort`, `AgentHost.saveReviewModel` |
 | `hub-links` | `State.setLinks`, `Fetch.saveLinkTarget`: where GitHub links open (Settings) |
 | `hub-help`, `hub-help-close` | `State.openHelp`, `State.closeHelp` |
 | `card-agent` | `AgentRun.beginAgent(b, cx, key, "fix")` |
@@ -724,7 +727,7 @@ Port the table as is, as a `Record<string, (b, cx, value) => void>` and one `dis
 | `fixes-github` | `openLink` on the step's GitHub page |
 | `fixes-press` | `State.fixPress`, then the step's own `fixes-*` action or the card's main action |
 
-The guide page has its own `ACTIONS` table in `src/block.luau`, with the same `dispatch` shape and `Keys.action` for keys: `step`, `goto-step`, `next-suggestion`, `peek`, `reveal`, `whole`, `toggle-flow`, `toggle-description`, `toggle-folder`, `toggle-group`, `toggle-file`, `open-all-supporting`, `toggle-help`, `dismiss`, `scroll`, `open-github`, `view`, `toggle-view`, `review-step`, `mark-block`, `mark-change`, `mark-file`, `mark-supporting`, `mark-all`, `decide`, `decide-current`, `goto-suggestion`, `goto-own`, `comment`, `comment-step`, `comment-save`, `comment-cancel`, `open-search`, `search-run`, `search-move`, `search-pick`, `search-go`, `search-close`, `toggle-models`, `models-filter`, `models-move`, `models-top`, `models-effort`, `models-pick`, `model-row`, `model-effort`, `models-lens`, `model-lens`, `edit-lenses`, `open-review`, `toggle-review`, `review-move`, `toggle-item`, `toggle-all`, `verdict`, `edit-summary`, `done-summary`, `submit-review` and `open-posted`. `generate-guide` is handled before `dispatch`, in `event` and `key`. `open-github` and `open-posted` open their link through the page's own `openLink`, which follows the hub's `links` setting.
+The guide page has its own `ACTIONS` table in `src/block.luau`, with the same `dispatch` shape and `Keys.action` for keys: `step`, `goto-step`, `next-suggestion`, `peek`, `reveal`, `whole`, `toggle-flow`, `toggle-description`, `toggle-folder`, `toggle-group`, `toggle-file`, `open-all-supporting`, `toggle-help`, `dismiss`, `scroll`, `open-github`, `view`, `toggle-view`, `review-step`, `mark-block`, `mark-change`, `mark-file`, `mark-supporting`, `mark-all`, `decide`, `decide-current`, `goto-suggestion`, `goto-own`, `comment`, `comment-step`, `comment-save`, `comment-cancel`, `open-search`, `search-run`, `search-move`, `search-pick`, `search-go`, `search-close`, `toggle-models`, `models-slot`, `models-filter`, `models-move`, `models-top`, `models-effort`, `models-pick`, `model-row`, `model-effort`, `models-lens`, `model-lens`, `edit-lenses`, `open-review`, `toggle-review`, `review-move`, `toggle-item`, `toggle-all`, `verdict`, `edit-summary`, `done-summary`, `submit-review` and `open-posted`. `generate-guide` is handled before `dispatch`, in `event` and `key`. `open-github` and `open-posted` open their link through the page's own `openLink`, which follows the hub's `links` setting.
 
 ### Keys
 
