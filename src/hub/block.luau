@@ -4,6 +4,7 @@
 -- only a live window can do. Clicks (`event`) and keys (`key`) both run one ACTIONS table.
 local Agent = require("../agent")
 local AgentFix = require("./agent-fix")
+local AgentHost = require("../agent-host")
 local Board = require("../view/hub/board")
 local Fetch = require("../fetch")
 local Fields = require("../text-field")
@@ -34,7 +35,7 @@ type Sched = {
 }
 
 -- Only Block holds an engine or a pending folder callback. The token survives synchronous
--- completion before Fetch.startAgentFix returns its handle.
+-- completion before AgentHost.startAgentFix returns its handle.
 type AgentFlight = {
 	key: string, engine: AgentFix.Engine?, settled: boolean, stopping: boolean,
 	input: AgentFix.Input?, bot: boolean?, cancel: (() -> ())?, releasing: boolean, starting: boolean?, fixtureStep: number?,
@@ -208,7 +209,7 @@ local function keepAgentChoice(b: Block)
 	local choice, agent = b.s.agent, b.agent
 	if choice and agent then
 		agent.model, agent.effort = choice.model, choice.effort
-		Fetch.saveChoice(agent)
+		AgentHost.saveChoice(agent)
 	end
 end
 
@@ -755,7 +756,7 @@ local function startAgentEngine(b: Block, cx: BlockCx, flight: AgentFlight, clon
 			if flight.engine then forgetReturned(b, flight) end
 		end
 		flight.starting = true
-		local started, engine = pcall(Fetch.startAgentFix, {
+		local started, engine = pcall(AgentHost.startAgentFix, {
 			key = pr.key, clone = clone, checkout = checkout, branch = meta.headRefName,
 			base = pr.baseBranch, headOid = pr.headOid, number = pr.number, input = flight.input,
 		}, b.agent :: Agent.Agent, b.s.now, function(outcome) settleAgent(b, cx, flight, outcome) end, completed)
@@ -839,7 +840,7 @@ local function beginAgent(b: Block, cx: BlockCx, key: string, mode: "fix" | "clo
 		draw(b, cx)
 	end
 	local function find(allowClone: boolean)
-		local ok, err = pcall(Fetch.findAgentClone, near, dir, pr.repo, function(slug, answer)
+		local ok, err = pcall(AgentHost.findAgentClone, near, dir, pr.repo, function(slug, answer)
 			if not carryOn(b, cx, flight) then return answer(nil) end
 			if not allowClone then missing = true; return answer(nil) end
 			agentFolder(b, flight, "Choose a parent folder for " .. slug, function(parent, why)
@@ -864,7 +865,7 @@ local function beginAgent(b: Block, cx: BlockCx, key: string, mode: "fix" | "clo
 				checked = true
 				if not carryOn(b, cx, flight) then return end
 				if not repo then return cloned(nil, why or "The selected folder is not a clone") end
-				local ok, problem = pcall(Fetch.rememberAgentClone, pr.repo, repo.root)
+				local ok, problem = pcall(AgentHost.rememberAgentClone, pr.repo, repo.root)
 				if not ok or problem then return cloned(nil, tostring(problem)) end
 				near = repo
 				find(false)
@@ -1834,7 +1835,7 @@ ACTIONS["card-summarize"] = function(b, cx, key)
 			local fixture: any = require("../../fixtures/hub/summary")
 			return complete(fixture.answer(details), nil)
 		end
-		Fetch.summarizeFeedback(b.agent :: Agent.Agent, Summary.prompt(details), complete)
+		AgentHost.summarizeFeedback(b.agent :: Agent.Agent, Summary.prompt(details), complete)
 	end)
 end
 ACTIONS["card-method"] = function(b, cx, key)
@@ -2582,7 +2583,7 @@ openReviewFix = function(b: Block, cx: BlockCx, key: string)
 	if not agent or agent.kind ~= "ready" then return end
 	if agent.review then return end
 	local route, fix = b.s.route :: State.Route, agent.fix
-	local function read(value: Fetch.AgentFixRead?, err: string?)
+	local function read(value: AgentHost.AgentFixRead?, err: string?)
 		if b.s.agents[key] ~= agent then return end
 		if value then agent.review = ReviewFix.build(fix, value.files, b.s.details[key], value.originals) end
 		if b.s.route == route then
@@ -2609,7 +2610,7 @@ openReviewFix = function(b: Block, cx: BlockCx, key: string)
 		read({ files = files, diff = "" }, nil)
 		return
 	end
-	local ok, err = pcall(Fetch.readAgentFix, fix, read)
+	local ok, err = pcall(AgentHost.readAgentFix, fix, read)
 	if not ok then read(nil, tostring(err)) end
 end
 
@@ -2705,7 +2706,7 @@ local function reviewEffect(b: Block, cx: BlockCx, action: "push" | "discard")
 			end
 		end
 		if b.fixture then returned(true, nil); return end
-		local ok, err = pcall(Fetch.returnAgentFix, request.fix.worktree, returned)
+		local ok, err = pcall(AgentHost.returnAgentFix, request.fix.worktree, returned)
 		if not ok then returned(nil, tostring(err)) end
 	end
 	if action == "discard" or not plan.command then release(); return end
@@ -2734,7 +2735,7 @@ local function reviewEffect(b: Block, cx: BlockCx, action: "push" | "discard")
 			and pr ~= nil and not pr.tandem and pr.repo == request.repo and pr.number == request.number
 			and (pr.headOid == request.fix.headOid or pr.headOid == request.fix.commit)
 	end
-	local ok, err = pcall(Fetch.pushAgentFix, plan, canPush, completed)
+	local ok, err = pcall(AgentHost.pushAgentFix, plan, canPush, completed)
 	if not ok then completed(nil, tostring(err)) end
 end
 ACTIONS["review-fix-push"] = function(b, cx) reviewEffect(b, cx, "push") end
@@ -2981,12 +2982,12 @@ end
 -- The agent the reader's omp is set to, and the models it can run (a live board only).
 local function loadAgent(b: Block, cx: BlockCx)
 	Host.timer(0, function()
-		Fetch.findAgent(function(agent)
+		AgentHost.findAgent(function(agent)
 			if b.closed or not agent then return end
 			b.agent = agent
 			b.s.agent = { models = {}, model = agent.model, effort = agent.effort }
 			draw(b, cx)
-			Fetch.listModels(agent, function(models)
+			AgentHost.listModels(agent, function(models)
 				if b.closed then return end
 				local choice = b.s.agent
 				if choice then

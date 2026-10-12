@@ -2,6 +2,7 @@
 -- The review page block: opens the PR its arguments name (or the bundled sample), draws the page, and turns clicks and keys into state changes plus the
 -- scrolling, focusing and animation timing only a live window can do.
 local Agent = require("./agent")
+local AgentHost = require("./agent-host")
 local Diff = require("./diff")
 local Fetch = require("./fetch")
 local Fields = require("./text-field")
@@ -387,7 +388,7 @@ local ACTIONS: { [string]: Handler } = {
  ["models-pick"] = function(s)
   local agent = (s.ai :: Agent.Run).agent
   if State.chooseModel(s.models :: State.ModelBox, agent) then
-   Fetch.saveChoice(agent)
+   AgentHost.saveChoice(agent)
    s.models = nil
   end
  end,
@@ -395,22 +396,22 @@ local ACTIONS: { [string]: Handler } = {
  ["model-row"] = function(s, _, n)
   local box, agent = s.models :: State.ModelBox, (s.ai :: Agent.Run).agent
   box.selected = tonumber(n) :: number
-  if State.chooseModel(box, agent) then Fetch.saveChoice(agent) end
+  if State.chooseModel(box, agent) then AgentHost.saveChoice(agent) end
  end,
  ["model-effort"] = function(s, _, effort)
   local box, agent = s.models :: State.ModelBox, (s.ai :: Agent.Run).agent
   box.effort = effort
-  if State.chooseModel(box, agent) then Fetch.saveChoice(agent) end
+  if State.chooseModel(box, agent) then AgentHost.saveChoice(agent) end
  end,
  -- A lens applies at once and leaves the dropdown open, like an effort click.
  ["models-lens"] = function(s, _, delta)
   local agent = (s.ai :: Agent.Run).agent
   State.stepLens(agent, tonumber(delta) :: number)
-  Fetch.saveChoice(agent)
+  AgentHost.saveChoice(agent)
  end,
  ["model-lens"] = function(s, _, n)
   local agent = (s.ai :: Agent.Run).agent
-  if State.chooseLens(agent, tonumber(n) :: number) then Fetch.saveChoice(agent) end
+  if State.chooseLens(agent, tonumber(n) :: number) then AgentHost.saveChoice(agent) end
  end,
  ["edit-lenses"] = function(s, cx)
   local folder, err = Fetch.prepareLensFolder()
@@ -529,7 +530,7 @@ local function generate(b: Block, cx: BlockCx)
  end
  run.running, run.seconds, run.expected, run.error = true, 0, Fetch.expectedRunSeconds(), nil
  ticker = Host.timer(1000, tick)
- Fetch.generateGuide(run.agent, repo, pr, function(guide, err)
+ AgentHost.generateGuide(run.agent, repo, pr, function(guide, err)
   ticker:cancel()
   run.running, run.error = false, err
   if guide then
@@ -634,7 +635,7 @@ local block: BlockDef<Block> = {
   end
   -- Starts after init returns, so each stage renders over a block that exists.
   Host.timer(0, function()
-   Fetch.findAgent(function(agent, why)
+   AgentHost.findAgent(function(agent, why)
     if not agent then
      b.noAgent = why or "the AI agent isn't available"
      autoGenerate(b, cx)
@@ -644,7 +645,7 @@ local block: BlockDef<Block> = {
     offerAgent(b)
     autoGenerate(b, cx)
     cx:render()
-    Fetch.listModels(agent, function(models)
+    AgentHost.listModels(agent, function(models)
      agent.models = models
      cx:render()
     end)

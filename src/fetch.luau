@@ -1,23 +1,19 @@
 --!strict
 -- Where the plugin reaches outside itself: `gh` for the PR's metadata and posting the
 -- review, `git` in a checkout (the reader's own, or PR Guide's saved light copy of a repo) for the
--- PR's changes and files, the checkout's guide files, the review lens files, and the reader's AI
--- agent writing a guide. Each step starts the next from its callback; the first failure ends the
--- chain with a message naming the step.
+-- PR's changes and files, the checkout's guide files and the review lens files. Commands run on the
+-- reader's shell PATH (`run`, `runner`), which agent-host shares. Each step starts the next from its
+-- callback; the first failure ends the chain with a message naming the step.
 local Agent = require("./agent")
-local AgentFix = require("./hub/agent-fix")
 local Fixes = require("./hub/fixes")
 local Github = require("./github")
 local GitOutput = require("./git-output")
-local Guide = require("./guide")
 local Host = require("./host")
 local Lens = require("./lens")
 local Links = require("./links")
 local Model = require("./hub/model")
 local Pr = require("./pr")
 local Review = require("./review")
-local ReviewFix = require("./hub/review-fix")
-local Summary = require("./hub/summary")
 local Sync = require("./hub/sync")
 local Text = require("./text")
 
@@ -44,9 +40,6 @@ local GIT_MS = 60_000
 -- The first fetch of a big repo's history takes a while.
 local GIT_FETCH_MS = 20 * 60_000
 
-local AGENT_MS = 20 * 60_000
-
-local PROMPT = "prompts/guide.md"
 -- The plugin's own lenses, and the most a lens file may be.
 local LENSES = "lenses"
 local LENS_BYTES = 64 * 1024
@@ -141,10 +134,6 @@ local function git(job: Job, what: string, args: { string }, stdin: string?, ok:
  run(argv, opts, named(what, job.fail), ok)
 end
 
-local function trimmed(text: string): string
- return (string.gsub(text, "%s+$", ""))
-end
-
 local function readMeta(job: Job, pr: string, ok: (meta: Meta) -> ())
  local argv = { "gh", "pr", "view", pr, "--json", "number,title,body,url,author,baseRefName,headRefOid,mergeCommit" }
  run(argv, { cwd = job.repo, timeout_ms = GH_MS }, named("gh pr view", job.fail), function(stdout)
@@ -173,11 +162,11 @@ local function fetchRefs(job: Job, meta: Meta, ok: (head: string, mergeBase: str
  git(job, "git fetch", fetch, nil, function()
   git(job, "git rev-parse", { "rev-parse", prefix .. "/head" }, nil, function(head)
    git(job, "git merge-base", { "merge-base", prefix .. "/head", prefix .. "/base" }, nil, function(mergeBase)
-    head, mergeBase = trimmed(head), trimmed(mergeBase)
+    head, mergeBase = Text.trimEnd(head), Text.trimEnd(mergeBase)
     local merge = if type(meta.mergeCommit) == "table" then meta.mergeCommit.oid else nil
     if mergeBase ~= head or not merge or merge == head then return ok(head, mergeBase) end
     git(job, "git merge-base", { "merge-base", head, merge .. "^1" }, nil, function(before)
-     ok(head, trimmed(before))
+     ok(head, Text.trimEnd(before))
     end)
    end)
   end)
@@ -346,6 +335,10 @@ end
 
 local M = {}
 
+M.GIT_MS = GIT_MS
+M.run, M.named, M.withShellPath = run, named, withShellPath
+M.refPrefix = refPrefix
+
 function M.dryRunPath(number: number): string
  return "/tmp/prguide-review-" .. number .. ".json"
 end
@@ -375,10 +368,7 @@ local function originOf(root: string, done: (slug: string?) -> ())
  end)
 end
 
--- The "owner/repo" the checkout `repo` is a clone of, or nil when it isn't on GitHub.
-function M.originOf(repo: Repo, done: (slug: string?) -> ())
- originOf(repo.root, done)
-end
+M.originOf = originOf
 
 -- The most folders-worth of candidates whose origin is looked up.
 local CANDIDATE_CAP = 40
@@ -628,49 +618,6 @@ function M.submitReview(pr: Pr.PR, payload: Review.Payload, to: Destination, don
  end)
 end
 
--- Where the model, effort and lens the reader last picked are kept, in the plugin's key/value store.
-local CHOICE_KEY = "model"
-
-local function savedChoice(): { [string]: any }
- local ok, saved = pcall(Host.kv.get, CHOICE_KEY)
- return if ok and type(saved) == "table" then saved else {}
-end
-
--- The model the reader last picked, else the one of OMP's review role, else its default role, as
--- the model and its effort; nil when there is none.
-local function chosenModel(config: string): (string?, string?)
- local saved = savedChoice()
- if type(saved.model) == "string" then
-  return saved.model, if type(saved.effort) == "string" then saved.effort else nil
- end
- local raw = if Host.fs.exists(config) then Agent.reviewModel(Host.fs.read(config)) else nil
- if not raw then return nil, nil end
- return Agent.parseChoice(raw)
-end
-
--- The reader's agent: `omp` on their shell's PATH with the model they last picked or OMP's review
--- model, and the lens they last picked. Calls `done` once, with nil and why when `omp` or the
--- model is missing. `omp` is looked up as a file because an interactive shell may define it as an alias.
-function M.findAgent(done: (agent: Agent.Agent?, why: string?) -> ())
- local home = Host.getenv("HOME")
- if not home then return done(nil, "your home directory is unknown") end
- withShellPath(function(path)
-  local command = Agent.findOnPath(path, Host.fs.exists)
-  if not command then return done(nil, "omp isn't installed (it isn't on your shell's PATH)") end
-  local model, effort = chosenModel(home .. Agent.CONFIG)
-  if not model then return done(nil, "omp has no model set (pick one in omp first)") end
-  local lens = savedChoice().lens
-  local agent = Agent.new(command, path, model, effort, if type(lens) == "string" then lens else Lens.DEFAULT)
-  M.refreshLenses(agent)
-  done(agent)
- end)
-end
-
--- Remembers `agent`'s model, effort and lens for every PR and the next start.
-function M.saveChoice(agent: Agent.Agent)
- pcall(Host.kv.set, CHOICE_KEY, { model = agent.model, effort = agent.effort, lens = agent.lens })
-end
-
 -- The folder the reader's own lenses live in.
 function M.lensFolder(): string
  return Host.plugin.data .. "/lenses"
@@ -754,47 +701,6 @@ function M.rememberPr(pr: Pr.PR)
  pcall(Host.kv.set, RECENT_KEY, Sync.remember(M.recentPrs(), opened))
 end
 
--- The models `agent` can run with, from `omp models`. Calls `done` once; the list is empty when
--- listing fails, which leaves the current model as the only choice.
-function M.listModels(agent: Agent.Agent, done: (models: { Agent.Model }) -> ())
- run({ agent.command, "models", "--json" }, { env = { PATH = agent.path }, timeout_ms = GH_MS }, function() done({}) end, function(stdout)
-  local ok, raw = pcall(Host.json.decode, stdout)
-  done(if ok then Agent.parseModels(raw) else {})
- end)
-end
-
--- Has `agent` write the guide for `pr` into `repo`'s guides: the run's directory gets the numbered
--- diff and the filled-in prompt, then `omp -p` runs in the checkout. Calls `done` once, with the
--- guide or the first line of what went wrong. A file that isn't a usable guide moves to the run's
--- directory, so the checkout never keeps one.
-function M.generateGuide(agent: Agent.Agent, repo: Repo, pr: Pr.PR, done: (Guide.Guide?, string?) -> ())
- local dir = Agent.workDir(pr)
- local diffPath, promptPath, guidePath = dir .. "/diff.txt", dir .. "/prompt.md", M.guidePath(repo, pr.number)
- M.refreshLenses(agent)
- local lens = Agent.currentLens(agent)
- local fail = function(message: string) done(nil, message) end
- local prepared, err = pcall(function()
-  Host.fs.mkdir(dir)
-  Host.fs.mkdir(repo.guides)
-  Host.fs.write(diffPath, Agent.numberedDiff(pr.files))
-  Host.fs.write(promptPath, Agent.prompt(Host.fs.read(PROMPT), {
-   repo = pr.repo, number = tostring(pr.number), title = pr.title, head = pr.head,
-   base = refPrefix(pr.number) .. "/base", diffPath = diffPath, guidePath = guidePath, author = Agent.name(agent),
-   lens = Host.json.encode(lens.name), focus = Agent.focus(lens),
-  }))
- end)
- if not prepared then return fail(Text.errorLine(err)) end
- run(Agent.argv(agent, promptPath), { cwd = repo.root, env = { PATH = agent.path }, timeout_ms = AGENT_MS }, fail, function()
-  if not Host.fs.exists(guidePath) then return fail(Agent.name(agent) .. " finished without writing " .. guidePath) end
-  local guide, problem = Guide.read(guidePath, pr)
-  if guide then return done(guide, nil) end
-  local kept = dir .. "/guide.json"
-  Host.fs.write(kept, Host.fs.read(guidePath))
-  Host.fs.remove(guidePath)
-  fail("the guide it wrote isn't usable: " .. (problem :: string) .. " (kept at " .. kept .. ")")
- end)
-end
-
 -- `Github.Runner` over `Host.process.run`: `argv[1]` is found on the shell's PATH like `run` does,
 -- and the result is always handed back, a failed spawn as status -1.
 function M.runner(argv: { string }, opts: { cwd: string?, stdin: string?, timeout_ms: number? }, done: (out: Github.Out) -> ())
@@ -812,26 +718,6 @@ function M.runner(argv: { string }, opts: { cwd: string?, stdin: string?, timeou
   end)
   if not spawned then settle({ status = -1, stdout = "", stderr = Text.errorLine(err), timed_out = false }) end
  end)
-end
-
--- Runs the read-only summary: one ephemeral, tool-free omp call. The command is built here from the
--- validated fields by Summary.plan, never taken from the caller. No cwd, worktree, file or kv write.
-function M.summarizeFeedback(agent: { command: string, model: string, effort: string? }, prompt: string, done: (string?, string?) -> ())
- local argv = Summary.plan(agent.command, agent.model, agent.effort, prompt)
- if not argv then return done(nil, "Invalid read-only summary command") end
- local called = false
- local function finish(text: string?, err: string?)
-  if called then return end
-  called = true
-  done(text, err)
- end
- local ok, err = pcall(M.runner, argv, { timeout_ms = AGENT_MS }, function(out)
-  if out.status ~= 0 or out.timed_out then
-   return finish(nil, if out.timed_out then "Summarizing feedback timed out" else Text.errorLine(out.stderr ~= "" and out.stderr or "The agent returned no answer"))
-  end
-  finish(out.stdout, nil)
- end)
- if not ok then finish(nil, Text.errorLine(err)) end
 end
 
 -- Tandem hand-off: `tandem watch --json` says which PRs Tandem owns, `tandem native act` hands one over. Both run
@@ -905,28 +791,6 @@ function M.tandemHandoff(root: string, repo: string, number: number, reason: str
  end)
 end
 
--- Agent fixes: only this boundary reads Tandem's database, hub.clones, local journals and
--- environment. The caller owns the folder question and card lifecycle. No UI effects here.
-local CLONES_KEY = "hub.clones"
-
-function M.agentClones(): { [string]: string }
- local raw = kvGet(CLONES_KEY)
- local clones = {}
- if type(raw) == "table" then
-  for slug, path in raw do
-   if type(slug) == "string" and type(path) == "string" then clones[slug] = path end
-  end
- end
- return clones
-end
-
-function M.rememberAgentClone(slug: string, path: string): string?
- local clones = M.agentClones()
- clones[string.lower(slug)] = path
- local ok, err = pcall(Host.kv.set, CLONES_KEY, clones)
- return if ok then nil else "Couldn't save the clone folder: " .. Text.errorLine(err)
-end
-
 -- A read-only SELECT, with SQL quoting and no migration or write to Tandem's store.
 function M.tandemClone(slug: string, done: (string?) -> ())
  local home = Host.getenv("TANDEM_HOME") or ((Host.getenv("HOME") or "") .. "/.tandem")
@@ -941,220 +805,4 @@ function M.tandemClone(slug: string, done: (string?) -> ())
   done(if type(path) == "string" and path ~= "" then path else nil)
  end)
 end
-
-function M.findAgentClone(near: Repo?, dir: string, slug: string, ask: (string, (string?) -> ()) -> (), done: (string?, string?) -> ())
- local function validate(path: string, name: string, callback: (boolean) -> ())
-  originOf(path, function(origin) callback(Links.sameRepo(origin, name)) end)
- end
- AgentFix.locateClone(slug, {
-  existing = function(name, callback)
-   M.checkoutFor(near, dir, name, function(repo)
-    if repo then return callback(repo.root) end
-    local ready = M.readySavedCopy(name)
-    callback(if ready then ready.root else nil)
-   end)
-  end,
-  tandem = M.tandemClone,
-  saved = function(name) return M.agentClones()[string.lower(name)] end,
-  validate = validate, ask = ask, remember = M.rememberAgentClone, runner = M.runner,
- }, done)
-end
-
-local activeAgentFix: AgentFix.Engine? = nil
-local activeBotFix: AgentFix.Fix? = nil
-
-export type AgentFixRequest = {
- key: string, clone: string, checkout: string, branch: string, base: string, headOid: string,
- number: number, regenerate: { [string]: { string } }?, input: AgentFix.Input?,
-}
-
--- Start separately from clone lookup, so the glue can finish its folder question first.
--- A ready fix keeps the single-run slot until returnAgentFix succeeds after Push or Discard.
-function M.startAgentFix(request: AgentFixRequest, agent: Agent.Agent, now: number, changed: (AgentFix.Outcome) -> (), done: (AgentFix.Fix?, string?) -> ()): AgentFix.Engine?
- if activeAgentFix and activeAgentFix.busy() then done(nil, "An agent fix already holds a worktree"); return nil end
- activeAgentFix = nil
- local home = Host.getenv("HOME")
- if not home then done(nil, "The home directory is unknown"); return nil end
- if request.number < 1 or request.number % 1 ~= 0 or not string.match(request.headOid, "^%x+$") or string.sub(request.base, 1, 1) == "-" or request.base == "" then
-  done(nil, "Invalid PR refs"); return nil
- end
- local spec: AgentFix.Spec = {
-  key = request.key, clone = request.clone, checkout = request.checkout,
-  pool = Host.getenv("TANDEM_POOL_ROOT") or (home .. "/.tandem/pool"),
-  branch = request.branch, base = request.base, headOid = request.headOid, number = request.number,
-  tool = Host.plugin.dir .. "/tools/conflicts", omp = agent.command, model = agent.model,
-  effort = agent.effort, regenerate = request.regenerate, input = request.input,
-  -- A bot edit runs in macOS Seatbelt; where it is missing the run fails and nothing is applied.
-  sandbox = if request.input then { exec = "/usr/bin/sandbox-exec", home = home } else nil,
- }
- local function samePath(a: string, b: string, callback: (boolean?, string?) -> ())
-  -- Physical paths protect /tmp versus /private/tmp and symlinked checkouts. Also reject
-  -- the source clone itself, which can differ from the currently viewed checkout.
-  M.runner({ "python3", "-c", "import os,sys; print('same' if os.path.realpath(sys.argv[1]) in [os.path.realpath(p) for p in sys.argv[2:]] else 'different')", a, b, spec.clone }, { timeout_ms = 15_000 }, function(out)
-   if out.status ~= 0 then return callback(nil, "Couldn't verify the acquired worktree path") end
-   local result = trimmed(out.stdout)
-   callback(if result == "different" then false elseif result == "same" then true else nil, nil)
-  end)
- end
- local function resolutions(path: string, callback: ({ { id: string, lines: { AgentFix.ResolvedLine } } }?, string?) -> ())
-  M.runner({ "git", "-C", path, "rev-parse", "--absolute-git-dir" }, { timeout_ms = GIT_MS }, function(out)
-   if out.status ~= 0 then return callback(nil, "Couldn't locate the conflict journal") end
-   local ok, rows = pcall(function()
-    local journal = Host.json.decode(Host.fs.read(trimmed(out.stdout) .. "/prguide-conflicts.json", 16 * 1024 * 1024))
-    local resolved = {}
-    for _, hunk in journal.hunks do
-     if hunk.resolved then table.insert(resolved, { id = hunk.id, lines = hunk.resolved.lines }) end
-    end
-    return resolved
-   end)
-   callback(if ok then rows else nil, if ok then nil else Text.errorLine(rows))
-  end)
- end
- local engine: AgentFix.Engine
- activeBotFix = nil
- engine = AgentFix.engine(spec, { runner = M.runner, decode = Host.json.decode, samePath = samePath, resolutions = resolutions }, now, changed, function(fix, err)
-  if fix and request.input then activeBotFix = fix end
-  if not fix and not engine.busy() then activeAgentFix = nil end
-  done(fix, err)
- end)
- activeAgentFix = engine
- engine.begin()
- return engine
-end
-
--- The later lifecycle calls this only after a successful Push or confirmed Discard. It runs
--- no Git write and never pushes; both ownership guards always reach treehouse.
-function M.returnAgentFix(path: string, done: (boolean?, string?) -> ())
- local engine = activeAgentFix
- if not engine then return done(nil, "No agent fix holds a worktree") end
- local lease = engine.held()
- if not lease or lease.path ~= path then return done(nil, "The worktree does not belong to this agent fix") end
- engine.release(function(ok, err)
-  if ok and (engine.held() ~= nil or engine.busy()) then ok, err = nil, "The engine still holds the worktree lease" end
-  if ok and activeAgentFix == engine then activeAgentFix, activeBotFix = nil, nil end
-  done(ok, err)
- end)
-end
-
-export type AgentFixRead = { files: { [string]: string }, diff: string, originals: { [string]: ReviewFix.Original }? }
-
-local function ownsAgentFix(fix: AgentFix.Fix): boolean
- local engine = activeAgentFix
- local lease = if engine then engine.held() else nil
- return lease ~= nil and lease.path == fix.worktree
-end
-
--- Read only paths with recorded conflicts, at the exact commit the reader will push.
-function M.readAgentFix(fix: AgentFix.Fix, done: (AgentFixRead?, string?) -> ())
- if not ownsAgentFix(fix) then return done(nil, "The worktree does not belong to this agent fix") end
- local commands, problem = ReviewFix.readCommands(fix)
- if not commands then return done(nil, problem) end
- local result: AgentFixRead = { files = {}, diff = "" }
- local index = 0
- local nextCommand: () -> ()
- nextCommand = function()
-  index += 1
-  local command = (commands :: { ReviewFix.Command })[index]
-  if not command then return done(result, nil) end
-  local called = false
-  local function read(out: Github.Out)
-   if called then return end
-   called = true
-   if out.status ~= 0 or out.timed_out then return done(nil, if out.timed_out then "Reading the fix timed out" else Text.errorLine(if out.stderr ~= "" then out.stderr else "Git could not read the fix")) end
-   if not ownsAgentFix(fix) then return done(nil, "The worktree lease changed") end
-   if command.argv[4] == "rev-parse" then
-    if activeBotFix == fix then
-     -- Bot edits have exact original sides in the retained engine result, with no conflict journal.
-     -- Only this exact ready result may use them; commit files still pass ReviewFix.build.
-     local snapshots: { [string]: ReviewFix.Original } = {}
-     for _, hunk in fix.hunks do
-      snapshots[hunk.id] = { path = hunk.path, start = hunk.start, base = table.clone(hunk.base), ours = table.clone(hunk.ours), theirs = table.clone(hunk.theirs) }
-     end
-     result.originals = snapshots
-     return nextCommand()
-    end
-    local ok, originals = pcall(function()
-     local journal = Host.json.decode(Host.fs.read(trimmed(out.stdout) .. "/prguide-conflicts.json", 16 * 1024 * 1024))
-     assert(type(journal.identity) == "string" and string.sub(journal.identity, 1, #fix.headOid + 1) == fix.headOid .. ":", "The conflict journal belongs to a different pull request head")
-     local snapshots: { [string]: ReviewFix.Original } = {}
-     local function lines(value: any): { string }
-      assert(type(value) == "table", "The original conflict sides are missing")
-      local exact: { string } = {}
-      for _, line in value do
-       assert(type(line) == "string", "The original conflict side is invalid")
-       table.insert(exact, (string.gsub(line, "[\r\n]+$", "")))
-      end
-      return exact
-     end
-     for _, hunk in journal.hunks do
-      assert(type(hunk.id) == "string" and not snapshots[hunk.id], "The conflict journal has missing or duplicate ids")
-      snapshots[hunk.id] = { path = hunk.path, start = hunk.start, base = lines(hunk.base), ours = lines(hunk.ours), theirs = lines(hunk.theirs) }
-     end
-     return snapshots
-    end)
-    if not ok then return done(nil, Text.errorLine(originals)) end
-    result.originals = originals
-   elseif command.argv[5] == "diff" then result.diff = out.stdout
-   else
-    local ref = command.argv[#command.argv]
-    result.files[string.sub(ref, #fix.commit + 2)] = out.stdout
-   end
-   nextCommand()
-  end
-  local ok, err = pcall(M.runner, command.argv, { cwd = command.cwd, timeout_ms = GIT_MS }, read)
-  if not ok then read({ status = -1, stdout = "", stderr = tostring(err), timed_out = false }) end
- end
- nextCommand()
-end
-
--- P is the only caller. Validate the pure plan again, read the PR's actual head repo
--- (including forks), and preserve Git's ordinary non-fast-forward protection.
-function M.pushAgentFix(plan: ReviewFix.Plan, canPush: () -> boolean, done: (boolean?, string?) -> ())
- local validated, problem = ReviewFix.plan("push", plan.request)
- if plan.kind ~= "push" or not validated or not validated.command then return done(nil, problem or "No push is planned") end
- local request, fix = validated.request, validated.request.fix
- if not ownsAgentFix(fix) then return done(nil, "The worktree does not belong to this agent fix") end
- local finished = false
- local function finish(ok: boolean?, err: string?)
-  if finished then return end
-  finished = true
-  done(ok, err)
- end
- local function run(argv: { string }, callback: (Github.Out) -> ())
-  if not canPush() then return finish(nil, "The selected fix changed") end
-  local called = false
-  local function reply(out: Github.Out)
-   if called or finished then return end
-   called = true
-   if not ownsAgentFix(fix) then return finish(nil, "The worktree lease changed") end
-   if out.status ~= 0 or out.timed_out then return finish(nil, if out.timed_out then "Pushing the fix timed out" else Text.errorLine(if out.stderr ~= "" then out.stderr else "Git could not push the fix")) end
-   callback(out)
-  end
-  local ok, err = pcall(M.runner, argv, { cwd = fix.worktree, timeout_ms = 60_000 }, reply)
-  if not ok then reply({ status = -1, stdout = "", stderr = tostring(err), timed_out = false }) end
- end
- run({ "gh", "pr", "view", tostring(request.number), "--repo", request.repo, "--json", "headRefName,headRefOid,headRepository,headRepositoryOwner" }, function(out)
-  local ok, meta = pcall(Host.json.decode, out.stdout)
-  if not ok or type(meta) ~= "table" or meta.headRefName ~= fix.branch or type(meta.headRepository) ~= "table" then
-   return finish(nil, "The pull request branch changed or is missing")
-  end
-  local remoteRepo = meta.headRepository.nameWithOwner
-  if not remoteRepo and type(meta.headRepositoryOwner) == "table" and type(meta.headRepositoryOwner.login) == "string" and type(meta.headRepository.name) == "string" then
-   remoteRepo = meta.headRepositoryOwner.login .. "/" .. meta.headRepository.name
-  end
-  if type(remoteRepo) ~= "string" then return finish(nil, "The pull request head repository is missing") end
-  local remotePlan, err = ReviewFix.plan("push", request, nil, remoteRepo)
-  if not remotePlan or not remotePlan.command then return finish(nil, err) end
-  local command = remotePlan.command
-  -- Reconcile an earlier push whose response was lost. Never send it twice on a cleanup retry.
-  if meta.headRefOid ~= fix.headOid and meta.headRefOid ~= fix.commit then return finish(nil, "The pull request head changed; refresh the board") end
-  run({ "git", "-C", fix.worktree, "ls-remote", "--heads", command.argv[5], "refs/heads/" .. fix.branch }, function(remote)
-   local head = string.match(remote.stdout, "^(%x+)%s+refs/heads/")
-   if head == fix.commit then return finish(true, nil) end
-   if head ~= fix.headOid then return finish(nil, "The remote branch changed; refresh the board") end
-   run(command.argv, function() finish(true, nil) end)
-  end)
- end)
-end
-
 return M

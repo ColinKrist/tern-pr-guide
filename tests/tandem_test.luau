@@ -4,6 +4,7 @@
 -- stubbed, and every process effect is a recorded call that a scenario settles by hand.
 local Cases: any = require("../fixtures/hub/cases")
 local AgentFix = require("../src/hub/agent-fix")
+local AgentHost: any = require("../src/agent-host")
 local Model = require("../src/hub/model")
 local State = require("../src/hub/state")
 local Sync = require("../src/hub/sync")
@@ -223,7 +224,7 @@ local function withWorld(run: (w: any, Fetch: any, Block: any) -> ())
 	local Fetch: any = require("../src/fetch")
 	local Host: any = require("../src/host")
 	local hostRunner, hostFind = Fetch.runner, Fetch.findRepo
-	local hostClone, hostStart = Fetch.findAgentClone, Fetch.startAgentFix
+	local hostClone, hostStart = AgentHost.findAgentClone, AgentHost.startAgentFix
 	local w: any = {
 		decoded = {}, encoded = {}, timers = {}, calls = {}, toasts = {}, renders = 0, throws = false, Block = Block,
 		finds = {}, holdRoot = false, rootFails = false, findThrows = false, kv = {}, now = Cases.asOf + 3600,
@@ -251,7 +252,7 @@ local function withWorld(run: (w: any, Fetch: any, Block: any) -> ())
 	local ok, err = pcall(run, w, Fetch, Block)
 	for name in stub do Host[name] = hostFields[name] end
 	Fetch.runner, Fetch.findRepo = hostRunner, hostFind
-	Fetch.findAgentClone, Fetch.startAgentFix = hostClone, hostStart
+	AgentHost.findAgentClone, AgentHost.startAgentFix = hostClone, hostStart
 	if not ok then error(err, 0) end
 end
 
@@ -765,10 +766,10 @@ local function agentBoard(w: any, Fetch: any, Block: any): any
 	local b = live(w, Block)
 	reads(w)[1].done(out("WATCH"))
 	w.clones, w.started, w.details, w.stops = {}, {}, {}, 0
-	Fetch.findAgentClone = function(_near: any, _dir: string, slug: string, ask: any, done: (string?, string?) -> ())
+	AgentHost.findAgentClone = function(_near: any, _dir: string, slug: string, ask: any, done: (string?, string?) -> ())
 		table.insert(w.clones, { slug = slug, ask = ask, done = done })
 	end
-	Fetch.startAgentFix = function(request: any, _agent: any, _now: number, changed: any, done: any): any
+	AgentHost.startAgentFix = function(request: any, _agent: any, _now: number, changed: any, done: any): any
 		table.insert(w.started, { request = request, changed = changed, done = done })
 		return {
 			stop = function() w.stops += 1 end, release = function(finished: (boolean?, string?) -> ()) finished(true, nil) end,
@@ -1851,10 +1852,10 @@ local function staleUpdate()
 end
 
 -- A board whose TARGET holds a ready fix on the Review fix page, kept by a retained engine. The push and the lease
--- return are recorded calls (the real `Fetch.pushAgentFix` needs the engine's own lease), settled by hand.
+-- return are recorded calls (the real `AgentHost.pushAgentFix` needs the engine's own lease), settled by hand.
 local function withReady(run: (w: any, b: any) -> ())
 	withWorld(function(w, Fetch, Block)
-		local hostPush, hostReturn = Fetch.pushAgentFix, Fetch.returnAgentFix
+		local hostPush, hostReturn = AgentHost.pushAgentFix, AgentHost.returnAgentFix
 		local ok, err = pcall(function()
 			local b = agentBoard(w, Fetch, Block)
 			local fix: any = copy(ReviewFixture.fix)
@@ -1872,10 +1873,10 @@ local function withReady(run: (w: any, b: any) -> ())
 					held = function(): any return if w.lease then { path = w.lease } else nil end,
 				},
 			}
-			Fetch.pushAgentFix = function(plan: any, canPush: () -> boolean, done: (boolean?, string?) -> ())
+			AgentHost.pushAgentFix = function(plan: any, canPush: () -> boolean, done: (boolean?, string?) -> ())
 				table.insert(w.pushes, { plan = plan, canPush = canPush, done = done })
 			end
-			Fetch.returnAgentFix = function(path: string, done: (boolean?, string?) -> ())
+			AgentHost.returnAgentFix = function(path: string, done: (boolean?, string?) -> ())
 				table.insert(w.returns, { path = path, done = done })
 			end
 			State.project(b.s)
@@ -1884,7 +1885,7 @@ local function withReady(run: (w: any, b: any) -> ())
 			route.loading = false
 			run(w, b)
 		end)
-		Fetch.pushAgentFix, Fetch.returnAgentFix = hostPush, hostReturn
+		AgentHost.pushAgentFix, AgentHost.returnAgentFix = hostPush, hostReturn
 		if not ok then error(err, 0) end
 	end)
 end
@@ -1990,7 +1991,7 @@ local function retainedLease()
 	withWorld(function(w, Fetch, Block)
 		local b = agentBoard(w, Fetch, Block)
 		w.lease, w.releases = "/work/tree", {}
-		Fetch.startAgentFix = function(request: any, _agent: any, _now: number, changed: any, done: any): any
+		AgentHost.startAgentFix = function(request: any, _agent: any, _now: number, changed: any, done: any): any
 			table.insert(w.started, { request = request, changed = changed, done = done })
 			return {
 				stop = function() w.stops += 1 end, begin = function() end, busy = function(): boolean return false end,
@@ -2044,7 +2045,7 @@ local function retainedLease()
 	withWorld(function(w, Fetch, Block)
 		local b = agentBoard(w, Fetch, Block)
 		w.lease, w.releases = "/work/tree", {}
-		Fetch.startAgentFix = function(request: any, _agent: any, _now: number, changed: any, done: any): any
+		AgentHost.startAgentFix = function(request: any, _agent: any, _now: number, changed: any, done: any): any
 			table.insert(w.started, { request = request, changed = changed, done = done })
 			return {
 				stop = function() w.stops += 1 end, begin = function() end, busy = function(): boolean return false end,
@@ -2070,13 +2071,13 @@ end
 -- The engine takes its lease before it names the worktree, so it can fail on the path check with the lease held and
 -- no worktree event sent. A card Tandem owns drops a failed state with no path, so the block restores it from the
 -- engine's held lease: Return worktree stays until a guarded return succeeds. Both callback orders are covered: the
--- failure after the engine handle exists, and during Fetch.startAgentFix before it returns the handle.
+-- failure after the engine handle exists, and during AgentHost.startAgentFix before it returns the handle.
 local function preWorktreeLease()
 	local PATH = "/work/pre-identity"
 	local function begin(w: any, Fetch: any, Block: any, sync: boolean): any
 		local b = agentBoard(w, Fetch, Block)
 		w.lease, w.releases = PATH, {}
-		Fetch.startAgentFix = function(request: any, _agent: any, _now: number, changed: any, done: any): any
+		AgentHost.startAgentFix = function(request: any, _agent: any, _now: number, changed: any, done: any): any
 			table.insert(w.started, { request = request, changed = changed, done = done })
 			if sync then
 				own(b, true)
@@ -2146,7 +2147,7 @@ local function preWorktreeLease()
 		cleanup(w, b, Block, "owned after the failure")
 	end)
 
-	-- Both callbacks run inside Fetch.startAgentFix, before it returns the handle.
+	-- Both callbacks run inside AgentHost.startAgentFix, before it returns the handle.
 	withWorld(function(w, Fetch, Block)
 		local b = begin(w, Fetch, Block, true)
 		cleanup(w, b, Block, "synchronous terminal callbacks")
