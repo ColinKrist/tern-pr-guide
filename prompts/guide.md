@@ -67,11 +67,33 @@ there. Format:
     already covered.
   - Order steps the way the code runs. Leave tests and docs out of steps; the page lists them under
     "Supporting changes".
-- `flow` (optional, only when it truly helps): a small before/after diagram. `{ "title",
-  "subtitle", "rows" }`; each row is a left-to-right list of boxes
-  `{ "text": "fn()", "kind": "added" | "changed" | "removed", "change": <change number>, "note": "..." }`
-  (kind, change and note optional), arrows `{ "edge": "label" }`, and forks
-  `{ "branch": [ { "edge": "label", "text": "box" } ] }`.
+- `flow` (optional): a before/after diagram of one run through the code, with each point of the
+  run drawn as a column: the code before the PR above the code after it. Leave it `null` unless the PR
+  changes how something moves through 3 or more changes or files; skip it for a fix inside one
+  function, renames, copy, config, and changes that fan out to many callers.
+  `{ "title", "stages", "check" }`:
+  - `title`: what the run is, e.g. "How a worker's report gets accepted".
+  - `stages`: 3-6 points of the run in order, each
+    `{ "label", "before", "beforeNote", "after", "note", "change" }`. `label` is 1-2 words naming the
+    point ("Launch", "Match steps"). `before` and `after` are a function, field, type, path or
+    command copied from the diff, at most 24 characters; leave a side out where that point didn't
+    exist. `note` and `beforeNote` say in at most 4 plain words what that side does
+    ("claim owner only"); put explanations there, never in a name. `change` is the number of the
+    change that touched the stage (the first change is 1); leave it out of a stage the PR didn't
+    change. Use at most one unchanged stage at each end, taken from context lines in the diff, so
+    the reader can place the run.
+  - `before`/`after` may be a list of two names for a point that splits, such as two outcomes.
+  - `check` (optional): `{ "text", "stage" }`, one sentence under 140 characters naming a
+    consequence the reviewer can confirm from the diff (existing data, compatibility, a new failure
+    path), and the stage number it is about. Leave it out when there is none; never restate the
+    overview.
+  - Example: `{ "title": "How a task gets its specialist", "stages": [ { "label": "Create",
+    "after": "createTask()" }, { "label": "Pick", "before": "playbookName", "beforeNote": "name only",
+    "after": "saveSpecialist()", "note": "copies file or built-in", "change": 1 }, { "label":
+    "Launch", "before": "lookupPlaybook()", "beforeNote": "reads current file", "after":
+    "launchWorker()", "note": "reads saved copy", "change": 2 } ], "check": { "text": "Tasks created
+    before this PR have no saved specialist.", "stage": 2 } }`. Not "Before: fixed playbook" as a
+    name, and not a stage per sentence.
 - `comments`: draft inline comments, each on one new-file `line` inside the diff (a number from the
   new column; removed lines can't take a comment). `kind` is
   `problem`, `question`, `suggestion` or `nit`. Write like a kind, busy teammate: short, specific,

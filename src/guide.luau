@@ -40,12 +40,28 @@ export type Block = { id: string, file: string, steps: { Step } }
 
 export type Comment = { id: string, file: string, line: number, kind: Kind, body: string }
 
-export type Box = { type: "box", text: string, kind: Tone?, change: number?, note: string? }
-export type Edge = { type: "edge", label: string }
-export type Arm = { label: string, text: string }
-export type Fork = { type: "fork", arms: { Arm } }
-export type FlowItem = Box | Edge | Fork
-export type Flow = { title: string, subtitle: string, rows: { { FlowItem } } }
+-- One column of the before/after diagram: what this point of the run was before the PR and after it.
+export type Stage = {
+ label: string,
+ -- Up to two names on each side; an empty side means this point didn't exist then.
+ before: { string },
+ after: { string },
+ beforeNote: string?,
+ note: string?,
+ -- The change that touched it, nil for an unchanged landmark.
+ change: number?,
+ -- Read from `change` and which sides exist, never from the names: a changed function keeps its name.
+ tone: Tone?,
+}
+export type Flow = {
+ title: string,
+ stages: { Stage },
+ -- False for a side-by-side list (fields of a model) rather than a run.
+ arrows: boolean,
+ -- The consequence a reviewer should confirm, and the stage it is about.
+ check: string?,
+ checkStage: number?,
+}
 
 export type Guide = {
  -- Whether the steps came from a guide file; without one there is a step per file, in tree order.
@@ -71,7 +87,6 @@ local SCHEMA = 1
 local DEFAULT_AUTHOR = "Guide"
 
 local KINDS: { [string]: boolean } = { problem = true, question = true, suggestion = true, nit = true }
-local TONES: { [string]: boolean } = { added = true, changed = true, removed = true }
 
 local function text(value: any, fallback: string): string
  return if type(value) == "string" then value else fallback
@@ -245,41 +260,56 @@ local function parseComments(raw: any, files: { [string]: Pr.File }): { Comment 
  return comments
 end
 
-local function parseFlowItem(raw: any, changeCount: number): FlowItem?
- if type(raw) ~= "table" then return nil end
- if type(raw.branch) == "table" then
-  local arms = {}
-  for _, arm in raw.branch do
-   if type(arm) == "table" and type(arm.text) == "string" then
-    table.insert(arms, { label = text(arm.edge, ""), text = arm.text })
-   end
-  end
-  return if #arms > 0 then { type = "fork", arms = arms } else nil
+-- Longest name and note the diagram draws; its cells are fixed-size so the two lanes line up.
+local NAME_MAX, NOTE_MAX = 28, 32
+local STAGES_MIN, STAGES_MAX = 2, 6
+
+local function names(raw: any): { string }
+ local list = if type(raw) == "string" then { raw } elseif type(raw) == "table" then raw else {}
+ local out = {}
+ for _, name in list do
+  if type(name) == "string" and name ~= "" and #out < 2 then table.insert(out, Text.preview(name, NAME_MAX)) end
  end
- if type(raw.edge) == "string" then return { type = "edge", label = raw.edge } end
- if type(raw.text) ~= "string" then return nil end
+ return out
+end
+
+local function note(raw: any): string?
+ return if type(raw) == "string" and raw ~= "" then Text.preview(raw, NOTE_MAX) else nil
+end
+
+local function parseStage(raw: any, changeCount: number): Stage?
+ if type(raw) ~= "table" then return nil end
+ local before, after = names(raw.before), names(raw.after)
+ if #before == 0 and #after == 0 then return nil end
  local change = if isLine(raw.change) and raw.change <= changeCount then raw.change else nil
+ local tone: Tone? = nil
+ if change then tone = if #before == 0 then "added" elseif #after == 0 then "removed" else "changed" end
  return {
-  type = "box", text = raw.text, kind = if TONES[raw.kind] then raw.kind else nil,
-  change = change, note = if type(raw.note) == "string" then raw.note else nil,
+  label = Text.preview(text(raw.label, ""), NOTE_MAX), before = before, after = after,
+  beforeNote = note(raw.beforeNote), note = note(raw.note), change = change, tone = tone,
  }
 end
 
+-- Nil unless it has 2-6 stages and at least one a change touched: a diagram with nothing marked
+-- says nothing the overview doesn't.
 local function parseFlow(raw: any, changeCount: number): Flow?
- if type(raw) ~= "table" or type(raw.rows) ~= "table" then return nil end
- local rows = {}
- for _, rawRow in raw.rows do
-  local row = {}
-  if type(rawRow) == "table" then
-   for _, rawItem in rawRow do
-    local item = parseFlowItem(rawItem, changeCount)
-    if item then table.insert(row, item) end
-   end
+ if type(raw) ~= "table" or type(raw.stages) ~= "table" then return nil end
+ local stages, marked = {}, false
+ for _, rawStage in raw.stages do
+  local stage = parseStage(rawStage, changeCount)
+  if stage then
+   table.insert(stages, stage)
+   marked = marked or stage.tone ~= nil
   end
-  if #row > 0 then table.insert(rows, row) end
  end
- if #rows == 0 then return nil end
- return { title = text(raw.title, ""), subtitle = text(raw.subtitle, ""), rows = rows }
+ if #stages < STAGES_MIN or #stages > STAGES_MAX or not marked then return nil end
+ local check = if type(raw.check) == "table" then raw.check else { text = raw.check }
+ local checkText = if type(check.text) == "string" and check.text ~= "" then check.text else nil
+ return {
+  title = text(raw.title, ""), stages = stages, arrows = raw.arrows ~= false,
+  check = checkText,
+  checkStage = if checkText and isLine(check.stage) and check.stage <= #stages then check.stage else nil,
+ }
 end
 
 local M = {}

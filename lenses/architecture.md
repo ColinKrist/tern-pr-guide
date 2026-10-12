@@ -21,7 +21,7 @@ patterns before judging the new ones. Look at:
 - Migrations and compatibility: data or interface changes and whether callers are all updated.
 
 Make the overview about the design: the problem, the approach taken, and the main trade-off. If a
-`flow` diagram helps, use it to show the structure before and after. Order steps so the central
+`flow` diagram helps, use it to show where responsibility sat before and where it sits after. Order steps so the central
 design decision comes first. Comments should be about structure and direction (`question` and
 `suggestion` mostly, `problem` for something that will clearly hurt), and should offer an
 alternative when they object. Leave small line-level issues out unless they point at a bigger one.
