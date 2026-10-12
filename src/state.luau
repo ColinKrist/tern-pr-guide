@@ -134,7 +134,12 @@ local M = {}
 
 function M.new(pr: Pr.PR, guide: Guide.Guide, to: { repo: string?, dryRunPath: string? }): State
  local diffs = {}
- local moves = Moves.detect(pr.files)
+ -- Generated output often repeats hand-written code, so a match there isn't a move the author made.
+ local authored = {}
+ for _, file in pr.files do
+  if file.group ~= "generated" then table.insert(authored, file) end
+ end
+ local moves = Moves.detect(authored)
  for _, file in pr.files do diffs[file.path] = Diff.analyze(file, moves[file.path]) end
  local review = Review.new(pr, guide)
  local spans = {}

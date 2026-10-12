@@ -116,7 +116,8 @@ local function movedLabel(fd: Diff.FileDiff, i: number, marks: Marks?): Node
  table.insert(kids, span("gp-gut", ""))
  table.insert(kids, span("gp-sign", ""))
  table.insert(kids, span("gp-moved-text", verb .. " " .. where))
- return el("div", { class = "gp-moved-label", key = "m" .. i }, kids)
+ local on = marks ~= nil and marks.on ~= nil and i >= marks.on.first and i <= marks.on.last
+ return el("div", { class = "gp-moved-label" .. (if on then " gp-on" else ""), key = "m" .. i }, kids)
 end
 
 -- A run of hidden unchanged lines as one quiet bar; a click opens its `reveal` lines.
