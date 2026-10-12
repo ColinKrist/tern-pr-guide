@@ -13,6 +13,7 @@ local Links = require("./links")
 local Notice = require("./view/notice")
 local Page = require("./view/page")
 local Pr = require("./pr")
+local Prdata = require("./prdata")
 local Review = require("./review")
 local State = require("./state")
 
@@ -266,7 +267,7 @@ local function submit(s: State, cx: BlockCx)
  end
  local verdict, payload = r.verdict, Review.reviewPayload(r)
  out.confirming, out.sending, out.error = false, true, nil
- Fetch.submitReview(r.pr, payload, out, function(delivery, err)
+ Prdata.submitReview(r.pr, payload, out, function(delivery, err)
   out.sending, out.error = false, err
   if delivery then r.posted = { verdict = verdict, payload = payload, delivery = delivery } end
   cx:render()
@@ -490,7 +491,7 @@ end
 -- then it is a dry run.
 local function showGuide(b: Block, pr: Pr.PR, guide: Guide.Guide, guided: boolean)
  local repo = if b.repo then b.repo.root else nil
- local dryRunPath = if b.opts.post and repo then nil else Fetch.dryRunPath(pr.number)
+ local dryRunPath = if b.opts.post and repo then nil else Prdata.dryRunPath(pr.number)
  b.page, b.guided = State.new(pr, guide, { repo = repo, dryRunPath = dryRunPath }), guided
  if b.view == "files" and b.page and State.switchable(b.page) then State.switchView(b.page, "files") end
  offerAgent(b)
@@ -565,7 +566,7 @@ end
 -- Loads `pr` from the block's checkout, showing each stage, then shows it.
 local function loadPr(b: Block, cx: BlockCx, pr: string)
  local repo = b.repo :: Fetch.Repo
- Fetch.openPr({ pr = pr, repo = repo.root, cache = repo.cache }, function(stage)
+ Prdata.openPr({ pr = pr, repo = repo.root, cache = repo.cache }, function(stage)
   b.notice = Notice.loading(b.name, stage, b.notice)
   cx:render()
  end, function(loaded, err)

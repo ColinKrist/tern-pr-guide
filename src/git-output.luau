@@ -1,5 +1,5 @@
 --!strict
--- Turns the output of the git commands fetch.luau runs into the PR's files.
+-- Turns the output of the git commands prdata.luau runs into the PR's files.
 local Pr = require("./pr")
 
 -- A changed file from `git diff --name-status -z`; `oldPath` is set for a rename.

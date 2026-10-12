@@ -15,6 +15,7 @@ local Host = require("../host")
 local Keys = require("../keys")
 local Model = require("./model")
 local Paths = require("../view/hub/paths")
+local Prdata = require("../prdata")
 local ReviewFix = require("./review-fix")
 local ReviewFixPage = require("../view/hub/review-fix")
 local State = require("./state")
@@ -2770,7 +2771,7 @@ local function readGit(b: Block, cx: BlockCx, pr: Model.HubPR, d: Fixes.FixDetai
 			if pr.conflicts then d.conflictNote = "No local copy of " .. pr.repo end
 			return draw(b, cx)
 		end
-		Fetch.readFixes(repo, pr, paths, function(read, err)
+		Prdata.readFixes(repo, pr, paths, function(read, err)
 			if b.closed then return end
 			if read == nil then
 				if pr.conflicts then d.conflictNote = "Couldn't read the conflicts: " .. reasonOf(err or "no answer") end

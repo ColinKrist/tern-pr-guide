@@ -11,6 +11,7 @@ local Host = require("./host")
 local Lens = require("./lens")
 local Links = require("./links")
 local Pr = require("./pr")
+local Prdata = require("./prdata")
 local ReviewFix = require("./hub/review-fix")
 local Summary = require("./hub/summary")
 local Tandem = require("./tandem")
@@ -91,7 +92,7 @@ function M.generateGuide(agent: Agent.Agent, repo: Fetch.Repo, pr: Pr.PR, done: 
   Host.fs.write(diffPath, Agent.numberedDiff(pr.files))
   Host.fs.write(promptPath, Agent.prompt(Host.fs.read(PROMPT), {
    repo = pr.repo, number = tostring(pr.number), title = pr.title, head = pr.head,
-   base = Fetch.refPrefix(pr.number) .. "/base", diffPath = diffPath, guidePath = guidePath, author = Agent.name(agent),
+   base = Prdata.refPrefix(pr.number) .. "/base", diffPath = diffPath, guidePath = guidePath, author = Agent.name(agent),
    lens = Host.json.encode(lens.name), focus = Agent.focus(lens),
   }))
  end)

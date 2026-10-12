@@ -1,6 +1,6 @@
 --!strict
 -- The reader's own AI agent (OMP) writing a guide: the model and effort it reviews with, the models
--- it can pick from, and the files a run reads. src/fetch.luau finds the agent and runs it.
+-- it can pick from, and the files a run reads. src/agent-host.luau finds the agent and runs it.
 local Lens = require("./lens")
 local Pr = require("./pr")
 

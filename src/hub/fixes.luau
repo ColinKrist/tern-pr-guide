@@ -33,7 +33,7 @@ export type FixDetails = {
 	threads: { ThreadDetail },
 	checks: { FailingCheck },
 	changedPaths: { string },
-	conflicts: { Conflict }?, -- nil until fetch.luau has read local `git merge-tree --write-tree --name-only`
+	conflicts: { Conflict }?, -- nil until prdata.luau has read local `git merge-tree --write-tree --name-only`
 	conflictNote: string?, -- why `conflicts` is nil: "No local copy of acme/web"
 	files: { [string]: string }?, -- annotated files as the head commit has them, read by `git show`
 }
