@@ -299,14 +299,14 @@ local function reviewsOf(node: any, viewer: string): Model.ReviewState
 		end
 	end
 	local requested: { string } = {}
+	local teams: { string } = {}
 	local requestedMe = false
 	for _, row in list(tbl(node.reviewRequests) and node.reviewRequests.nodes) do
 		local who = tbl(row.requestedReviewer)
-		local name = who and (str(who.login) or str(who.slug))
-		if name then
-			table.insert(requested, name)
-			if who.login == viewer then requestedMe = true end
-		end
+		local login, slug = who and str(who.login), who and str(who.slug)
+		if login or slug then table.insert(requested, (login or slug) :: string) end
+		if slug and not login then table.insert(teams, slug) end
+		if login == viewer then requestedMe = true end
 	end
 	local unresolved = 0
 	for _, row in list(tbl(node.reviewThreads) and node.reviewThreads.nodes) do
@@ -315,7 +315,7 @@ local function reviewsOf(node: any, viewer: string): Model.ReviewState
 	local comments = tbl(node.comments)
 	return {
 		decision = DECISIONS[str(node.reviewDecision) or ""] or "none",
-		latest = latest, mine = mine, requestedMe = requestedMe, requested = requested,
+		latest = latest, mine = mine, requestedMe = requestedMe, requested = requested, teams = teams,
 		unresolved = unresolved, threads = {}, threadsKnown = unresolved == 0,
 		comments = if comments then int(comments.totalCount) else 0,
 	}

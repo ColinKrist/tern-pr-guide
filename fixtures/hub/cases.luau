@@ -67,6 +67,8 @@ local TITLES: { [number]: string } = {
 	[306] = "Profile: show the learner's streak on their avatar",
 	[307] = "Lessons API: add an etag to the unit list response",
 	[308] = "Auth: refresh the session before a long lesson ends",
+	[309] = "Design tokens: rename the surface colors to match the spec",
+	[310] = "Checkout: log the payment provider's decline code",
 }
 
 -- One case: the fields that differ from a quiet PR. `size` splits into additions and deletions.
@@ -162,6 +164,12 @@ local specs: { Spec } = {
 		reviews = { decision = "review_required", requestedMe = true, requested = { VIEWER }, mine = review(VIEWER, "commented", "head307") } },
 	{ repo = "acme/api", n = 308, role = "review", created = at("10-08"), active = at("10-09", 11), add = 25, del = 0,
 		reviews = { decision = "review_required", requestedMe = true, requested = { VIEWER } } },
+	-- Requested from a team the viewer is on (CODEOWNERS), not from the viewer.
+	{ repo = "acme/web", n = 309, role = "review", created = at("10-06"), active = at("10-08"), add = 45, del = 0,
+		reviews = { decision = "review_required", requested = { "web-platform" }, teams = { "web-platform" } } },
+	-- Requested from the viewer, with no activity for over a week.
+	{ repo = "acme/web", n = 310, role = "review", created = at("09-20"), active = at("09-25"), add = 35, del = 0,
+		reviews = { decision = "review_required", requestedMe = true, requested = { VIEWER } } },
 }
 
 -- `patch` changes a case: a field set to false is removed, and `reviews` merges into the case's own.
@@ -184,7 +192,7 @@ local function build(spec: Spec, patch: Spec?): any
 		if v == false and k ~= "draft" and k ~= "conflicts" and k ~= "addedByMe" then merged[k] = nil end
 	end
 	local reviews: Spec = {
-		decision = "none", latest = {}, mine = nil, requestedMe = false, requested = {},
+		decision = "none", latest = {}, mine = nil, requestedMe = false, requested = {}, teams = {},
 		unresolved = 0, threads = {}, threadsKnown = true, comments = 0,
 	}
 	for k, v in (merged.reviews or {}) do
@@ -319,10 +327,11 @@ local orders = {
 		needs_fixes = cat(a({ 116, 118, 119, 105, 112 }), m({ 206, 205, 204, 203, 202, 201 }), w({ 101, 103, 111, 104 })),
 		in_review = a({ 114, 120, 106, 121, 115, 107 }),
 		ready = a({ 110, 108, 109 }),
-		inactive = cat(a({ 122 }), m({ 216, 215, 214, 213, 212, 211, 210, 209, 208, 207 }), w({ 113, 102 })),
+		inactive = cat(a({ 122 }), m({ 216, 215, 214, 213, 212, 211, 210, 209, 208, 207 }), w({ 113, 310, 102 })),
 		to_review = cat(a({ 307, 308 }), w({ 302, 301, 303 })),
 		waiting_on_author = w({ 305, 304 }),
 		approved = w({ 306 }),
+		team = w({ 309 }),
 	},
 	priority = {
 		needs_fixes = cat(
@@ -331,10 +340,11 @@ local orders = {
 		),
 		in_review = a({ 114, 120, 106, 121, 115, 107 }),
 		ready = a({ 110, 108, 109 }),
-		inactive = cat(w({ 113 }), m({ 216, 215 }), w({ 102 }), m({ 214, 213, 212, 211, 210, 209, 208, 207 }), a({ 122 })),
+		inactive = cat(w({ 113, 310 }), m({ 216, 215 }), w({ 102 }), m({ 214, 213, 212, 211, 210, 209, 208, 207 }), a({ 122 })),
 		to_review = cat(w({ 302 }), a({ 307 }), w({ 301 }), a({ 308 }), w({ 303 })),
 		waiting_on_author = w({ 305, 304 }),
 		approved = w({ 306 }),
+		team = w({ 309 }),
 	},
 	newest = {
 		needs_fixes = cat(
@@ -343,10 +353,11 @@ local orders = {
 		),
 		in_review = a({ 114, 120, 106, 121, 115, 107 }),
 		ready = a({ 109, 108, 110 }),
-		inactive = cat(w({ 113 }), m({ 216, 215 }), w({ 102 }), m({ 214, 213, 212, 211, 210, 209, 208, 207 }), a({ 122 })),
+		inactive = cat(w({ 113, 310 }), m({ 216, 215 }), w({ 102 }), m({ 214, 213, 212, 211, 210, 209, 208, 207 }), a({ 122 })),
 		to_review = cat(a({ 308 }), w({ 301, 303, 302 }), a({ 307 })),
 		waiting_on_author = w({ 305, 304 }),
 		approved = w({ 306 }),
+		team = w({ 309 }),
 	},
 	oldest = {
 		needs_fixes = cat(
@@ -355,10 +366,11 @@ local orders = {
 		),
 		in_review = a({ 107, 115, 121, 106, 120, 114 }),
 		ready = a({ 110, 108, 109 }),
-		inactive = cat(a({ 122 }), m({ 207, 208, 209, 210, 211, 212, 213, 214 }), w({ 102 }), m({ 215, 216 }), w({ 113 })),
+		inactive = cat(a({ 122 }), m({ 207, 208, 209, 210, 211, 212, 213, 214 }), w({ 102 }), m({ 215, 216 }), w({ 310, 113 })),
 		to_review = cat(a({ 307 }), w({ 302, 303, 301 }), a({ 308 })),
 		waiting_on_author = w({ 304, 305 }),
 		approved = w({ 306 }),
+		team = w({ 309 }),
 	},
 	smallest = {
 		needs_fixes = cat(
@@ -367,10 +379,11 @@ local orders = {
 		),
 		in_review = a({ 107, 106, 120, 121, 114, 115 }),
 		ready = a({ 109, 108, 110 }),
-		inactive = cat(a({ 122 }), w({ 113, 102 }), m({ 207, 208, 209, 210, 211, 212, 213, 214, 215, 216 })),
+		inactive = cat(a({ 122 }), w({ 113, 102, 310 }), m({ 207, 208, 209, 210, 211, 212, 213, 214, 215, 216 })),
 		to_review = cat(w({ 303 }), a({ 308 }), w({ 301, 302 }), a({ 307 })),
 		waiting_on_author = w({ 305, 304 }),
 		approved = w({ 306 }),
+		team = w({ 309 }),
 	},
 }
 
@@ -397,7 +410,7 @@ return {
 		-- Review requests
 		["acme/web#301"] = "to_review", ["acme/web#302"] = "to_review", ["acme/web#303"] = "to_review",
 		["acme/web#304"] = "waiting_on_author", ["acme/web#305"] = "waiting_on_author", ["acme/web#306"] = "approved",
-		["acme/api#307"] = "to_review", ["acme/api#308"] = "to_review",
+		["acme/api#307"] = "to_review", ["acme/api#308"] = "to_review", ["acme/web#309"] = "team", ["acme/web#310"] = "inactive",
 	},
 	reasons = {
 		["acme/web#101"] = { "merge_failed" }, ["acme/web#103"] = { "feedback" }, ["acme/web#104"] = { "checks" },

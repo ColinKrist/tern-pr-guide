@@ -3,7 +3,7 @@
 -- Pure: no clock, no network, no views. Callers pass `now` in seconds since the epoch.
 
 export type Tab = "mine" | "review"
-export type Column = "needs_fixes" | "in_review" | "ready" | "inactive" | "to_review" | "waiting_on_author" | "approved"
+export type Column = "needs_fixes" | "in_review" | "ready" | "inactive" | "to_review" | "waiting_on_author" | "approved" | "team"
 export type Reason = "merge_failed" | "feedback" | "checks" | "conflict" -- in this order: severity, and the chip order
 export type Sort = "repository" | "priority" | "newest" | "oldest" | "smallest"
 
@@ -21,6 +21,7 @@ export type ReviewState = {
 	mine: Review?, -- the viewer's own latest review
 	requestedMe: boolean, -- a review is requested of the viewer
 	requested: { string }, -- logins and team slugs
+	teams: { string }, -- the team slugs among them
 	unresolved: number, -- unresolved threads, counted in hub-f
 	threads: { OpenThread }, -- authors of the unresolved ones, once threads.graphql ran
 	threadsKnown: boolean, -- false until then: unknown threads never count as feedback
@@ -238,9 +239,11 @@ function M.placement(pr: HubPR, now: number): Placement
 	if pr.role == "review" then
 		local reviews = pr.reviews
 		local mine = reviews.mine
-		local column: Column = "to_review"
-		if reviews.requestedMe or reReview(pr) then
-			column = "to_review"
+		local column: Column = "team"
+		-- A dismissed review of the viewer's asks for a fresh one, as a re-review does.
+		local dismissed = mine ~= nil and mine.verdict == "dismissed"
+		if reReview(pr) or dismissed or reviews.requestedMe or pr.addedByMe then
+			column = if pr.addedByMe or active(pr, now) then "to_review" else "inactive"
 		elseif mine and mine.verdict == "approved" then
 			column = "approved"
 		elseif mine and (mine.verdict == "changes_requested" or mine.verdict == "commented") then
@@ -509,8 +512,10 @@ export type ConfirmList = { shown: { HubPR }, more: number }
 M.CONFIRM_TITLES = 5
 
 -- Which group a card may be selected in, or why it may not. Ready cards qualify only when they can merge
--- now: not behind main, nothing queued or in flight. Inactive rows (drafts too) always qualify.
+-- now: not behind main, nothing queued or in flight. The viewer's Inactive rows (drafts too) always qualify;
+-- review requests never do, since closing is only for the viewer's own pull requests.
 function M.selectGroup(pr: HubPR, now: number): (Group?, string?)
+	if pr.role == "review" then return nil, "review requests can't be selected" end
 	local column = M.classify(pr, now)
 	if column == "inactive" then return "inactive", nil end
 	if column ~= "ready" then return nil, "only Ready and Inactive pull requests can be selected" end

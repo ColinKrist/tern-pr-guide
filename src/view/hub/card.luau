@@ -79,7 +79,7 @@ local function toneOf(card: State.Card): string
 	if c == "needs_fixes" then return "bad" end
 	if c == "to_review" then return "info" end
 	if c == "ready" or c == "approved" then return "done" end
-	if c == "inactive" then return "quiet" end
+	if c == "inactive" or c == "team" then return "quiet" end
 	return "wait"
 end
 

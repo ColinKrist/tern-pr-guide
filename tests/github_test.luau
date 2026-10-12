@@ -184,6 +184,16 @@ local function testSearchesAndAliases()
 	assert(#hub.prs == 3 and roles.A == "mine" and roles.B == "review" and roles.C == "mine")
 	assert(hub.prs[2].id == "B" and hub.prs[3].id == "C", "added PRs in alias order")
 	assert(hub.truncated == true)
+	-- Review requests: users by login, teams by slug; the team slugs are also listed apart.
+	local asked = node("D", "x") :: any
+	asked.reviewRequests = { nodes = {
+		{ requestedReviewer = { __typename = "Team", slug = "web-platform" } },
+		{ requestedReviewer = { __typename = "User", login = "me" } },
+		{ requestedReviewer = { __typename = "User", login = "devon" } },
+	} }
+	local reviews = (Github.parseHub({ data = { viewer = { login = "me" }, requested = { nodes = { asked } } } }) :: any).prs[1].reviews
+	assert(table.concat(reviews.requested, ",") == "web-platform,me,devon" and table.concat(reviews.teams, ",") == "web-platform")
+	assert(reviews.requestedMe == true)
 	-- Auto-merge asked for again after the queue removal is not a failure; asked for before is.
 	local function failing(auto: any): any
 		local out = Github.parseHub({ data = { viewer = { login = "me" }, mine = { nodes = { {

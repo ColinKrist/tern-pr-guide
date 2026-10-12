@@ -22,7 +22,7 @@ local function pr(repo: string, number: number, title: string, patch: { [string]
 		checks = { state = "none", passing = 0, failing = 0, pending = 0 },
 		conflicts = false, behind = false,
 		reviews = {
-			decision = "none", latest = {}, mine = nil, requestedMe = false, requested = {},
+			decision = "none", latest = {}, mine = nil, requestedMe = false, requested = {}, teams = {},
 			unresolved = 0, threads = {}, threadsKnown = true, comments = 0,
 		},
 		mergeFailure = nil, pending = nil, tandem = false, addedByMe = false,
