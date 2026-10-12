@@ -7,6 +7,8 @@ local M = {}
 
 M.ROOT = "main.hub"
 M.searchField = M.ROOT .. ".header.top.search.field"
+-- The board's scrolling body, under the header.
+M.body = M.ROOT .. ".body"
 M.titleLabel = M.ROOT .. ".header.top.title"
 M.agentButton = M.ROOT .. ".header.top.fresh.agent"
 M.repositoriesButton = M.ROOT .. ".header.tabs.ctls.repos"
