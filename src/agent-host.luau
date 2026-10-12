@@ -13,6 +13,7 @@ local Links = require("./links")
 local Pr = require("./pr")
 local ReviewFix = require("./hub/review-fix")
 local Summary = require("./hub/summary")
+local Tandem = require("./tandem")
 local Text = require("./text")
 
 local MODELS_MS = 30_000
@@ -126,8 +127,8 @@ function M.summarizeFeedback(agent: { command: string, model: string, effort: st
  if not ok then finish(nil, Text.errorLine(err)) end
 end
 
--- Agent fixes: only this boundary reads Tandem's database, hub.clones, local journals and
--- environment. The caller owns the folder question and card lifecycle. No UI effects here.
+-- Agent fixes: only this boundary reads hub.clones, local journals and environment, and Tandem's
+-- database through tandem.luau. The caller owns the folder question and card lifecycle. No UI effects here.
 local CLONES_KEY = "hub.clones"
 
 function M.agentClones(): { [string]: string }
@@ -160,7 +161,7 @@ function M.findAgentClone(near: Fetch.Repo?, dir: string, slug: string, ask: (st
     callback(if ready then ready.root else nil)
    end)
   end,
-  tandem = Fetch.tandemClone,
+  tandem = Tandem.clone,
   saved = function(name) return M.agentClones()[string.lower(name)] end,
   validate = validate, ask = ask, remember = M.rememberAgentClone, runner = Fetch.runner,
  }, done)

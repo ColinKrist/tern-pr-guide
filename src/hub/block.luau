@@ -20,6 +20,7 @@ local ReviewFixPage = require("../view/hub/review-fix")
 local State = require("./state")
 local Sync = require("./sync")
 local Summary = require("./summary")
+local Tandem = require("../tandem")
 
 type State = State.State
 
@@ -1439,7 +1440,7 @@ local function loadTandem(b: Block, cx: BlockCx)
 	end
 	projectRoot(b, cx, function(root)
 		if b.closed or not root then return apply(nil, "The project folder is unknown") end
-		local ok, err = pcall(Fetch.tandemWatch, root, apply)
+		local ok, err = pcall(Tandem.watch, root, apply)
 		if not ok then apply(nil, tostring(err)) end
 	end)
 end
@@ -1999,7 +2000,7 @@ ACTIONS["card-handoff"] = function(b, cx, asked)
 	-- The draw may have closed the block: no root is looked up and nothing is sent.
 	if b.closed then return end
 	local replied = false
-	local function answered(outcome: Fetch.TandemOutcome?, err: string?)
+	local function answered(outcome: Tandem.Outcome?, err: string?)
 		if replied then return end
 		replied = true
 		if b.closed then return end
@@ -2032,7 +2033,7 @@ ACTIONS["card-handoff"] = function(b, cx, asked)
 		-- Nothing is sent for a card that is gone or moved while the root was being found; `answered` settles it quietly.
 		if b.closed or not current or current.headOid ~= head then return answered(nil, "stale") end
 		if not root then return answered(nil, "the project folder is unknown") end
-		local ok, err = pcall(Fetch.tandemHandoff, root, repo, number, reason, answered)
+		local ok, err = pcall(Tandem.handoff, root, repo, number, reason, answered)
 		if not ok then answered(nil, tostring(err)) end
 	end)
 end

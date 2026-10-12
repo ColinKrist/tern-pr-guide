@@ -5,6 +5,7 @@
 local Cases: any = require("../fixtures/hub/cases")
 local AgentFix = require("../src/hub/agent-fix")
 local AgentHost: any = require("../src/agent-host")
+local Tandem: any = require("../src/tandem")
 local Model = require("../src/hub/model")
 local State = require("../src/hub/state")
 local Sync = require("../src/hub/sync")
@@ -270,7 +271,7 @@ local function fetching()
 		local function watch(settle: (any) -> ())
 			w.calls = {}
 			seen = {}
-			Fetch.tandemWatch(REPO_ROOT, function(watched: any, err: string?) table.insert(seen, { watched = watched, err = err }) end)
+			Tandem.watch(REPO_ROOT, function(watched: any, err: string?) table.insert(seen, { watched = watched, err = err }) end)
 			assert(#w.calls == 1)
 			local call = w.calls[1]
 			equal(call.argv, { "tandem", "watch", "--json" })
@@ -295,18 +296,18 @@ local function fetching()
 		w.throws = true
 		seen = {}
 		w.calls = {}
-		Fetch.tandemWatch(REPO_ROOT, function(watched: any, err: string?) table.insert(seen, { watched = watched, err = err }) end)
+		Tandem.watch(REPO_ROOT, function(watched: any, err: string?) table.insert(seen, { watched = watched, err = err }) end)
 		assert(#seen == 1 and seen[1].watched == nil and string.find(seen[1].err :: string, "spawn failed", 1, true))
 		w.throws = false
 		w.calls = {}
-		Fetch.tandemWatch("relative/project", function(watched: any, err: string?) table.insert(seen, { watched = watched, err = err }) end)
+		Tandem.watch("relative/project", function(watched: any, err: string?) table.insert(seen, { watched = watched, err = err }) end)
 		assert(#w.calls == 0 and #seen == 2 and seen[2].watched == nil, "a relative root runs nothing")
 
 		-- Hand-off: exactly `tandem native act`, with the plugin origin and the four action fields.
 		local replies: { { outcome: any, err: string? } } = {}
 		local function handoff(settle: (any) -> ())
 			w.calls, w.encoded, replies = {}, {}, {}
-			Fetch.tandemHandoff(REPO_ROOT, "acme/web", 104, "  PR hub: failing checks \n", function(outcome: any, err: string?)
+			Tandem.handoff(REPO_ROOT, "acme/web", 104, "  PR hub: failing checks \n", function(outcome: any, err: string?)
 				table.insert(replies, { outcome = outcome, err = err })
 			end)
 			assert(#w.calls == 1 and #w.encoded == 1)
@@ -348,7 +349,7 @@ local function fetching()
 		end
 		w.throws = true
 		w.calls, w.encoded, replies = {}, {}, {}
-		Fetch.tandemHandoff(REPO_ROOT, "acme/web", 104, "why", function(outcome: any, err: string?) table.insert(replies, { outcome = outcome, err = err }) end)
+		Tandem.handoff(REPO_ROOT, "acme/web", 104, "why", function(outcome: any, err: string?) table.insert(replies, { outcome = outcome, err = err }) end)
 		assert(#replies == 1 and replies[1].outcome == nil and string.find(replies[1].err :: string, "spawn failed", 1, true))
 		w.throws = false
 		-- A request that is not whole runs nothing.
@@ -357,9 +358,9 @@ local function fetching()
 			{ "acme/web", 104, "   " }, { "acme/web", 0, "why" }, { "acme/web", 1.5, "why" }, { "acme", 104, "why" }, { "acme/web", -1, "why" },
 		}
 		for _, args in incomplete do
-			Fetch.tandemHandoff(REPO_ROOT, args[1], args[2], args[3], function(outcome: any, err: string?) table.insert(replies, { outcome = outcome, err = err }) end)
+			Tandem.handoff(REPO_ROOT, args[1], args[2], args[3], function(outcome: any, err: string?) table.insert(replies, { outcome = outcome, err = err }) end)
 		end
-		Fetch.tandemHandoff("relative", "acme/web", 104, "why", function(outcome: any, err: string?) table.insert(replies, { outcome = outcome, err = err }) end)
+		Tandem.handoff("relative", "acme/web", 104, "why", function(outcome: any, err: string?) table.insert(replies, { outcome = outcome, err = err }) end)
 		assert(#w.calls == 0 and #w.encoded == 0 and #replies == 6)
 		for _, reply in replies do assert(reply.outcome == nil and reply.err ~= nil) end
 	end)
