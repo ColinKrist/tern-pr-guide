@@ -194,6 +194,7 @@ local function hubBoardKey(s: HubState.State, key: Key): Action?
 	if label == "F" then return act("hub-menu", "repositories") end
 	if label == "S" then return act("hub-menu", "sort") end
 	if label == "⇧M" then return act("hub-menu", "agent") end
+	if label == "⇧S" then return act("hub-menu", "settings") end
 	if label == "N" then return act("hub-link") end
 	local card = HubState.selectedCard(s)
 	if card and label then

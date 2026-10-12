@@ -49,6 +49,7 @@ local GROUPS: { Group } = {
 		{ "F", "Filter by repository" },
 		{ "S", "Sort" },
 		{ "⇧M", "Agent model" },
+		{ "⇧S", "Settings: agent model and where links open" },
 		{ "⌘R", "Refresh" },
 		{ "j k", "Move in a menu" },
 		{ "Space", "Select a card to merge or close, or choose in a menu" },

@@ -21,7 +21,7 @@ export type Summary = Summary.Summary
 export type FixDetails = Fixes.FixDetails
 
 export type Mode = "board" | "search" | "link" | "menu" | "confirm" | "help" | "fixes" | "reply" | "review-fix"
-export type MenuId = "repositories" | "sort" | "agent" | "merge" | "actions"
+export type MenuId = "repositories" | "sort" | "agent" | "merge" | "actions" | "settings"
 export type Ring = "bad" | "good" | "bad-out" | "good-out" -- red ring, green wash, then the same fading
 -- What the flake evidence says about a card's failing checks, for the commit it was read on. `runs` are the workflow
 -- runs Re-run failed checks sends `gh run rerun` to, once each.
@@ -138,12 +138,13 @@ export type State = {
 	loading: boolean,
 	error: Model.Error?,
 	agent: AgentChoice?, -- nil until the block has found the agent
+	links: "tern" | "browser", -- where GitHub links open; the block loads and saves it
 	keyed: boolean, -- the change being drawn came from a key: it never animates
 	born: { [string]: string },
 	booted: boolean, -- arrival motion, as src/state.luau
 }
 
-export type MenuRow = { label: string, sub: string?, count: number?, on: boolean, kind: "choice" | "check" | "clear" }
+export type MenuRow = { label: string, sub: string?, count: number?, on: boolean, kind: "choice" | "check" | "clear" | "menu" }
 
 local M = {}
 M.SUMMARIZING = "Summarizing feedback…"
@@ -318,7 +319,7 @@ function M.new(prs: { HubPR }, now: number, saved: any): State
 		repositories = repositories, sort = sort, search = Fields.create(""), link = Fields.create(""),
 		mode = "board", route = nil, menu = nil, menuCursor = 1, confirm = nil, methodEdit = nil, folded = folded, recent = {}, walking = false,
 		ringed = {}, agents = {}, details = {}, flakes = {}, summaries = {}, merges = {}, autoMerge = {}, acted = {}, busy = {},
-		refreshedAt = nil, loading = false, error = nil, agent = nil,
+		refreshedAt = nil, loading = false, error = nil, agent = nil, links = "tern",
 		keyed = false, born = {}, booted = false,
 	}
 	M.project(s)
@@ -1105,7 +1106,7 @@ function M.closeHelp(s: State)
 end
 
 -- The rows of the open menu.
-local function row(label: string, sub: string?, count: number?, on: boolean, kind: "choice" | "check" | "clear"): MenuRow
+local function row(label: string, sub: string?, count: number?, on: boolean, kind: "choice" | "check" | "clear" | "menu"): MenuRow
 	return { label = label, sub = sub, count = count, on = on, kind = kind }
 end
 
@@ -1135,6 +1136,10 @@ function M.menuRows(s: State): { MenuRow }
 		if card then
 			for _, more in card.more do table.insert(rows, row(more.label, more.key, nil, false, "choice")) end
 		end
+	elseif s.menu == "settings" then
+		table.insert(rows, row("Agent model", if s.agent then M.agentLabel(s) else nil, nil, false, "menu"))
+		table.insert(rows, row("Open links in Tern", nil, nil, s.links == "tern", "choice"))
+		table.insert(rows, row("Open links in default browser", nil, nil, s.links == "browser", "choice"))
 	elseif s.menu == "agent" and s.agent then
 		for _, model in s.agent.models do
 			table.insert(rows, row(model.name, string.match(model.selector, "^([^/]+)/"), nil, model.selector == (s.agent :: AgentChoice).model, "choice"))
@@ -1200,7 +1205,8 @@ function M.setEffort(s: State, level: string)
 end
 
 -- Applies row `index` of the open menu: a sort or model is chosen and the menu closes; a repository is
--- toggled and the menu stays; Clear filter clears and closes. Returns whether the menu closed.
+-- toggled and the menu stays; Clear filter clears and closes; Settings' Agent model opens the model menu.
+-- Returns whether the menu closed.
 function M.menuPick(s: State, index: number): boolean
 	local rows = M.menuRows(s)
 	local row = rows[index]
@@ -1218,6 +1224,14 @@ function M.menuPick(s: State, index: number): boolean
 		end
 		M.toggleRepository(s, s.board.repositories[index].repo)
 		return false
+	elseif s.menu == "settings" then
+		if index == 1 then
+			M.openMenu(s, "agent")
+			return false
+		end
+		s.links = if index == 2 then "tern" else "browser"
+		M.closeMenu(s)
+		return true
 	elseif s.menu == "agent" and s.agent then
 		local model = s.agent.models[index]
 		s.agent.model = model.selector

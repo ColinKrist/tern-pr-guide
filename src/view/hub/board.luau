@@ -1,5 +1,5 @@
 --!strict
--- The hub page: header (title, search, freshness, agent model), the tab row, the board's columns, the
+-- The hub page: header (title, search, freshness, settings), the tab row, the board's columns, the
 -- card folds and the hint bar. Everything it draws was decided by `State.project`.
 local Card = require("./card")
 local Fields = require("../../text-field")
@@ -95,9 +95,9 @@ local function header(s: State.State): Node
 	elseif s.loading then
 		table.insert(fresh, span("gp-hub-fresh", "Loading…"))
 	end
-	table.insert(fresh, el("span", { class = "gp-hub-ctl" .. (if s.menu == "agent" then " gp-hub-ctl-open" else ""), key = "agent", actions = { click = "hub-menu=agent" } }, {
-		el("span", { class = "gp-hub-ctl-label" }, if s.agent then { span("gp-hub-ctl-dim", "Agent:"), span("gp-hub-ctl-strong", State.agentLabel(s)) } else { span("gp-hub-ctl-strong", State.agentLabel(s)) }),
-		Ui.icon("chev"),
+	local open = s.menu == "settings" or s.menu == "agent"
+	table.insert(fresh, el("span", { class = "gp-hub-ctl gp-hub-ctl-icon" .. (if open then " gp-hub-ctl-open" else ""), key = "settings", attrs = { ["aria-label"] = "Settings" }, actions = { click = "hub-menu=settings" } }, {
+		Ui.icon("settings"),
 	}))
 	local up = nextUp(s)
 	local rows: { Node } = {
