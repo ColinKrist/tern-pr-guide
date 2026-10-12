@@ -955,6 +955,14 @@ function M.move(s: State, direction: "up" | "down" | "left" | "right"): boolean
 	return false
 end
 
+-- Whether the selected card is the first in its column, where the page's header sits just above it.
+function M.onTopRow(s: State): boolean
+	for _, keys in s.board.grid do
+		if s.selected ~= nil and keys[1] == s.selected then return true end
+	end
+	return false
+end
+
 function M.setTab(s: State, tab: Tab)
 	if s.tab == tab then return end
 	s.tab = tab

@@ -965,6 +965,7 @@ Tern's clipboard is plain text: `cx:copy(text)` (`tern.d.luau:1136-1137`, and `W
 - **Host API:** `tern.timer`, `tern.process.run`, `tern.fetch`, `tern.kv` (`plugin-data/prguide/kv.json`), `tern.fs`, `cx:toast(level, title, body)`, the window-only `tern.chrome` (status-line segments and tab titles), `WindowCx:new_block`. Type definitions: `tern.d.luau` at the repo root.
 - **No OS notifications or tab badges for plugins.**
 - **CSS:** flexbox only (no grid), `light-dark()`, keyframes, transitions, `position: sticky`. **No SVG:** use text glyphs or Tern's named icons.
+- **Page scrolling:** Tern sends a plugin page that scrolls past about 1,100px back to its top when a wheel scroll or a `reveal` overshoots the bottom, and it drops held-key repeats before a block's `key` sees them (checked 2026-10-12). So the board fills the pane (`.gp-hub-fit`) and only its body scrolls; `reveal` and `{ "scroll", Paths.body, "start" }` act on that body. The fixes pages still scroll the page.
 - **Untested in Tern:** reduced-motion handling.
 - **`luau` has no file or env access** (`io` and `os.getenv` are nil in `/opt/homebrew/bin/luau`, checked). Tests can't read files, so fixtures are `.luau` modules (see Verification).
 
