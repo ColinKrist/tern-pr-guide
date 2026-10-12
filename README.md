@@ -1,5 +1,9 @@
 # PR Guide
 
+> [!NOTE]
+> PR Guide is in active development. Features, keys and the saved guide format may change between
+> versions.
+
 **A Tern plugin for tracking pull requests across repositories, reading their diffs and posting
 reviews.**
 
