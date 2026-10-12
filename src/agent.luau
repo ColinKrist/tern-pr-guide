@@ -159,12 +159,13 @@ end
 M.DIFF_LEGEND = "Columns: old line number, new line number, then a mark (space = unchanged, + = added, - = removed) and the line. "
  .. "Added lines have only a new number; removed lines have only an old number."
 
--- Every changed file's diff with the line numbers in front of each line, so the agent can point at
--- lines without counting: the old-file number (blank on an added line), the new-file number (blank
--- on a removed line), the mark and the text.
+-- Every changed file's diff but generated files', with the line numbers in front of each line, so the
+-- agent can point at lines without counting: the old-file number (blank on an added line), the
+-- new-file number (blank on a removed line), the mark and the text.
 function M.numberedDiff(files: { Pr.File }): string
  local out = { M.DIFF_LEGEND, "" }
  for _, file in files do
+  if file.group == "generated" then continue end
   table.insert(out, "=== " .. file.path .. " (" .. file.status .. ")")
   if file.binary then table.insert(out, "(binary, no lines)") end
   for _, row in file.rows do

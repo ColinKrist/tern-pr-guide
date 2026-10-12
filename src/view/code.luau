@@ -82,7 +82,7 @@ local function lineRow(fd: Diff.FileDiff, i: number, plain: boolean, selected: b
  local entry = fd.entries[i]
  local row = entry.row
  local on = marks ~= nil and marks.on ~= nil and i >= marks.on.first and i <= marks.on.last
- local class = "gp-row gp-" .. row.kind
+ local class = "gp-row " .. (if entry.moved then "gp-moved" else "gp-" .. row.kind)
   .. (if on then " gp-on" .. (if marks and marks.pulse then " " .. marks.pulse else "") else "")
   .. (if selected then " gp-selected" else "") .. (if hit then " gp-hit" else "")
  local kids = {}
@@ -100,6 +100,24 @@ local function lineRow(fd: Diff.FileDiff, i: number, plain: boolean, selected: b
  table.insert(kids, span("gp-sign", SIGNS[row.kind]))
  table.insert(kids, codeSpan(fd, i, plain))
  return el("div", { class = class, key = "r" .. i }, kids)
+end
+
+-- The quiet line above the first shown line of a moved block, in the gutter columns of a code row
+-- so the text lines up with the code: where the other half of the block is.
+local function movedLabel(fd: Diff.FileDiff, i: number, marks: Marks?): Node
+ local entry = fd.entries[i]
+ local moved = entry.moved :: Diff.Move
+ local verb = if entry.row.kind == "del" then "Moved to" else "Moved from"
+ local where = if moved.path == fd.file.path then "line " .. moved.line else moved.path .. ":" .. moved.line
+ local kids = {}
+ if marks and marks.starts then table.insert(kids, span("gp-mk", "")) end
+ table.insert(kids, span("gp-plus-none", ""))
+ table.insert(kids, span("gp-gut", ""))
+ table.insert(kids, span("gp-gut", ""))
+ table.insert(kids, span("gp-sign", ""))
+ table.insert(kids, span("gp-moved-text", verb .. " " .. where))
+ local on = marks ~= nil and marks.on ~= nil and i >= marks.on.first and i <= marks.on.last
+ return el("div", { class = "gp-moved-label" .. (if on then " gp-on" else ""), key = "m" .. i }, kids)
 end
 
 -- A run of hidden unchanged lines as one quiet bar; a click opens its `reveal` lines.
@@ -146,6 +164,11 @@ function M.rows(s: State.State, fd: Diff.FileDiff, blockId: string, show: Diff.S
     local selected = c ~= nil and line ~= nil and line >= c.from and line <= c.to
     if marks and marks.breaks and marks.breaks[i] then flush() end
     if #lines == 0 then firstLine = i end
+    local moved = fd.entries[i].moved
+    if moved and (moved.start or i == segment.first) then
+     table.insert(lines, movedLabel(fd, i, marks))
+     height += ROW_H
+    end
     table.insert(lines, lineRow(fd, i, plain, selected, hit == i, marks))
     height += ROW_H
     local slot = if line then cards[line] else nil

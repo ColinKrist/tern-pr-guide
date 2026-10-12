@@ -11,7 +11,7 @@ type Group = { title: string, keys: { { string } } }
 export type Kind = { guided: boolean, switch: boolean }
 
 local GUIDED: { Group } = {
- { title = "1  Read", keys = { { "j  k", "next / previous step" }, { "n  p", "next / previous suggestion" }, { "/", "search the PR" }, { "i", "PR description" }, { "s", "supporting changes" }, { "o", "open every supporting file" }, { "g", "open on GitHub" } } },
+ { title = "1  Read", keys = { { "j  k", "next / previous step" }, { "n  p", "next / previous suggestion" }, { "/", "search the PR" }, { "i", "PR description" }, { "s", "supporting changes" }, { "o", "open supporting files, not generated ones" }, { "g", "open on GitHub" } } },
  { title = "2  React", keys = { { "⏎", "step reviewed, move on" }, { "⇧ ⏎", "whole change reviewed" }, { "v", "whole file reviewed" }, { "m", "mark / unmark all reviewed" }, { "a  d", "add / dismiss suggestion" }, { "c", "comment on this step" } } },
  { title = "3  Finish", keys = { { "r", "open your review" }, { "j  k", "move between comments" }, { "x", "include or leave out" }, { "a", "include / exclude all" }, { "1 2 3", "comment, approve, request changes" }, { "⌘ ⏎", "submit" } } },
 }

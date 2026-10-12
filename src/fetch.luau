@@ -183,7 +183,8 @@ local function fetchRefs(job: Job, meta: Meta, ok: (head: string, mergeBase: str
  end)
 end
 
--- The changes worth reviewing: every changed file but lockfiles and ones marked linguist-generated.
+-- The changes worth reviewing: every changed file but lockfiles. Ones marked linguist-generated stay,
+-- marked `generated`: the page sets them apart and the guide agent never reads them.
 local function listChanges(job: Job, mergeBase: string, head: string, ok: (changes: { GitOutput.Change }) -> ())
  git(job, "git diff --name-status", { "diff", "--name-status", "-z", "--find-renames", mergeBase, head }, nil, function(stdout)
   local changes = {}
@@ -196,11 +197,10 @@ local function listChanges(job: Job, mergeBase: string, head: string, ok: (chang
   local stdin = table.concat(paths, "\0") .. "\0"
   git(job, "git check-attr", { "check-attr", "--source=" .. head, "-z", "--stdin", "linguist-generated" }, stdin, function(attrs)
    local generated = GitOutput.generated(attrs)
-   local kept = {}
    for _, change in changes do
-    if not generated[change.path] then table.insert(kept, change) end
+    if generated[change.path] then change.generated = true end
    end
-   ok(kept)
+   ok(changes)
   end)
  end)
 end

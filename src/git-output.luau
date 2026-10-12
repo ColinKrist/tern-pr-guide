@@ -1,9 +1,11 @@
 --!strict
 -- Turns the output of the git commands fetch.luau runs into the PR's files.
+local FileGroup = require("./file-group")
 local Pr = require("./pr")
 
--- A changed file from `git diff --name-status -z`; `oldPath` is set for a rename.
-export type Change = { path: string, oldPath: string?, status: string }
+-- A changed file from `git diff --name-status -z`; `oldPath` is set for a rename, `generated` for a
+-- file git's linguist-generated attribute marks.
+export type Change = { path: string, oldPath: string?, status: string, generated: boolean? }
 
 -- One file's section of a unified diff.
 export type Patch = { rows: { Pr.Row }, adds: number, dels: number, binary: boolean }
@@ -160,17 +162,19 @@ function M.blobs(batch: string, paths: { string }): { [string]: string }
  return blobs
 end
 
--- The changed paths whose new side is text, so worth reading whole.
+-- The changed paths whose new side is text, so worth reading whole: a generated file's is skipped,
+-- as nothing shows more of it than its diff.
 function M.textPaths(changes: { Change }, patches: { [string]: Patch }): { string }
  local paths = {}
  for _, change in changes do
   local patch = patches[change.path]
-  if change.status ~= "deleted" and not (patch and patch.binary) then table.insert(paths, change.path) end
+  if change.status ~= "deleted" and not change.generated and not (patch and patch.binary) then table.insert(paths, change.path) end
  end
  return paths
 end
 
--- The PR's files: each change with its diff rows and, unless deleted or binary, its new-side lines.
+-- The PR's files: each change with its diff rows, its group (generated, else tests by its path)
+-- and, unless deleted, binary or generated, its new-side lines.
 function M.files(changes: { Change }, patches: { [string]: Patch }, blobs: { [string]: string }): { Pr.File }
  local files = {}
  for _, change in changes do
@@ -178,7 +182,7 @@ function M.files(changes: { Change }, patches: { [string]: Patch }, blobs: { [st
   local blob = blobs[change.path]
   table.insert(files, {
    path = change.path, status = change.status, adds = patch.adds, dels = patch.dels, rows = patch.rows,
-   src = if blob then lines(blob) else nil, binary = patch.binary,
+   src = if blob then lines(blob) else nil, binary = patch.binary, group = FileGroup.of(change.path, change.generated == true),
   })
  end
  return files

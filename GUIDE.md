@@ -42,7 +42,8 @@ as `.git/prguide/<number>.json` in the clone and the plugin picks it up when tha
   The page shows it next to the progress, as "Security lens". A guide without one shows nothing.
 - `overview`: a TL;DR of the PR in 2-4 plain sentences, for someone who doesn't know the project.
 - `flow` (optional): a before/after diagram, described below.
-- `changes`: 1-4 changes in reading order. Each has a `title`, a one-sentence `why`, and `steps`.
+- `changes`: 1-6 changes in reading order, each of 1-3 steps. Each has a `title`, a one-sentence
+  `why`, and `steps`.
 - `steps[]`: `file` is a path in the PR; `from`/`to` is an inclusive line range; `title` and `note`
   are short plain text (`note` may use `code` spans). `side` (optional) says which file the range
   counts in: `"new"` (the default, and what a guide without `side` means) is the file after the PR
@@ -60,7 +61,9 @@ as `.git/prguide/<number>.json` in the clone and the plugin picks it up when tha
 The diff an agent reads numbers both sides: each line starts with its old-file number, then its
 new-file number (an added line has no old one, a removed line no new one), then its mark.
 
-Changed files that no step visits are shown under "Supporting changes", as a folder tree.
+Changed files that no step visits are shown under "Supporting changes", as a folder tree. Test files
+(by path) and generated files (marked `linguist-generated`) follow in folded "Tests" and "Generated"
+groups. Generated files aren't in the diff an agent reads, so a step or comment can't point at one.
 
 ## Flow diagram
 

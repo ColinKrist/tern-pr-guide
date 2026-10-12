@@ -81,9 +81,12 @@ local function isLine(value: any): boolean
  return type(value) == "number" and value >= 1 and value % 1 == 0
 end
 
+-- The files a guide may point at: generated files are left out, as the agent never reads them.
 local function indexFiles(pr: Pr.PR): { [string]: Pr.File }
  local files = {}
- for _, file in pr.files do files[file.path] = file end
+ for _, file in pr.files do
+  if file.group ~= "generated" then files[file.path] = file end
+ end
  return files
 end
 

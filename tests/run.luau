@@ -19,6 +19,9 @@ local modules: { { name: string, run: () -> () } } = {
 	{ name = "review_fix_test", run = require("./review_fix_test") },
 	{ name = "summary_test", run = require("./summary_test") },
 	{ name = "tandem_test", run = require("./tandem_test") },
+	{ name = "moves_test", run = require("./moves_test") },
+	{ name = "diff_test", run = require("./diff_test") },
+	{ name = "groups_test", run = require("./groups_test") },
 }
 
 local failed = 0
