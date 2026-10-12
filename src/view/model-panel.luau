@@ -3,7 +3,6 @@
 -- grouped by provider, the efforts the highlighted model takes as one segmented control, and the
 -- review lens.
 local Agent = require("../agent")
-local Fields = require("../text-field")
 local State = require("../state")
 local Ui = require("./ui")
 
@@ -97,7 +96,7 @@ function M.view(box: State.ModelBox, agent: Agent.Agent, anchor: string, soft: b
   table.insert(rows, span("gp-md-empty", "Nothing matches “" .. box.field.text .. "”"))
  end
  local kids = {
-  el("div", { class = "gp-md-search", key = "box" }, { Ui.icon("search"), Fields.node(box.field, "field", "Search models") }),
+  el("div", { class = "gp-md-search", key = "box" }, { Ui.icon("search"), Ui.field(box.field, "field", "Search models") }),
   el("div", { class = "gp-md-list", key = "list" .. box.top }, rows),
  }
  local foot = efforts(box, choices[box.selected])

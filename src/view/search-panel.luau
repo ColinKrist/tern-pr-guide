@@ -1,6 +1,5 @@
 --!strict
 -- The "/" search box and its results, under the header so it works from anywhere on the page.
-local Fields = require("../text-field")
 local State = require("../state")
 local Ui = require("./ui")
 
@@ -22,7 +21,7 @@ function M.view(box: State.SearchBox, guided: boolean, enter: string): Node
   table.insert(rows, span("gp-sr-empty", if query == "" then empty else "Nothing matches “" .. query .. "”."))
  end
  return el("div", { class = "gp-panel gp-search " .. enter, key = "search" }, {
-  el("div", { class = "gp-sr-box", key = "box" }, { span("gp-sr-slash", "/"), Fields.node(box.field, "field", "Search this PR…") }),
+  el("div", { class = "gp-sr-box", key = "box" }, { span("gp-sr-slash", "/"), Ui.field(box.field, "field", "Search this PR…") }),
   el("div", { class = "gp-sr-list" }, rows),
  })
 end

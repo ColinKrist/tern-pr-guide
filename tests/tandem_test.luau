@@ -1,9 +1,11 @@
 --!strict
 -- The Tandem hand-off: the watch parser, where a watched PR sits and what its card offers, the exact argv and
--- stdin of both Tandem calls, and the real hub block driven through them. `tern` is stubbed in the module
--- environments of block and fetch, and every process effect is a recorded call that a scenario settles by hand.
+-- stdin of both Tandem calls, and the real hub block driven through them. The fields of src/host.luau are
+-- stubbed, and every process effect is a recorded call that a scenario settles by hand.
 local Cases: any = require("../fixtures/hub/cases")
 local AgentFix = require("../src/hub/agent-fix")
+local AgentHost: any = require("../src/agent-host")
+local Tandem: any = require("../src/tandem")
 local Model = require("../src/hub/model")
 local State = require("../src/hub/state")
 local Sync = require("../src/hub/sync")
@@ -164,12 +166,12 @@ local function placement()
 	assert(Model.handoffReason(pr("acme/api#114", { tandem = true }), Cases.asOf) == "Hand off from the PR hub")
 end
 
--- The stub `tern` shared by the block's and fetch's module environments. Decoded text is looked up, and an
+-- The stub Host fields that block and fetch both call. Decoded text is looked up, and an
 -- encoded value is recorded so the test can compare the exact request table that would be written.
 local REPO_ROOT = "/Users/reader/project"
 local SUBFOLDER = REPO_ROOT .. "/src/deep"
 
-local function stubTern(w: any): any
+local function stubHost(w: any): any
 	return {
 		json = {
 			decode = function(text: string): any
@@ -215,29 +217,26 @@ local function stubTern(w: any): any
 	}
 end
 
--- Block's clock is frozen at `w.now` for the whole scenario (an hour after the recorded boards' `asOf`, so the stamps
--- the scenarios store, up to `asOf + 120`, are all older than a refresh and no result depends on the machine's date). A
--- scenario moves it by setting `w.now`. The real `os` comes back even when the scenario errors.
+-- Block's clock (`Host.time`) is frozen at `w.now` for the whole scenario (an hour after the recorded boards' `asOf`, so the
+-- stamps the scenarios store, up to `asOf + 120`, are all older than a refresh and no result depends on the machine's date). A
+-- scenario moves it by setting `w.now`. The real Host fields come back even when the scenario errors.
 local function withWorld(run: (w: any, Fetch: any, Block: any) -> ())
 	local Block: any = require("../src/hub/block")
 	local Fetch: any = require("../src/fetch")
-	local blockEnv: any, fetchEnv: any = getfenv(Block.init), getfenv(Fetch.tandemWatch)
-	local hostBlock, hostFetch, hostRunner, hostFind = blockEnv.tern, fetchEnv.tern, Fetch.runner, Fetch.findRepo
-	local hostOs = rawget(blockEnv, "os")
-	local realOs = os
-	local hostClone, hostStart = Fetch.findAgentClone, Fetch.startAgentFix
+	local Host: any = require("../src/host")
+	local hostRunner, hostFind = Fetch.runner, Fetch.findRepo
+	local hostClone, hostStart = AgentHost.findAgentClone, AgentHost.startAgentFix
 	local w: any = {
 		decoded = {}, encoded = {}, timers = {}, calls = {}, toasts = {}, renders = 0, throws = false, Block = Block,
 		finds = {}, holdRoot = false, rootFails = false, findThrows = false, kv = {}, now = Cases.asOf + 3600,
 	}
-	local stub = stubTern(w)
-	blockEnv.tern, fetchEnv.tern = stub, stub
-	blockEnv.os = setmetatable({
-		time = function(t: any?): number
-			if t then return realOs.time(t) end
-			return w.now
-		end,
-	}, { __index = realOs })
+	local stub = stubHost(w)
+	stub.time = function(): number return w.now end
+	local hostFields: { [string]: any } = {}
+	for name, value in stub do
+		hostFields[name] = Host[name]
+		Host[name] = value
+	end
 	-- Finding the repository root is a recorded call too: answered at once with REPO_ROOT unless a scenario holds
 	-- it (settled by hand through `finds[n].done`) or makes it fail or throw.
 	Fetch.findRepo = function(dir: string, done: (any, string?) -> ())
@@ -252,9 +251,9 @@ local function withWorld(run: (w: any, Fetch: any, Block: any) -> ())
 		if w.throws then error("spawn failed", 0) end
 	end
 	local ok, err = pcall(run, w, Fetch, Block)
-	blockEnv.tern, fetchEnv.tern, Fetch.runner, Fetch.findRepo = hostBlock, hostFetch, hostRunner, hostFind
-	blockEnv.os = hostOs
-	Fetch.findAgentClone, Fetch.startAgentFix = hostClone, hostStart
+	for name in stub do Host[name] = hostFields[name] end
+	Fetch.runner, Fetch.findRepo = hostRunner, hostFind
+	AgentHost.findAgentClone, AgentHost.startAgentFix = hostClone, hostStart
 	if not ok then error(err, 0) end
 end
 
@@ -272,7 +271,7 @@ local function fetching()
 		local function watch(settle: (any) -> ())
 			w.calls = {}
 			seen = {}
-			Fetch.tandemWatch(REPO_ROOT, function(watched: any, err: string?) table.insert(seen, { watched = watched, err = err }) end)
+			Tandem.watch(REPO_ROOT, function(watched: any, err: string?) table.insert(seen, { watched = watched, err = err }) end)
 			assert(#w.calls == 1)
 			local call = w.calls[1]
 			equal(call.argv, { "tandem", "watch", "--json" })
@@ -297,18 +296,18 @@ local function fetching()
 		w.throws = true
 		seen = {}
 		w.calls = {}
-		Fetch.tandemWatch(REPO_ROOT, function(watched: any, err: string?) table.insert(seen, { watched = watched, err = err }) end)
+		Tandem.watch(REPO_ROOT, function(watched: any, err: string?) table.insert(seen, { watched = watched, err = err }) end)
 		assert(#seen == 1 and seen[1].watched == nil and string.find(seen[1].err :: string, "spawn failed", 1, true))
 		w.throws = false
 		w.calls = {}
-		Fetch.tandemWatch("relative/project", function(watched: any, err: string?) table.insert(seen, { watched = watched, err = err }) end)
+		Tandem.watch("relative/project", function(watched: any, err: string?) table.insert(seen, { watched = watched, err = err }) end)
 		assert(#w.calls == 0 and #seen == 2 and seen[2].watched == nil, "a relative root runs nothing")
 
 		-- Hand-off: exactly `tandem native act`, with the plugin origin and the four action fields.
 		local replies: { { outcome: any, err: string? } } = {}
 		local function handoff(settle: (any) -> ())
 			w.calls, w.encoded, replies = {}, {}, {}
-			Fetch.tandemHandoff(REPO_ROOT, "acme/web", 104, "  PR hub: failing checks \n", function(outcome: any, err: string?)
+			Tandem.handoff(REPO_ROOT, "acme/web", 104, "  PR hub: failing checks \n", function(outcome: any, err: string?)
 				table.insert(replies, { outcome = outcome, err = err })
 			end)
 			assert(#w.calls == 1 and #w.encoded == 1)
@@ -350,7 +349,7 @@ local function fetching()
 		end
 		w.throws = true
 		w.calls, w.encoded, replies = {}, {}, {}
-		Fetch.tandemHandoff(REPO_ROOT, "acme/web", 104, "why", function(outcome: any, err: string?) table.insert(replies, { outcome = outcome, err = err }) end)
+		Tandem.handoff(REPO_ROOT, "acme/web", 104, "why", function(outcome: any, err: string?) table.insert(replies, { outcome = outcome, err = err }) end)
 		assert(#replies == 1 and replies[1].outcome == nil and string.find(replies[1].err :: string, "spawn failed", 1, true))
 		w.throws = false
 		-- A request that is not whole runs nothing.
@@ -359,9 +358,9 @@ local function fetching()
 			{ "acme/web", 104, "   " }, { "acme/web", 0, "why" }, { "acme/web", 1.5, "why" }, { "acme", 104, "why" }, { "acme/web", -1, "why" },
 		}
 		for _, args in incomplete do
-			Fetch.tandemHandoff(REPO_ROOT, args[1], args[2], args[3], function(outcome: any, err: string?) table.insert(replies, { outcome = outcome, err = err }) end)
+			Tandem.handoff(REPO_ROOT, args[1], args[2], args[3], function(outcome: any, err: string?) table.insert(replies, { outcome = outcome, err = err }) end)
 		end
-		Fetch.tandemHandoff("relative", "acme/web", 104, "why", function(outcome: any, err: string?) table.insert(replies, { outcome = outcome, err = err }) end)
+		Tandem.handoff("relative", "acme/web", 104, "why", function(outcome: any, err: string?) table.insert(replies, { outcome = outcome, err = err }) end)
 		assert(#w.calls == 0 and #w.encoded == 0 and #replies == 6)
 		for _, reply in replies do assert(reply.outcome == nil and reply.err ~= nil) end
 	end)
@@ -768,10 +767,10 @@ local function agentBoard(w: any, Fetch: any, Block: any): any
 	local b = live(w, Block)
 	reads(w)[1].done(out("WATCH"))
 	w.clones, w.started, w.details, w.stops = {}, {}, {}, 0
-	Fetch.findAgentClone = function(_near: any, _dir: string, slug: string, ask: any, done: (string?, string?) -> ())
+	AgentHost.findAgentClone = function(_near: any, _dir: string, slug: string, ask: any, done: (string?, string?) -> ())
 		table.insert(w.clones, { slug = slug, ask = ask, done = done })
 	end
-	Fetch.startAgentFix = function(request: any, _agent: any, _now: number, changed: any, done: any): any
+	AgentHost.startAgentFix = function(request: any, _agent: any, _now: number, changed: any, done: any): any
 		table.insert(w.started, { request = request, changed = changed, done = done })
 		return {
 			stop = function() w.stops += 1 end, release = function(finished: (boolean?, string?) -> ()) finished(true, nil) end,
@@ -1637,7 +1636,7 @@ local function mixedAge()
 		w.kv["hub.cache"] = added(storedCache({ WEB, API114 }, Cases.asOf))
 		-- Every store of the cache, in order.
 		local writes: { { stamp: number, key: boolean, other: boolean, title: string? } } = {}
-		local kv = getfenv(Block.init).tern.kv
+		local kv = require("../src/host").kv
 		local set = kv.set
 		kv.set = function(name: string, value: any)
 			if name == "hub.cache" then
@@ -1854,10 +1853,10 @@ local function staleUpdate()
 end
 
 -- A board whose TARGET holds a ready fix on the Review fix page, kept by a retained engine. The push and the lease
--- return are recorded calls (the real `Fetch.pushAgentFix` needs the engine's own lease), settled by hand.
+-- return are recorded calls (the real `AgentHost.pushAgentFix` needs the engine's own lease), settled by hand.
 local function withReady(run: (w: any, b: any) -> ())
 	withWorld(function(w, Fetch, Block)
-		local hostPush, hostReturn = Fetch.pushAgentFix, Fetch.returnAgentFix
+		local hostPush, hostReturn = AgentHost.pushAgentFix, AgentHost.returnAgentFix
 		local ok, err = pcall(function()
 			local b = agentBoard(w, Fetch, Block)
 			local fix: any = copy(ReviewFixture.fix)
@@ -1875,10 +1874,10 @@ local function withReady(run: (w: any, b: any) -> ())
 					held = function(): any return if w.lease then { path = w.lease } else nil end,
 				},
 			}
-			Fetch.pushAgentFix = function(plan: any, canPush: () -> boolean, done: (boolean?, string?) -> ())
+			AgentHost.pushAgentFix = function(plan: any, canPush: () -> boolean, done: (boolean?, string?) -> ())
 				table.insert(w.pushes, { plan = plan, canPush = canPush, done = done })
 			end
-			Fetch.returnAgentFix = function(path: string, done: (boolean?, string?) -> ())
+			AgentHost.returnAgentFix = function(path: string, done: (boolean?, string?) -> ())
 				table.insert(w.returns, { path = path, done = done })
 			end
 			State.project(b.s)
@@ -1887,7 +1886,7 @@ local function withReady(run: (w: any, b: any) -> ())
 			route.loading = false
 			run(w, b)
 		end)
-		Fetch.pushAgentFix, Fetch.returnAgentFix = hostPush, hostReturn
+		AgentHost.pushAgentFix, AgentHost.returnAgentFix = hostPush, hostReturn
 		if not ok then error(err, 0) end
 	end)
 end
@@ -1993,7 +1992,7 @@ local function retainedLease()
 	withWorld(function(w, Fetch, Block)
 		local b = agentBoard(w, Fetch, Block)
 		w.lease, w.releases = "/work/tree", {}
-		Fetch.startAgentFix = function(request: any, _agent: any, _now: number, changed: any, done: any): any
+		AgentHost.startAgentFix = function(request: any, _agent: any, _now: number, changed: any, done: any): any
 			table.insert(w.started, { request = request, changed = changed, done = done })
 			return {
 				stop = function() w.stops += 1 end, begin = function() end, busy = function(): boolean return false end,
@@ -2047,7 +2046,7 @@ local function retainedLease()
 	withWorld(function(w, Fetch, Block)
 		local b = agentBoard(w, Fetch, Block)
 		w.lease, w.releases = "/work/tree", {}
-		Fetch.startAgentFix = function(request: any, _agent: any, _now: number, changed: any, done: any): any
+		AgentHost.startAgentFix = function(request: any, _agent: any, _now: number, changed: any, done: any): any
 			table.insert(w.started, { request = request, changed = changed, done = done })
 			return {
 				stop = function() w.stops += 1 end, begin = function() end, busy = function(): boolean return false end,
@@ -2073,13 +2072,13 @@ end
 -- The engine takes its lease before it names the worktree, so it can fail on the path check with the lease held and
 -- no worktree event sent. A card Tandem owns drops a failed state with no path, so the block restores it from the
 -- engine's held lease: Return worktree stays until a guarded return succeeds. Both callback orders are covered: the
--- failure after the engine handle exists, and during Fetch.startAgentFix before it returns the handle.
+-- failure after the engine handle exists, and during AgentHost.startAgentFix before it returns the handle.
 local function preWorktreeLease()
 	local PATH = "/work/pre-identity"
 	local function begin(w: any, Fetch: any, Block: any, sync: boolean): any
 		local b = agentBoard(w, Fetch, Block)
 		w.lease, w.releases = PATH, {}
-		Fetch.startAgentFix = function(request: any, _agent: any, _now: number, changed: any, done: any): any
+		AgentHost.startAgentFix = function(request: any, _agent: any, _now: number, changed: any, done: any): any
 			table.insert(w.started, { request = request, changed = changed, done = done })
 			if sync then
 				own(b, true)
@@ -2149,7 +2148,7 @@ local function preWorktreeLease()
 		cleanup(w, b, Block, "owned after the failure")
 	end)
 
-	-- Both callbacks run inside Fetch.startAgentFix, before it returns the handle.
+	-- Both callbacks run inside AgentHost.startAgentFix, before it returns the handle.
 	withWorld(function(w, Fetch, Block)
 		local b = begin(w, Fetch, Block, true)
 		cleanup(w, b, Block, "synchronous terminal callbacks")

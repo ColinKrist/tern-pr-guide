@@ -1,7 +1,7 @@
 --!strict
 -- The PR hub's GitHub boundary. Every GitHub call goes through the injected `Runner` (the real one
 -- is `Fetch.runner`, tests pass a fake), JSON text is decoded by the injected `decode`
--- (`tern.json.decode`), and nothing here reads `tern`, the clock or a file. The parsers take
+-- (`Host.json.decode`), and nothing here reads Host, the clock or a file. The parsers take
 -- already decoded tables and never throw on a missing field. Each call returns its own rate-limit
 -- envelope; the caller sums them. Failures are `Error` values, never thrown.
 --
@@ -21,7 +21,7 @@ type MergeFailure = Model.MergeFailure
 type PendingMerge = Model.PendingMerge
 type FixDetails = Fixes.FixDetails
 
--- What `tern.process.run` gives and takes, minus the `cx`. src/fetch.luau exports the real runner.
+-- What `Host.process.run` gives and takes, minus the `cx`. src/fetch.luau exports the real runner.
 export type Out = { status: number, stdout: string, stderr: string, timed_out: boolean }
 export type Runner = (argv: { string }, opts: { cwd: string?, stdin: string?, timeout_ms: number? }, done: (out: Out) -> ()) -> ()
 export type Decode = (text: string) -> any
@@ -761,6 +761,10 @@ M.commands = {
 	-- Closes with no comment; GitHub can reopen it.
 	close = function(pr: HubPR): Command
 		return { argv = prArgv("close", pr), stdin = nil }
+	end,
+	-- The branch names and head an agent fix starts from, read again just before it starts.
+	refs = function(pr: HubPR): Command
+		return { argv = prArgv("view", pr, "--json", "headRefName,baseRefName,headRefOid"), stdin = nil }
 	end,
 	updateBranch = function(pr: HubPR): Command
 		return { argv = { "gh", "pr", "update-branch", tostring(pr.number), "--repo", pr.repo }, stdin = nil }
