@@ -1,6 +1,6 @@
 --!strict
 -- The hub page: header (title, search, freshness, agent model), the tab row, the board's columns, the
--- Inactive fold and the hint bar. Everything it draws was decided by `State.project`.
+-- card folds and the hint bar. Everything it draws was decided by `State.project`.
 local Card = require("./card")
 local Fields = require("../../text-field")
 local Help = require("./help")
@@ -17,12 +17,12 @@ local el, span = Ui.el, Ui.span
 
 local LABELS: { [Model.Column]: string } = {
 	needs_fixes = "Needs fixes", in_review = "In review", ready = "Ready to merge", inactive = "Inactive",
-	to_review = "To review", waiting_on_author = "Waiting on author", approved = "Approved",
+	to_review = "To review", waiting_on_author = "Waiting on author",
 }
 local EMPTY: { [Model.Column]: string } = {
 	needs_fixes = "No pull requests need fixes.", in_review = "No pull requests in review.",
 	ready = "No pull requests ready to merge.", to_review = "No pull requests to review.",
-	waiting_on_author = "No pull requests waiting on their authors.", approved = "No approved pull requests.",
+	waiting_on_author = "No pull requests waiting on their authors.",
 }
 
 local M = {}
@@ -138,7 +138,7 @@ end
 local function columnClass(column: Model.Column, tab: Model.Tab): string
 	if column == "needs_fixes" then return "gp-hub-col-act gp-hub-col-bad" end
 	if column == "to_review" then return "gp-hub-col-act gp-hub-col-info" end
-	if column == "ready" or column == "approved" then return "gp-hub-col-done" end
+	if column == "ready" then return "gp-hub-col-done" end
 	return "gp-hub-col-wait"
 end
 
@@ -177,6 +177,10 @@ local FOLDS: { [Model.Column]: { title: string, note: { [Model.Tab]: string }, k
 	team = {
 		title = "Team requests", key = "⇧T",
 		note = { mine = "", review = "Requested from a team, not from you by name" },
+	},
+	approved = {
+		title = "Approved", key = "A",
+		note = { mine = "", review = "Pull requests you approved" },
 	},
 }
 

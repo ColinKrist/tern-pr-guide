@@ -16,7 +16,7 @@ a separate conversation. PR Guide puts all of it in Tern.
 - **All your PRs on one board.** PRs from every repository are sorted into Needs fixes, In review
   and Ready to merge, and each card says why it's there.
 - **Teammates' PRs in one place.** See what's waiting for your review, what's waiting on the author
-  and what's approved. A PR that changed since you approved it comes back to To review.
+  and what's approved. A PR you approved comes back to To review only when you're asked again.
 - **No trips to the browser.** Read the diff, comment on lines and submit the GitHub review without
   leaving the terminal.
 - **Two ways to read a PR.** A file view like GitHub's, or a guided walkthrough written by your
@@ -73,18 +73,20 @@ select several and merge them together, or set an In review PR to merge as soon 
 
 The **Review requests** tab sorts the PRs others asked you to review:
 
-- **To review:** requests that name you, PRs with new commits since you approved them, and PRs you
-  added by pasting a link.
+- **To review:** requests that name you, including a request to review again after you approved,
+  PRs whose review from you was dismissed, and PRs you added by pasting a link.
 - **Waiting on author:** you requested changes or left comments.
-- **Approved.**
 
-Below the board, three folded lists keep the rest out of the way:
+Below the board, four folded lists keep the rest out of the way. Opening one scrolls it into view.
 
 - **Inactive:** requests that name you but have had no activity for 7 days. PRs you added by link
   always stay in To review.
 - **Team requests:** PRs that ask a team you're on, such as a CODEOWNERS team, and not you by name.
   They don't count toward the tab's number or Next up. Paste one's link in the add field to move it
   to To review.
+- **Approved:** PRs you approved. New commits don't move one back to To review; its card notes
+  "New commits since you approved" until the author asks you again. Approved PRs don't count toward
+  the tab's number or Next up.
 - **Recently opened:** any PR you opened before stays one key away, even after it closes.
 
 ## Fix what's blocking
@@ -206,10 +208,11 @@ Press `?` on any PR Guide page for the keys that apply there.
 | `S` | Sort |
 | `I` | Show or hide inactive PRs, on either tab |
 | `⇧T` | Show or hide team review requests |
+| `A` | Show or hide approved PRs, on Review requests |
 | `R` | Show or hide recently opened PRs |
 | `N` | Add a PR by link |
 | `⇧M` | Choose the agent model and effort |
-| `A` | Run the selected card's main action |
+| `A` | Run the selected card's main action, on your PRs |
 | `⇧A` | Summarize feedback or return a retained worktree |
 | `C` | Copy the PR title and link |
 | `M` | Merge, merge when ready or cancel a pending merge |

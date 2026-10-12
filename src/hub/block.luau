@@ -1654,8 +1654,10 @@ end
 ACTIONS["hub-next"] = function(b, cx)
 	if State.walk(b.s) then revealSelected(b, cx) end
 end
+-- Opening a fold scrolls its header to the top of the board, so the rows it adds show. Closing doesn't scroll.
 ACTIONS["hub-fold"] = function(b, cx, name)
 	State.toggleFold(b.s, name)
+	if not b.s.folded[name] then frameLater(cx, { { "reveal", Paths.foldHead(name), "start" } }) end
 end
 ACTIONS["hub-escape"] = function(b, cx)
 	local s = b.s

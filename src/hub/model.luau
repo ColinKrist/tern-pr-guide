@@ -229,20 +229,15 @@ function M.reasons(pr: HubPR, now: number): { Reason }
 	return out
 end
 
--- True when the viewer approved an older commit than the head.
-local function reReview(pr: HubPR): boolean
-	local mine = pr.reviews.mine
-	return mine ~= nil and mine.verdict == "approved" and mine.oid ~= pr.headOid
-end
-
 function M.placement(pr: HubPR, now: number): Placement
 	if pr.role == "review" then
 		local reviews = pr.reviews
 		local mine = reviews.mine
 		local column: Column = "team"
-		-- A dismissed review of the viewer's asks for a fresh one, as a re-review does.
+		-- The viewer is needed again only when asked by name or when their review was dismissed. New commits alone
+		-- leave an approval in Approved.
 		local dismissed = mine ~= nil and mine.verdict == "dismissed"
-		if reReview(pr) or dismissed or reviews.requestedMe or pr.addedByMe then
+		if dismissed or reviews.requestedMe or pr.addedByMe then
 			column = if pr.addedByMe or active(pr, now) then "to_review" else "inactive"
 		elseif mine and mine.verdict == "approved" then
 			column = "approved"
@@ -383,7 +378,7 @@ local function urgency(pr: HubPR, placement: Placement): number
 		if has(placement.reasons, "feedback") then return 1 end
 		return 2
 	end
-	if pr.reviews.requestedMe or reReview(pr) then return 1 end
+	if pr.reviews.requestedMe then return 1 end
 	return 2
 end
 

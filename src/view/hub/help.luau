@@ -16,6 +16,7 @@ local GROUPS: { Group } = {
 		{ "T", "Switch tab" },
 		{ "I", "Show or hide Inactive" },
 		{ "⇧T", "Show or hide Team requests" },
+		{ "A", "Show or hide Approved, on Review requests" },
 		{ "R", "Show or hide Recently opened" },
 	} },
 	{ title = "The selected card", keys = {

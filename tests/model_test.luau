@@ -53,7 +53,7 @@ return function()
 		assert(join(Model.reasons(pr, NOW)) == join(wantReasons))
 	end
 	for key in Cases.columns do assert(byKey[key] ~= nil, "expected column for unknown key " .. key) end
-	assert(count == 47, "fixture has 47 cases, got " .. count)
+	assert(count == 48, "fixture has 48 cases, got " .. count)
 
 	-- Every column's order, for each sort, and nothing missing or duplicated.
 	for _, sort in SORTS do
@@ -96,7 +96,7 @@ return function()
 	assert(wrapped and wrapped.index == 1 and wrapped.item.key == queue[1].key)
 	assert(Model.nextUp({}, NOW, nil) == nil)
 	assert(queue[1].column == "needs_fixes" and queue[1].reason == "merge_failed" and queue[1].tab == "mine")
-	assert(queue[4].key == "acme/web#302" and queue[4].column == "to_review" and queue[4].reason == nil and queue[4].tab == "review")
+	assert(queue[4].key == "acme/web#311" and queue[4].column == "to_review" and queue[4].reason == nil and queue[4].tab == "review")
 
 	-- The 16-conflict case: of 16 conflicted PRs, only the 6 active, non-draft ones reach Needs fixes.
 	local conflicted, needFixes, inactive = 0, 0, 0
@@ -153,7 +153,8 @@ return function()
 
 	-- Review tab.
 	assert(columnOf("acme/web#301") == "to_review") -- requested
-	assert(columnOf("acme/web#302") == "to_review") -- re-review: the viewer approved an older commit
+	assert(columnOf("acme/web#302") == "approved", "new commits since an approval, with no new request, stay in Approved")
+	assert(columnOf("acme/web#311") == "to_review", "asked again by name after approving an older commit: a re-review")
 	assert(columnOf("acme/web#303") == "to_review") -- added by link
 	assert(columnOf("acme/web#304") == "waiting_on_author") -- the viewer requested changes
 	assert(columnOf("acme/web#305") == "waiting_on_author") -- the viewer commented
@@ -181,8 +182,9 @@ return function()
 	assert(request({ requestedMe = true, lastActivityAt = STALE }).column == "inactive")
 	assert(request({ addedByMe = true, lastActivityAt = STALE }).column == "to_review", "an added PR stays in To review")
 	local approvedOld = { author = Cases.viewer, bot = false, verdict = "approved", at = ACTIVE, oid = "old301" }
-	assert(request({ mine = approvedOld }).column == "to_review", "a re-review with only a team asked")
-	assert(request({ mine = approvedOld, lastActivityAt = STALE }).column == "inactive")
+	assert(request({ mine = approvedOld }).column == "approved", "new commits and only a team asked: still Approved")
+	assert(request({ mine = approvedOld, requestedMe = true }).column == "to_review", "asked again by name: a re-review")
+	assert(request({ mine = approvedOld, requestedMe = true, lastActivityAt = STALE }).column == "inactive")
 	local dismissed = { author = Cases.viewer, bot = false, verdict = "dismissed", at = ACTIVE, oid = "head301" }
 	assert(request({ mine = dismissed }).column == "to_review", "a dismissed review asks for a fresh one")
 	local approvedHead = { author = Cases.viewer, bot = false, verdict = "approved", at = ACTIVE, oid = "head301" }
@@ -193,7 +195,7 @@ return function()
 	assert(Model.selectGroup(byKey["acme/web#309"], NOW) == nil)
 	-- Neither is in Next up.
 	for _, item in Model.queue(Cases.prs, NOW) do
-		assert(item.key ~= "acme/web#309" and item.key ~= "acme/web#310", item.key .. " is queued")
+		assert(item.key ~= "acme/web#309" and item.key ~= "acme/web#310" and item.key ~= "acme/web#302", item.key .. " is queued")
 	end
 
 	-- Mergeable: ready, not behind, nothing pending.
