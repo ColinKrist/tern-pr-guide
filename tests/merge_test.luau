@@ -207,9 +207,9 @@ end
 
 local function testRefresh()
 	local client, fake = refreshClient()
-	-- No merge in flight: the same two calls as before.
+	-- No merge in flight: the three searches and threads.
 	local plain = first(function(done) client.refresh({ added = {}, previous = {} }, done) end)
-	assert(#plain.calls == 2 and #fake.calls == 2)
+	assert(#plain.calls == 4 and #fake.calls == 4)
 	local base = clone(plain.prs)
 	local target: any
 	for _, pr in base do
@@ -221,8 +221,8 @@ local function testRefresh()
 	local pending = clone(target)
 	pending.pending = { method = "comment", at = Fixture.pendingAt }
 	local value = first(function(done) client.refresh({ added = {}, previous = { pending } }, done) end)
-	assert(#fake.calls == 5 and #value.calls == 3)
-	local lookup = fake.calls[5]
+	assert(#fake.calls == 9 and #value.calls == 5)
+	local lookup = fake.calls[9]
 	assert(string.find(lookup.argv[5], "query MergeFailure(", 1, true) ~= nil)
 	same({ table.unpack(lookup.argv, 6) }, { "-f", "ids[]=PR_acme/api#109" }, "lookup ids")
 	local failing: any
@@ -231,7 +231,7 @@ local function testRefresh()
 		if pr.id ~= "PR_acme/api#109" then assert(pr.mergeFailure == nil or pr.mergeFailure.kind == "queue") end
 	end
 	same(failing.mergeFailure, { kind = "comment", reason = "ci" }, "failure from the lookup")
-	assert(value.rateLimit == value.calls[3])
+	assert(value.rateLimit == value.calls[5])
 	-- The whole refresh, with the lookup, stays under the budget the tests hold.
 	local total = 0
 	for _, call in value.calls do total += call.cost end
@@ -243,7 +243,7 @@ local function testRefresh()
 	moved.headOid = "older-head"
 	local calls = #fake.calls
 	local after = first(function(done) client.refresh({ added = {}, previous = { moved } }, done) end)
-	assert(#fake.calls == calls + 2 and #after.calls == 2)
+	assert(#fake.calls == calls + 4 and #after.calls == 4)
 	for _, pr in after.prs do
 		if pr.id == "PR_acme/api#109" then assert(pr.mergeFailure == nil) end
 	end
@@ -259,7 +259,7 @@ local function testRefresh()
 	queued.pending = { method = "queue", at = Fixture.pendingAt }
 	calls = #fake.calls
 	first(function(done) client.refresh({ added = {}, previous = { queued } }, done) end)
-	assert(#fake.calls == calls + 2)
+	assert(#fake.calls == calls + 4)
 
 	-- A lookup that fails leaves the refresh standing.
 	local broken = FakeRunner.new({

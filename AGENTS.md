@@ -71,3 +71,5 @@ New UI text sounds official: neutral, plain and short, like GitHub.
 ## Commits
 
 The subject is the user-visible behavior as a plain sentence, with no type prefix. Example: "Picker: Recently opened PRs from any repo at the top, so a closed PR is one keypress away".
+
+Main is the release: `tern plugin install github.com/jubbydev/tern-pr-guide` installs whatever main holds. Work on a branch, and bump `version` in `plugin.toml` in the change that lands on main: the patch number for fixes, the minor number for new features. `tern plugin install` and `tern plugin list` report that number, so an unchanged one looks like the update didn't install.

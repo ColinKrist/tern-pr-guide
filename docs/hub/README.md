@@ -27,9 +27,9 @@ Two Tern tabs, one board each. `T` switches between them.
 | Tab | Columns | Below |
 |---|---|---|
 | Your pull requests | Needs fixes · In review · Ready to merge | Inactive (folded) |
-| Review requests | To review · Waiting on author · Approved | |
+| Review requests | To review · Waiting on author · Approved | Inactive, Team requests, Recently opened (each folded) |
 
-- **Tab counts:** blue, counting only the cards in the your-turn column.
+- **Tab counts:** blue, counting only the cards in the your-turn column. Folds never count.
 - **Card looks:**
   - Your-turn cards: washed red (yours) or blue (reviews).
   - Waiting cards: neutral.
@@ -55,9 +55,11 @@ Each PR appears exactly once.
 - **Ready to merge:** approved, checks passing, no conflicts.
 - **Inactive:** drafts, and PRs with no activity for 7 days, including stale conflicts. Your real data has 16 conflicted PRs, which is why the 7-day gate exists.
 - **Review requests tab:**
-  - **To review:** requested reviews, PRs with new commits since you approved (re-review), and PRs you added by link.
+  - **To review:** reviews requested of you by name, PRs with new commits since you approved (re-review), and PRs you added by link. A request that names both you and your team is yours.
+  - **Inactive (folded):** what would be in To review but has had no activity for 7 days. PRs you added by link never go here. Nothing here can be selected or closed: these are other people's PRs.
   - **Waiting on author:** you requested changes or commented.
   - **Approved.**
+  - **Team requests (folded, `⇧T`):** `review-requested:@me` also returns PRs that ask only a team you're on (CODEOWNERS). Those, with no review of yours, not a re-review and not added by link, wait here with a quiet "Requested from @org/team" chip. They are never Inactive, never counted, never in Next up and never selectable. Adding one by link moves it to To review.
 - **Re-review rule:** `my latest review's commit oid != headRefOid`. No LLM is involved.
 - **Priority order:**
   - Your-turn columns: by kind first (a person waiting on you beats a machine), then the longest waiting.
@@ -151,7 +153,8 @@ To review has its own field: "Paste a pull request link to review" (`N`, from ei
 | Pasted | ⏎ | ⇧⏎ |
 |---|---|---|
 | A new PR | **Add to review** (lands as "Added by you") | **Open without adding** |
-| A PR already on the board | **Show on the board** | **Open** |
+| A review request in Team requests or Review requests' Inactive | **Add to review** (marks it added in `hub.added`, so it lands in To review) | **Open** |
+| Any other PR already on the board | **Show on the board** | **Open** |
 
 - **Anything else** shows "A pull request link looks like github.com/owner/repo/pull/123".
 - **Search only searches.**
@@ -177,7 +180,8 @@ To review has its own field: "Paste a pull request link to review" (`N`, from ei
 | ⏎ / double-click | Open (Needs fixes cards open at the fixes) |
 | ⇧⏎ | Open with the AI guide started |
 | T | Switch tab |
-| I | Show or hide Inactive |
+| I | Show or hide Inactive (either tab) |
+| ⇧T | Show or hide Team requests (Review requests) |
 | R | Show or hide Recently opened (Review requests) |
 | F / S | Repository filter / Sort menu (menus: j/k, ⏎ or Space, Esc) |
 | ⇧M | Agent model menu (↑↓ model, ←→ effort) |
@@ -195,7 +199,7 @@ To review has its own field: "Paste a pull request link to review" (`N`, from ei
 
 | Call | Cost | Time | When |
 |---|---|---|---|
-| `docs/hub/queries/hub-f.graphql`: 3 searches (author, review-requested, reviewed-by), check counts, author types, and the fields `HubPR` needs (size, dates, base branch, auto-merge, last queue removal) | 11 pts (9 before the extensions; the queue-removal timeline adds 2) | 6–9 s | On a change, on focus (debounced to 30 s), and every 5 min while the hub block exists (a block can't observe visibility) |
+| `docs/hub/queries/hub-f.graphql`: one page of one search, run for each of the 3 searches (author, review-requested, reviewed-by) at once, 20 PRs a page up to 50, with check counts, author types, and the fields `HubPR` needs (size, dates, base branch, auto-merge, last queue removal) | 1 pt a page: 4 for 40 PRs (2 + 1 + 1), at most 9 (the old single query was 11 for any count) | 0.9–3.6 s a page on 40 PRs, 4.4–6.6 s on busy repos | On a change, on focus (debounced to 30 s), and every 5 min while the hub block exists (a block can't observe visibility) |
 | `threads.graphql`: thread authors via `nodes(ids:)`, only for PRs with an unresolved thread whose `updatedAt` changed | 5 pts for 17 PRs (the first 30 threads of each; 9 pts at 50) | 0.7–0.8 s | After hub-f |
 | `checks.graphql`: CI state for PRs with running checks | 1 pt for 5 or 42 PRs | 1–1.6 s | Every 30 s while any check is running |
 | REST `/notifications` with `If-Modified-Since` | free (304) | | Every 60 s, as the change probe |
@@ -204,8 +208,9 @@ To review has its own field: "Paste a pull request link to review" (`N`, from ei
 | `merge-failure.graphql`: latest comments and head check contexts, via `nodes(ids:)` | 1 pt for any number of PRs (measured for 2) | | After hub-f, only when a comment or label merge is in flight on the same head |
 
 - **Don't** put thread authors inside the search query. Measured at **159 points** per call.
-- **Per refresh:** hub-f 11 + threads 5 + checks 1 = 17 on real data (18 with a merge failure lookup, which is the limit) (42 PRs, 17 with unresolved threads, no cache), under the 18-point limit the tests hold. A cost depends on the connections a query selects times the PRs it can return (`first:` on a connection under a search doesn't change it), so an added connection is paid 150 times per hub-f call. Alias-added PRs didn't change the 11.
-- **Budget:** about 220 pts/hr while the hub block exists (12 refreshes at the 18-point limit; measured 12 × 17 = 204). Even the 30 s debounce ceiling (about 2,200/hr) fits the 5,000/hr GraphQL budget, which Tandem's pr-watch shares.
+- **Pages, not one query.** GitHub stops a GraphQL query at about 10 s and answers HTTP 502. Measured 2026-10-12 on busy repos (vscode, next.js): the three searches at 50 each in one query got 502 after about 11 s every time, and so did a single search at 50; a 20-PR page took 4.4–6.6 s. A page that fails with a 502, 503 or 504, GitHub's "Something went wrong" timeout body, or the 30 s client timeout is asked again with half the PRs, down to 5; later pages of that search keep the smaller size. Every other GraphQL read retries those failures once; writes never retry.
+- **Per refresh:** hub-f 4 (40 PRs) + threads 5 + checks 1 = 10, under the 18-point limit the tests hold. A cost depends on the connections a query selects times the PRs it can return (`first:` on a connection under a search doesn't change it), so a page's `$n` sets its cost and an added connection is paid 20 times per page. Alias-added PRs ride on the first `mine` page.
+- **Budget:** about 130 pts/hr while the hub block exists (12 refreshes at 10, plus checks). Even the 30 s debounce ceiling (about 2,200/hr at the 18-point limit) fits the 5,000/hr GraphQL budget, which Tandem's pr-watch shares.
 - **Latency is the real cost.** Always render from the kv cache first, then refresh in the background.
 - **Check annotations include noise.** Drop paths under `.github/` and messages like "Process completed with exit code". Measured on Tagalingo-App #1013, the useful one was `src/lib/query-persister.ts:39 Type …`.
 - **Conflicted files** come from local `git merge-tree --write-tree --name-only`, not GitHub.
@@ -280,7 +285,7 @@ With `search` the root is a folder to look for a checkout in (no clone was found
 
 ```luau
 export type Tab = "mine" | "review"
-export type Column = "needs_fixes" | "in_review" | "ready" | "inactive" | "to_review" | "waiting_on_author" | "approved"
+export type Column = "needs_fixes" | "in_review" | "ready" | "inactive" | "to_review" | "waiting_on_author" | "approved" | "team"
 export type Reason = "merge_failed" | "feedback" | "checks" | "conflict"   -- in this order: severity, and the chip order
 export type Sort = "repository" | "priority" | "newest" | "oldest" | "smallest"
 
@@ -298,6 +303,7 @@ export type ReviewState = {
 	mine: Review?,                    -- the viewer's own latest review
 	requestedMe: boolean,             -- a review is requested of the viewer
 	requested: { string },            -- logins and team slugs
+	teams: { string },                -- the team slugs among them (`... on Team { slug }`); a cache without it is refetched
 	unresolved: number,               -- unresolved threads, counted in hub-f
 	threads: { OpenThread },          -- authors of the unresolved ones, once threads.graphql ran
 	threadsKnown: boolean,            -- false until then: unknown threads never count as feedback
@@ -338,7 +344,7 @@ export type Refresh = {
 	prs: { HubPR },                   -- `tandem` and `addedByMe` false, `pending` nil: the block fills them from local facts
 	viewer: string,
 	rateLimit: RateLimit,             -- the last call's envelope
-	calls: { RateLimit },             -- every call's envelope, in order: hub-f, then threads
+	calls: { RateLimit },             -- every call's envelope, in order: each hub-f page as it answered, then threads
 	truncated: boolean,               -- a search returned more than 50
 	partial: Error?,                  -- threads failed: `prs` still stands, with threadsKnown = false
 }
@@ -350,7 +356,7 @@ function M.placement(pr: HubPR, now: number): Placement
 function M.classify(pr: HubPR, now: number): Column     -- placement(pr, now).column
 function M.botFeedback(pr: HubPR): boolean              -- a bot's latest review or unresolved thread, for Fix bot comments
 function M.mergeable(pr: HubPR): boolean                -- ready, not behind, nothing pending: the cards Space may select
-function M.selectGroup(pr: HubPR, now: number): ("ready" | "inactive")?, string?   -- the group Space may select it in, or nil and why not; Inactive rows (drafts too) always qualify
+function M.selectGroup(pr: HubPR, now: number): ("ready" | "inactive")?, string?   -- the group Space may select it in, or nil and why not; the viewer's Inactive rows (drafts too) always qualify, review requests never do
 function M.stale(pr: HubPR, now: number): boolean       -- Inactive for 7+ days of silence and not a draft: what Close stale (⇧X) selects
 function M.confirmList(prs: { HubPR }): { shown: { HubPR }, more: number }   -- the first CONFIRM_TITLES (5), then the count left
 function M.methodLines(methods: { MergeMethod }): { string }                 -- one line per distinct method: "Squash and merge", "Comments /merge"
@@ -711,17 +717,18 @@ export type Card = {
 	selected: boolean, marked: boolean,
 }
 export type RepoOption = { repo: string, count: number, on: boolean }
+export type CardFold = { column: Column, cards: { Card }, open: boolean }   -- column "inactive" or "team"
 
 -- Everything a view reads, built by State.project. Views never filter, sort or classify.
 export type BoardData = {
 	tab: Tab,
 	columns: { { column: Column, cards: { Card } } },   -- the tab's columns, left to right, filtered and ordered
-	inactive: { Card },                                 -- the fold under "Your pull requests"
-	recent: { Opened },                                 -- the fold under "Review requests"
+	folds: { CardFold },                                -- the tab's card folds in State.FOLDS order: Inactive on Your pull requests; Inactive, Team requests on Review requests
+	recent: { Opened },                                 -- the fold under "Review requests", after the card folds
 	grid: { { string } },                               -- keys per column, for h j k l
 	counts: { mine: number, review: number },           -- your-turn cards per tab: the blue counts
 	repositories: { RepoOption },
-	open: { inactive: boolean, recent: boolean },       -- which folds show their rows (a search opens Inactive)
+	open: { recent: boolean },                          -- whether Recently opened shows its rows (a card fold carries its own `open`; a search opens every fold with matches)
 	nextUp: NextUp?,
 	empty: boolean,
 }
@@ -741,7 +748,7 @@ export type State = {
 	mode: Mode, menu: MenuId?, menuCursor: number,
 	confirm: { kind: string, keys: { string } }?,   -- kind "merge" (a GitHub method) or "learned" (the suggested comment command)
 	methodEdit: { repo: string, kind: "comment" | "label", field: Fields.Field }?,   -- the merge menu is asking for a command or a label
-	folded: { [string]: boolean },    -- true: the fold is closed; Inactive and Recently opened start closed
+	folded: { [string]: boolean },    -- true: the fold is closed; inactive, team and recent start closed. One `inactive` flag serves both tabs
 	recent: { Opened },               -- hub.recent, newest first, set by the block
 	walking: boolean,                 -- Next up is being walked: the banner shows "2 of 11"
 	ringed: { [string]: "bad" | "good" },
@@ -809,14 +816,17 @@ function M.cancelConfirm(s: State)
 function M.setBusy(s: State, key: string, text: string?)
 function M.dropPr(s: State, key: string)                 -- a merged PR leaves the board
 function M.branchUpdated(s: State, key: string)          -- behind = false and checks pending, until a refresh says more
-function M.linkTarget(s: State): LinkTarget              -- "empty" | "invalid" | "new" | "board": what the add field's text names (github.com links and owner/repo#123 only)
+function M.linkTarget(s: State): LinkTarget              -- "empty" | "invalid" | "new" | "folded" | "board": what the add field's text names (github.com links and owner/repo#123 only); "folded" is a review request in Team requests or Inactive
+function M.markAdded(s: State, key: string)              -- ⏎ on a "folded" target, after the block wrote hub.added: the PR moves to To review
 function M.openLink(s: State) / M.closeLink(s: State, clear: boolean)   -- N: Review requests with mode "link"
-function M.show(s: State, key: string): boolean          -- selects a PR, clearing a search or filter that hides it
+function M.show(s: State, key: string): boolean          -- selects a PR, clearing a search or filter that hides it and opening its fold
+function M.fold(s: State, column: Column): CardFold?      -- the tab's Inactive or Team requests fold
+function M.isFold(column: Column): boolean               -- "inactive" and "team" show in folds, not columns
 function M.walk(s: State): boolean                       -- `.` and the banner: selects BoardData.nextUp's item, switching tab, clearing a search or filter only if it hides it; sets `walking`. Any other selection clears `walking`
 function M.nextCard(s: State): Card?                      -- the banner's item as a Card (its chip), whichever tab it sits on
 function M.withAdded(added, ref): (Added?, string?)      -- hub.added with `ref`, or why not (the 50 cap)
 function M.canonicalAdded(added, prs): (Added, boolean)  -- keys an added PR by the repo's own spelling
-function M.unadd(s: State, key: string)                  -- X
+function M.unadd(s: State, key: string)                  -- X: a PR still requested of the viewer or a team, or reviewed by them, stays
 function M.openPlan(slug, number, generate, root: string?, why: string?, dir: string): OpenPlan   -- open this link, or refuse with this toast
 ```
 
@@ -825,11 +835,11 @@ Every file in `src/view/hub/` exports `function M.view(s: State.State, motion: U
 ### `src/keys.luau` (hub keys)
 
 ```luau
-function M.hubAction(s: HubState.State, key: Key): Action?   -- the hub's counterpart of `M.action` (keys.luau:98). ⇧⏎ sends `hub-open-generate`; `R` sends `hub-fold=recent` on the Review requests tab
+function M.hubAction(s: HubState.State, key: Key): Action?   -- the hub's counterpart of `M.action` (keys.luau:98). ⇧⏎ sends `hub-open-generate`; `R` sends `hub-fold=recent` and `⇧T` sends `hub-fold=team` on the Review requests tab
 function M.hubAfterTyping(mode: HubState.Mode, outcome: Fields.Outcome): Action?   -- after a key typed into the search field
 ```
 
-`I` shows or hides Inactive and `R` shows or hides Recently opened (a fold is a control, so it has a key). A Recently opened row is selected by `State.recentKey` (`rc:<repo>#<n>`), moved to by `j`/`k` after the last card, and opened by ⏎ or a double-click. A card's action keys (`A`, `⇧A`, `C`, `M`, `U`, `,`, `X`) come from the selected card's `main` and `more`, so a click and a key send the same `Card.main.act`.
+`I` shows or hides Inactive on either tab, `⇧T` shows or hides Team requests and `R` shows or hides Recently opened (a fold is a control, so it has a key). `j`/`k` past the last card walk the open folds in order. A Recently opened row is selected by `State.recentKey` (`rc:<repo>#<n>`), moved to by `j`/`k` after the last card, and opened by ⏎ or a double-click. A card's action keys (`A`, `⇧A`, `C`, `M`, `U`, `,`, `X`) come from the selected card's `main` and `more`, so a click and a key send the same `Card.main.act`.
 
 `M.pickerAction` (`:109`) is deleted with the picker. Typing modes (`search`, `link`) return nil for letters, as `searchKey` does (`:22`).
 
@@ -964,6 +974,7 @@ Tern's clipboard is plain text: `cx:copy(text)` (`tern.d.luau:1136-1137`, and `W
 - **Host API:** `tern.timer`, `tern.process.run`, `tern.fetch`, `tern.kv` (`plugin-data/prguide/kv.json`), `tern.fs`, `cx:toast(level, title, body)`, the window-only `tern.chrome` (status-line segments and tab titles), `WindowCx:new_block`. Type definitions: `tern.d.luau` at the repo root.
 - **No OS notifications or tab badges for plugins.**
 - **CSS:** flexbox only (no grid), `light-dark()`, keyframes, transitions, `position: sticky`. **No SVG:** use text glyphs or Tern's named icons.
+- **Page scrolling:** Tern sends a plugin page that scrolls past about 1,100px back to its top when a wheel scroll or a `reveal` overshoots the bottom, and it drops held-key repeats before a block's `key` sees them (checked 2026-10-12). So the board fills the pane (`.gp-hub-fit`) and only its body scrolls; `reveal` and `{ "scroll", Paths.body, "start" }` act on that body. The fixes pages still scroll the page.
 - **Untested in Tern:** reduced-motion handling.
 - **`luau` has no file or env access** (`io` and `os.getenv` are nil in `/opt/homebrew/bin/luau`, checked). Tests can't read files, so fixtures are `.luau` modules (see Verification).
 
@@ -1002,7 +1013,7 @@ tern plugin reload
 - **Frozen clock.** Every rules test passes a fixed `now`, and `cases.luau` records it as `asOf`. No test reads the clock.
 - **Specific assertions the early issues must hold:**
   - `model`: every fixture key lands in its expected column and order, including 16 conflict cases (stale, active, draft), and the negatives: a bot's comment, "LGTM", and an approved PR with a leftover thread never make Needs fixes.
-  - `github`: `parseHub`, `parseThreads` and `parseChecks` consume the recorded responses. A fake runner asserts that `hub-f` sends no thread authors, and that the summed `rateLimit.cost` over a refresh is at most 18 (measured: hub-f 11, threads 5, checks 1). Each call keeps its own envelope; the figure is re-measured after the query changes and updated here.
+  - `github`: `parseHub`, `parseThreads` and `parseChecks` consume the recorded responses. A fake runner asserts that `hub-f` sends no thread authors, that each search pages by cursor up to 50 and halves a page GitHub drops, and that the summed `rateLimit.cost` over a refresh is at most 18 (measured: hub-f 1 a page, threads 5, checks 1). Each call keeps its own envelope; the figure is re-measured after the query changes and updated here.
   - `sync`: `schedule` and `diff` run on a fake clock from 0 to 3600 s. The probe fires at 60 s, a change or focus triggers a refresh within the 30 s debounce, checks poll at 30 s only while a check runs, and the total cost stays at most 220 points.
 
 ### Fixture plan
@@ -1011,7 +1022,7 @@ tern plugin reload
 
 | File | What it is |
 |---|---|
-| `fixtures/hub/raw-hub-f.json` | A recorded `hub-f.graphql` response, redacted. It needs the extended query below. |
+| `fixtures/hub/raw-hub-f.json` | A recorded hub-f response holding all three searches, redacted. The fake runner answers every search's page with it (each search reads its own alias); its envelope is a 20-PR page's, 1 point and 2,900 nodes. |
 | `fixtures/hub/raw-threads.json` | A recorded `threads.graphql` response, with unresolved threads by people and by bots. |
 | `fixtures/hub/raw-checks.json` | A recorded `checks.graphql` response with running, failing and passing PRs. |
 | `fixtures/hub/raw-*.luau` | Generated by `tools/luau-fixtures` from the JSON: `return { … }`, with null members dropped as `tern.json.decode` does. Both files are committed. `--check` fails when a twin is stale. |

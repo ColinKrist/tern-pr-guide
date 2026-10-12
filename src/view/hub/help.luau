@@ -15,6 +15,7 @@ local GROUPS: { Group } = {
 		{ ".", "Next pull request that needs you" },
 		{ "T", "Switch tab" },
 		{ "I", "Show or hide Inactive" },
+		{ "⇧T", "Show or hide Team requests" },
 		{ "R", "Show or hide Recently opened" },
 	} },
 	{ title = "The selected card", keys = {

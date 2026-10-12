@@ -1636,7 +1636,11 @@ ACTIONS["hub-open-generate"] = function(b, cx, value)
 end
 ACTIONS["open"] = openCard
 ACTIONS["hub-move"] = function(b, cx, direction)
-	if State.move(b.s, direction :: any) then revealSelected(b, cx) end
+	local moved = State.move(b.s, direction :: any)
+	-- On the top row the board scrolls to its start, so the column titles show too, even when k can't move
+	-- any higher.
+	if State.onTopRow(b.s) then return frameLater(cx, { { "scroll", Paths.body, "start" } }) end
+	if moved then revealSelected(b, cx) end
 end
 ACTIONS["hub-tab"] = function(b, cx, id)
 	if id == "mine" then
@@ -2525,13 +2529,25 @@ ACTIONS["hub-link-clear"] = function(b)
 	State.closeLink(b.s, true)
 end
 
--- ⏎: add a new pull request to Review requests, or show one the board already has.
+-- ⏎: add a new pull request to Review requests, add a folded one (Team requests, Inactive) to To review, or show
+-- one the board already has.
 ACTIONS["hub-link-add"] = function(b, cx)
 	local s = b.s
 	local target = State.linkTarget(s)
 	if target.kind == "board" then
 		State.closeLink(s, true)
 		if State.show(s, target.pr.key) then revealSelected(b, cx) end
+	elseif target.kind == "folded" then
+		local pr = target.pr
+		if not b.fixture then
+			local added, why = State.withAdded(readLocal().added, { repo = pr.repo, number = pr.number })
+			local problem = why or (if added then writeAdded(added) else nil)
+			if problem then return cx:toast("error", "Couldn't add #" .. pr.number .. ": " .. problem, pr.repo) end
+		end
+		State.closeLink(s, true)
+		keepCache(b, cx, function() State.markAdded(s, pr.key) end, pr.key, pr.headOid)
+		if b.closed then return end
+		if State.show(s, pr.key) then revealSelected(b, cx) end
 	elseif target.kind == "new" then
 		local ref: Model.PRRef = { repo = target.repo, number = target.number }
 		if b.fixture then return cx:toast("info", "The sample board doesn't add pull requests") end
@@ -2548,7 +2564,7 @@ end
 -- ⇧⏎: open it without adding it.
 ACTIONS["hub-link-open"] = function(b, cx)
 	local target = State.linkTarget(b.s)
-	if target.kind == "board" or target.kind == "new" then
+	if target.kind == "board" or target.kind == "folded" or target.kind == "new" then
 		State.closeLink(b.s, true)
 		openPr(b, cx, target.repo, target.number, b.generate)
 	end

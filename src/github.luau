@@ -52,20 +52,10 @@ export type Client = {
 -- Each of these mirrors docs/hub/queries/<file>.graphql without its `#` comment lines;
 -- `tools/luau-fixtures --check` fails when they differ.
 local HUB_QUERY = [=[
-query Hub($n: Int = 50) {
+query Hub($q: String!, $n: Int!, $after: String) {
   viewer { login }
   rateLimit { cost remaining resetAt limit used nodeCount }
-  mine: search(type: ISSUE, query: "is:pr is:open author:@me archived:false", first: $n) {
-    issueCount
-    pageInfo { hasNextPage endCursor }
-    nodes { ...Hub }
-  }
-  requested: search(type: ISSUE, query: "is:pr is:open review-requested:@me archived:false", first: $n) {
-    issueCount
-    pageInfo { hasNextPage endCursor }
-    nodes { ...Hub }
-  }
-  reviewed: search(type: ISSUE, query: "is:pr is:open reviewed-by:@me -author:@me archived:false", first: $n) {
+  mine: search(type: ISSUE, query: $q, first: $n, after: $after) {
     issueCount
     pageInfo { hasNextPage endCursor }
     nodes { ...Hub }
@@ -173,12 +163,24 @@ query Details($id: ID!) {
   } }
 }]=]
 
-local GRAPHQL_MS = 60_000
+-- GitHub stops a GraphQL query at about 10 s and answers 502, so a client wait past 30 s is a lost connection.
+local GRAPHQL_MS = 30_000
 local REST_MS = 30_000
 local RUN_MS = 120_000
 -- `nodes(ids:)` takes at most 250; a refresh reads the threads of this many PRs and leaves the rest unknown.
 local THREAD_IDS_MAX = 100
 local NO_LIMIT: RateLimit = { cost = 0, remaining = 0, limit = 0, resetAt = "" }
+-- hub-f runs once per search, by the alias `parseHub` reads (HUB_QUERY's is `mine`), all three at once.
+local SEARCHES = {
+	{ alias = "mine", q = "is:pr is:open author:@me archived:false" },
+	{ alias = "requested", q = "is:pr is:open review-requested:@me archived:false" },
+	{ alias = "reviewed", q = "is:pr is:open reviewed-by:@me -author:@me archived:false" },
+}
+-- A search reads up to SEARCH_MAX PRs, PAGE_SIZE at a time: a 20-PR page costs 1 point and about 5 s on busy
+-- repos, where 50 at once passes GitHub's limit. A page GitHub drops is asked again at half the size, down to PAGE_MIN.
+local SEARCH_MAX = 50
+local PAGE_SIZE = 20
+local PAGE_MIN = 5
 
 local M = {}
 
@@ -297,14 +299,14 @@ local function reviewsOf(node: any, viewer: string): Model.ReviewState
 		end
 	end
 	local requested: { string } = {}
+	local teams: { string } = {}
 	local requestedMe = false
 	for _, row in list(tbl(node.reviewRequests) and node.reviewRequests.nodes) do
 		local who = tbl(row.requestedReviewer)
-		local name = who and (str(who.login) or str(who.slug))
-		if name then
-			table.insert(requested, name)
-			if who.login == viewer then requestedMe = true end
-		end
+		local login, slug = who and str(who.login), who and str(who.slug)
+		if login or slug then table.insert(requested, (login or slug) :: string) end
+		if slug and not login then table.insert(teams, slug) end
+		if login == viewer then requestedMe = true end
 	end
 	local unresolved = 0
 	for _, row in list(tbl(node.reviewThreads) and node.reviewThreads.nodes) do
@@ -313,7 +315,7 @@ local function reviewsOf(node: any, viewer: string): Model.ReviewState
 	local comments = tbl(node.comments)
 	return {
 		decision = DECISIONS[str(node.reviewDecision) or ""] or "none",
-		latest = latest, mine = mine, requestedMe = requestedMe, requested = requested,
+		latest = latest, mine = mine, requestedMe = requestedMe, requested = requested, teams = teams,
 		unresolved = unresolved, threads = {}, threadsKnown = unresolved == 0,
 		comments = if comments then int(comments.totalCount) else 0,
 	}
@@ -694,12 +696,20 @@ local function decoded(out: Out, decode: Decode, operation: string, what: string
 	return nil, failure(operation, what, "GitHub sent a response that isn't JSON data", nil)
 end
 
+-- A failure worth one more try: our own timeout, a 502, 503 or 504 from GitHub's gateway (its answer to a query
+-- that ran past about 10 s), or GitHub's "Something went wrong" body for the same timeout.
+local function transient(out: Out): boolean
+	if out.timed_out or string.find(out.stderr, "HTTP 50[234]") then return true end
+	return string.find(out.stdout, "Something went wrong while executing your query", 1, true) ~= nil
+end
+
 local function validRef(ref: PRRef): boolean
 	return string.match(ref.repo, "^[%w_.%-]+/[%w_.%-]+$") ~= nil and ref.number > 0 and ref.number % 1 == 0
 end
 
--- hub-f, with one `pullRequest(number:)` alias per PR added by link, before the fragment.
-local function hubQuery(added: { PRRef }): string
+-- hub-f for the search `alias`, with one `pullRequest(number:)` alias per PR added by link, before the fragment.
+local function hubQuery(alias: string, added: { PRRef }): string
+	local query = if alias == "mine" then HUB_QUERY else (string.gsub(HUB_QUERY, "\n  mine: search%(", "\n  " .. alias .. ": search(", 1))
 	local lines: { string } = {}
 	local seen: { [string]: boolean } = {}
 	for _, ref in added do
@@ -710,9 +720,9 @@ local function hubQuery(added: { PRRef }): string
 			table.insert(lines, string.format('  added%d: repository(owner: "%s", name: "%s") { pullRequest(number: %d) { ...Hub } }', #lines, owner :: string, name :: string, ref.number))
 		end
 	end
-	if #lines == 0 then return HUB_QUERY end
-	local close = string.find(HUB_QUERY, "\n}\n\nfragment", 1, true) :: number
-	return string.sub(HUB_QUERY, 1, close) .. table.concat(lines, "\n") .. "\n" .. string.sub(HUB_QUERY, close + 1)
+	if #lines == 0 then return query end
+	local close = string.find(query, "\n}\n\nfragment", 1, true) :: number
+	return string.sub(query, 1, close) .. table.concat(lines, "\n") .. "\n" .. string.sub(query, close + 1)
 end
 
 -- Command builders: exact argv, no network. `Client.run` executes them.
@@ -937,12 +947,55 @@ function M.client(run: Runner, decode: Decode): Client
 		end
 	end
 
+	-- A read that fails transiently is run once more. Mutations go through `run`, never here.
 	local function graphql(query: string, extra: { string }, operation: string, what: string, done: (doc: any?, err: Error?) -> ())
 		local argv = { "gh", "api", "graphql", "-f", "query=" .. query }
 		table.move(extra, 1, #extra, #argv + 1, argv)
-		exec(argv, { timeout_ms = GRAPHQL_MS }, function(out)
-			done(decoded(out, decode, operation, what))
-		end)
+		local retried = false
+		local function attempt()
+			exec(argv, { timeout_ms = GRAPHQL_MS }, function(out)
+				if transient(out) and not retried then
+					retried = true
+					return attempt()
+				end
+				done(decoded(out, decode, operation, what))
+			end)
+		end
+		attempt()
+	end
+
+	local HUB_OP, HUB_WHAT = "gh api graphql: hub", "refresh pull requests"
+
+	-- One search of hub-f, page after page up to SEARCH_MAX. `done` gets the search as `{ nodes, pageInfo }`, the
+	-- first page's data (the viewer and the added aliases) and every page's envelope.
+	local function search(alias: string, q: string, added: { PRRef }, done: (found: any?, first: any?, calls: { RateLimit }, err: Error?) -> ())
+		local nodes: { any } = {}
+		local calls: { RateLimit } = {}
+		local first: any = nil
+		local function page(after: string?, size: number)
+			local want = math.min(size, SEARCH_MAX - #nodes)
+			local argv = { "gh", "api", "graphql", "-f", "query=" .. hubQuery(alias, if first == nil then added else {}), "-f", "q=" .. q, "-F", "n=" .. want }
+			if after then
+				table.insert(argv, "-f")
+				table.insert(argv, "after=" .. after)
+			end
+			exec(argv, { timeout_ms = GRAPHQL_MS }, function(out)
+				if transient(out) and want > PAGE_MIN then return page(after, math.max(PAGE_MIN, want // 2)) end
+				local doc, err = decoded(out, decode, HUB_OP, HUB_WHAT)
+				if err then return done(nil, nil, calls, err) end
+				local data = doc.data
+				table.insert(calls, rateLimitOf(data.rateLimit) or NO_LIMIT)
+				first = first or data
+				local block = tbl(data[alias])
+				local info = block and tbl(block.pageInfo)
+				for _, node in list(block and block.nodes) do table.insert(nodes, node) end
+				local more = info ~= nil and info.hasNextPage == true
+				local cursor = info and str(info.endCursor)
+				if more and cursor and #nodes < SEARCH_MAX then return page(cursor, want) end
+				done({ nodes = nodes, pageInfo = { hasNextPage = more } }, first, calls, nil)
+			end)
+		end
+		page(nil, PAGE_SIZE)
 	end
 
 	local function threadsFor(prs: { HubPR }, previous: { HubPR }): { string }
@@ -992,14 +1045,14 @@ function M.client(run: Runner, decode: Decode): Client
 	end
 
 	local function refresh(req: RefreshRequest, done: (value: Refresh?, err: Error?) -> ())
-		graphql(hubQuery(req.added), {}, "gh api graphql: hub", "refresh pull requests", function(doc, err)
-			if err then return done(nil, err) end
+		local calls: { RateLimit } = {}
+		local function searched(doc: any)
 			local hub = M.parseHub(doc)
 			if hub == nil then
-				return done(nil, failure("gh api graphql: hub", "refresh pull requests", "GitHub sent a response without the viewer", nil))
+				return done(nil, failure(HUB_OP, HUB_WHAT, "GitHub sent a response without the viewer", nil))
 			end
 			local result: Refresh = {
-				prs = hub.prs, viewer = hub.viewer, rateLimit = hub.rateLimit, calls = { hub.rateLimit },
+				prs = hub.prs, viewer = hub.viewer, rateLimit = calls[#calls] or NO_LIMIT, calls = calls,
 				truncated = hub.truncated, partial = nil,
 			}
 			local function finish()
@@ -1062,7 +1115,27 @@ function M.client(run: Runner, decode: Decode): Client
 				result.rateLimit = threads.rateLimit
 				finish()
 			end)
-		end)
+		end
+		-- The searches run at once and meet in one hub-f shaped document; the first failure ends the refresh.
+		local data: { [string]: any } = {}
+		local waiting, failed = #SEARCHES, false
+		for i, spec in SEARCHES do
+			if failed then break end
+			search(spec.alias, spec.q, if i == 1 then req.added else {}, function(found, first, pageCalls, err)
+				if failed then return end
+				table.move(pageCalls, 1, #pageCalls, #calls + 1, calls)
+				if err then
+					failed = true
+					return done(nil, err)
+				end
+				data[spec.alias] = found
+				for name, value in first do
+					if name == "viewer" or string.match(name :: string, "^added%d+$") then data[name] = data[name] or value end
+				end
+				waiting -= 1
+				if waiting == 0 then searched({ data = data }) end
+			end)
+		end
 	end
 
 	local function probe(since: string?, done: (value: Probe?, err: Error?) -> ())

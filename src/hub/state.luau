@@ -67,13 +67,16 @@ export type Selection = { group: Model.Group, count: number, verb: string, key: 
 export type MethodEdit = { repo: string, kind: "comment" | "label", field: Fields.Field }
 export type RepoOption = { repo: string, count: number, on: boolean }
 
+-- A fold of cards under the board (Inactive, Team requests). `open`: it shows its rows.
+export type CardFold = { column: Column, cards: { Card }, open: boolean }
+
 -- Everything a view reads, built by `project`.
 export type BoardData = {
 	tab: Tab,
 	columns: { { column: Column, cards: { Card } } }, -- the tab's columns, left to right, filtered and ordered
-	inactive: { Card }, -- the fold under "Your pull requests"
+	folds: { CardFold }, -- the tab's card folds, in M.FOLDS order
 	recent: { Opened }, -- the fold under "Review requests"
-	open: { inactive: boolean, recent: boolean }, -- which folds show their rows
+	open: { recent: boolean }, -- whether Recently opened shows its rows
 	grid: { { string } }, -- keys per column, for h j k l
 	counts: { mine: number, review: number }, -- your-turn cards per tab: the blue counts
 	repositories: { RepoOption },
@@ -119,7 +122,7 @@ export type State = {
 	menuCursor: number,
 	confirm: { kind: string, keys: { string } }?, -- kind "merge" (a GitHub method) or "learned" (a suggested comment command)
 	methodEdit: MethodEdit?, -- the merge menu is asking for a command or a label
-	folded: { [string]: boolean }, -- true: the fold is closed. Inactive and Recently opened start closed
+	folded: { [string]: boolean }, -- true: the fold is closed. Every fold starts closed
 	recent: { Opened }, -- hub.recent, newest first; the block sets it, `project` builds the Review requests fold from it
 	walking: boolean, -- Next up is being walked: the banner shows "2 of 11"
 	ringed: { [string]: Ring },
@@ -255,6 +258,12 @@ M.COLUMNS = {
 	review = { "to_review", "waiting_on_author", "approved" },
 } :: { [Tab]: { Column } }
 
+-- The card folds under each tab's board, top to bottom. Recently opened follows them on Review requests.
+M.FOLDS = {
+	mine = { "inactive" },
+	review = { "inactive", "team" },
+} :: { [Tab]: { Column } }
+
 M.SORTS = {
 	{ id = "repository" :: Sort, label = "Repository", sub = "Priority within each" },
 	{ id = "priority" :: Sort, label = "Priority", sub = "What to do first" },
@@ -265,7 +274,7 @@ M.SORTS = {
 
 local function emptyBoard(tab: Tab): BoardData
 	return {
-		tab = tab, columns = {}, inactive = {}, recent = {}, open = { inactive = false, recent = false },
+		tab = tab, columns = {}, folds = {}, recent = {}, open = { recent = false },
 		grid = {}, counts = { mine = 0, review = 0 }, repositories = {}, nextUp = nil, empty = true,
 	}
 end
@@ -287,7 +296,7 @@ function M.new(prs: { HubPR }, now: number, saved: any): State
 	local tab: Tab = "mine"
 	local sort: Sort = "repository"
 	local repositories: { [string]: boolean }? = nil
-	local folded: { [string]: boolean } = { inactive = true, recent = true }
+	local folded: { [string]: boolean } = { inactive = true, team = true, recent = true }
 	if type(saved) == "table" then
 		tab = validTab(saved.tab) or tab
 		sort = validSort(saved.sort) or sort
@@ -570,7 +579,12 @@ local function chipsFor(pr: HubPR, placement: Model.Placement, now: number): ({ 
 			table.insert(chips, chip("You commented", "wait"))
 		end
 	elseif column == "inactive" then
-		table.insert(chips, chip(if pr.draft then "Draft" else "No recent activity", "wait"))
+		table.insert(chips, chip(if pr.draft and pr.role == "mine" then "Draft" else "No recent activity", "wait"))
+	elseif column == "team" then
+		local owner = string.match(pr.repo, "^[^/]+") or pr.repo
+		local teams: { string } = {}
+		for _, slug in pr.reviews.teams do table.insert(teams, owner .. "/" .. slug) end
+		table.insert(chips, chip(if #teams > 0 then "Requested from " .. Model.reviewerList(teams) else "Requested from a team", "wait"))
 	end
 	return chips, detail, kind
 end
@@ -683,6 +697,14 @@ local function toCard(pr: HubPR, placement: Model.Placement, s: State): Card
 	}
 end
 
+-- Every list of cards on the board: the columns', then the folds', in order.
+function M.cardLists(s: State): { { Card } }
+	local out: { { Card } } = {}
+	for _, column in s.board.columns do table.insert(out, column.cards) end
+	for _, fold in s.board.folds do table.insert(out, fold.cards) end
+	return out
+end
+
 local function shortRepo(repo: string): string
 	return string.match(repo, "[^/]+$") or repo
 end
@@ -704,38 +726,29 @@ local function refreshNext(s: State)
 	s.board.nextUp = Model.nextUp(s.prs, s.now, if s.walking then s.selected else nil)
 end
 
--- A mark lasts while its card is still selectable, in this tab, matches the filter and, for Inactive, shows.
+-- A mark lasts while its card is still selectable and shows on the board (this tab, the filter, an open fold).
 -- Marks are of one group: a refresh that leaves two groups (a Ready card went behind main) keeps the first's.
-local function pruneMarks(s: State, byKey: { [string]: HubPR }, placements: { [string]: Model.Placement }, filter: Model.Filter, foldOpen: boolean)
+local function pruneMarks(s: State, byKey: { [string]: HubPR }, present: { [string]: boolean })
 	if next(s.marked) == nil then return end
 	local group: Model.Group? = nil
-	for _, column in s.board.columns do
-		for _, card in column.cards do
-			if s.marked[card.pr.key] and group == nil then group = Model.selectGroup(card.pr, s.now) end
-		end
-	end
-	if group == nil then
-		for _, card in s.board.inactive do
+	for _, cards in M.cardLists(s) do
+		for _, card in cards do
 			if s.marked[card.pr.key] and group == nil then group = Model.selectGroup(card.pr, s.now) end
 		end
 	end
 	local kept: { [string]: boolean } = {}
 	for key in s.marked do
 		local pr = byKey[key]
-		if pr and placements[key].tab == s.tab and Model.visible(pr, filter) then
-			local own = Model.selectGroup(pr, s.now)
-			if own ~= nil and own == group and (own == "ready" or foldOpen) then kept[key] = true end
-		end
+		if pr and present[key] and group ~= nil and Model.selectGroup(pr, s.now) == group then kept[key] = true end
 	end
 	s.marked = kept
 	if next(kept) == nil and s.confirm and (s.confirm.kind == "batch-merge" or s.confirm.kind == "batch-close") then
 		s.confirm = nil
 		if s.mode == "confirm" then s.mode = "board" end
 	end
-	for _, column in s.board.columns do
-		for _, card in column.cards do card.marked = kept[card.pr.key] == true end
+	for _, cards in M.cardLists(s) do
+		for _, card in cards do card.marked = kept[card.pr.key] == true end
 	end
-	for _, card in s.board.inactive do card.marked = kept[card.pr.key] == true end
 end
 
 -- Recomputes `s.board` from `s.prs` and the inputs. Keeps the selection only while its card is on the board.
@@ -782,17 +795,19 @@ function M.project(s: State)
 		table.insert(columns, { column = column, cards = cards })
 		table.insert(grid, keys)
 	end
-	local inactive: { Card } = {}
-	if s.tab == "mine" then
-		for _, pr in Model.order(inTab, "inactive", s.sort, s.now) do
-			table.insert(inactive, toCard(pr, placements[pr.key], s))
-		end
-	end
-	-- The fold opens on its own while a search is typed, so its matches show.
+	-- A fold opens on its own while a search is typed, so its matches show.
 	local searching = s.search.text ~= ""
-	local foldOpen = #inactive > 0 and (not s.folded.inactive or searching)
-	if foldOpen then
-		for _, card in inactive do present[card.pr.key] = true end
+	local folds: { CardFold } = {}
+	local folded = 0
+	for _, column in M.FOLDS[s.tab] do
+		local cards: { Card } = {}
+		for _, pr in Model.order(inTab, column, s.sort, s.now) do table.insert(cards, toCard(pr, placements[pr.key], s)) end
+		local open = #cards > 0 and (not s.folded[column] or searching)
+		if open then
+			for _, card in cards do present[card.pr.key] = true end
+		end
+		folded += #cards
+		table.insert(folds, { column = column, cards = cards, open = open })
 	end
 
 	-- Recently opened: under Review requests only, narrowed by the search, open on its own while a search finds some.
@@ -829,30 +844,35 @@ function M.project(s: State)
 	end)
 
 	s.board = {
-		tab = s.tab, columns = columns, inactive = inactive, recent = recent,
-		open = { inactive = foldOpen, recent = recentOpen },
+		tab = s.tab, columns = columns, folds = folds, recent = recent,
+		open = { recent = recentOpen },
 		grid = grid, counts = counts, repositories = repositories, nextUp = nil,
-		empty = total == 0 and #inactive == 0 and #recent == 0,
+		empty = total == 0 and folded == 0 and #recent == 0,
 	}
 	if s.selected and not present[s.selected] then s.selected = nil end
 	if not s.selected then s.walking = false end
 	refreshNext(s)
-	pruneMarks(s, byKey, placements, filter, foldOpen)
+	pruneMarks(s, byKey, present)
 end
 
 function M.mode(s: State): Mode
 	return s.mode
 end
 
+-- The card fold for `column` under this tab's board, if the tab has one.
+function M.fold(s: State, column: Column): CardFold?
+	for _, fold in s.board.folds do
+		if fold.column == column then return fold end
+	end
+	return nil
+end
+
 -- The card with `key` on the board.
 function M.card(s: State, key: string): Card?
-	for _, column in s.board.columns do
-		for _, card in column.cards do
+	for _, cards in M.cardLists(s) do
+		for _, card in cards do
 			if card.pr.key == key then return card end
 		end
-	end
-	for _, card in s.board.inactive do
-		if card.pr.key == key then return card end
 	end
 	return nil
 end
@@ -879,10 +899,19 @@ function M.selectedCard(s: State): Card?
 end
 
 local function refreshSelection(s: State)
-	for _, column in s.board.columns do
-		for _, card in column.cards do card.selected = card.pr.key == s.selected end
+	for _, cards in M.cardLists(s) do
+		for _, card in cards do card.selected = card.pr.key == s.selected end
 	end
-	for _, card in s.board.inactive do card.selected = card.pr.key == s.selected end
+end
+
+-- Whether cards in `column` show in a fold under the board instead of a column.
+function M.isFold(column: Column): boolean
+	return column == "inactive" or column == "team"
+end
+
+-- Opens the fold `column` is shown in, so a card about to be selected there shows.
+local function unfold(s: State, column: Column)
+	if M.isFold(column) then s.folded[column] = false end
 end
 
 function M.select(s: State, key: string?)
@@ -896,13 +925,15 @@ function M.select(s: State, key: string?)
 end
 
 -- Moves the selection one step: "down" and "up" within a column (down from the last card enters the open
--- Inactive fold; up from its first card returns), "left" and "right" to the card at the same height in the
--- next column that has any. Nothing selected: any direction selects the first card of the first column.
+-- folds, one after another; up from their first row returns), "left" and "right" to the card at the same height
+-- in the next column that has any. Nothing selected: any direction selects the first card of the first column.
 function M.move(s: State, direction: "up" | "down" | "left" | "right"): boolean
 	local grid = s.board.grid
 	local fold: { string } = {}
-	if s.board.open.inactive then
-		for _, card in s.board.inactive do table.insert(fold, card.pr.key) end
+	for _, cardFold in s.board.folds do
+		if cardFold.open then
+			for _, card in cardFold.cards do table.insert(fold, card.pr.key) end
+		end
 	end
 	if s.board.open.recent then
 		for _, opened in s.board.recent do table.insert(fold, M.recentKey(opened)) end
@@ -951,6 +982,14 @@ function M.move(s: State, direction: "up" | "down" | "left" | "right"): boolean
 		local next = grid[index]
 		if #next > 0 then return go(next[math.min(#next, row)]) end
 		index += step
+	end
+	return false
+end
+
+-- Whether the selected card is the first in its column, where the page's header sits just above it.
+function M.onTopRow(s: State): boolean
+	for _, keys in s.board.grid do
+		if s.selected ~= nil and keys[1] == s.selected then return true end
 	end
 	return false
 end
@@ -1037,7 +1076,7 @@ function M.walk(s: State): boolean
 				s.search = Fields.create("")
 				s.repositories = nil
 			end
-			if placement.column == "inactive" then s.folded.inactive = false end
+			unfold(s, placement.column)
 			s.mode, s.menu = "board", nil
 			M.project(s)
 			M.select(s, pr.key)
@@ -1319,13 +1358,10 @@ end
 -- The marked cards in column order: Ready's cards, or the Inactive rows.
 function M.markedCards(s: State): { Card }
 	local out: { Card } = {}
-	for _, column in s.board.columns do
-		for _, card in column.cards do
+	for _, cards in M.cardLists(s) do
+		for _, card in cards do
 			if s.marked[card.pr.key] then table.insert(out, card) end
 		end
-	end
-	for _, card in s.board.inactive do
-		if s.marked[card.pr.key] then table.insert(out, card) end
 	end
 	return out
 end
@@ -1353,7 +1389,8 @@ end
 -- Pull requests Close stale would select: no activity for 7 days, not a draft.
 function M.staleCount(s: State): number
 	local count = 0
-	for _, card in s.board.inactive do
+	local fold = M.fold(s, "inactive")
+	for _, card in if fold then fold.cards else {} do
 		if Model.stale(card.pr, s.now) then count += 1 end
 	end
 	return count
@@ -1364,7 +1401,8 @@ function M.markStale(s: State): number
 	if s.tab ~= "mine" then return 0 end
 	local marked: { [string]: boolean } = {}
 	local count = 0
-	for _, card in s.board.inactive do
+	local fold = M.fold(s, "inactive")
+	for _, card in if fold then fold.cards else {} do
 		if Model.stale(card.pr, s.now) then
 			marked[card.pr.key] = true
 			count += 1
@@ -1478,13 +1516,21 @@ function M.branchUpdated(s: State, key: string)
 	M.project(s)
 end
 
+-- Marks a pull request on the board as added by link, which moves a folded review request into To review.
+function M.markAdded(s: State, key: string)
+	for _, pr in s.prs do
+		if pr.key == key then pr.addedByMe = true end
+	end
+	M.project(s)
+end
+
 -- Removes a pull request the viewer added by link: it leaves the board unless it is on it for another
 -- reason, in which case only the "Added by you" mark goes. A refresh settles the rest.
 function M.unadd(s: State, key: string)
 	for _, pr in s.prs do
 		if pr.key == key then
 			pr.addedByMe = false
-			if not pr.reviews.requestedMe and pr.reviews.mine == nil then return M.dropPr(s, key) end
+			if not pr.reviews.requestedMe and pr.reviews.mine == nil and #pr.reviews.teams == 0 then return M.dropPr(s, key) end
 		end
 	end
 	M.project(s)
@@ -1499,6 +1545,7 @@ export type LinkTarget =
 	| { kind: "invalid" }
 	| { kind: "new", repo: string, number: number }
 	| { kind: "board", repo: string, number: number, pr: HubPR }
+	| { kind: "folded", repo: string, number: number, pr: HubPR, column: Column } -- a review request in Inactive or Team requests
 
 -- The pull request the add field's text names: a github.com pull request link, or `owner/repo#123`.
 local function parseRef(text: string): Model.PRRef?
@@ -1536,7 +1583,13 @@ function M.linkTarget(s: State): LinkTarget
 	local ref = parseRef(text)
 	if not ref then return { kind = "invalid" } end
 	local pr = M.find(s, ref.repo, ref.number)
-	if pr then return { kind = "board", repo = pr.repo, number = pr.number, pr = pr } end
+	if pr then
+		local placement = Model.placement(pr, s.now)
+		if placement.tab == "review" and M.isFold(placement.column) then
+			return { kind = "folded", repo = pr.repo, number = pr.number, pr = pr, column = placement.column }
+		end
+		return { kind = "board", repo = pr.repo, number = pr.number, pr = pr }
+	end
 	return { kind = "new", repo = ref.repo, number = ref.number }
 end
 
@@ -1554,7 +1607,7 @@ function M.closeLink(s: State, clear: boolean)
 end
 
 -- Brings the pull request `key` into view and selects it: its tab, with the search and repository filter
--- cleared if they hide it, and the Inactive fold open if it sits there. Returns whether it was found.
+-- cleared if they hide it, and its fold open if it sits in one. Returns whether it was found.
 function M.show(s: State, key: string): boolean
 	for _, pr in s.prs do
 		if pr.key == key then
@@ -1562,7 +1615,7 @@ function M.show(s: State, key: string): boolean
 			s.tab = placement.tab
 			s.search = Fields.create("")
 			s.repositories = nil
-			if placement.column == "inactive" then s.folded.inactive = false end
+			unfold(s, placement.column)
 			s.mode, s.menu = "board", nil
 			M.project(s)
 			M.select(s, key)

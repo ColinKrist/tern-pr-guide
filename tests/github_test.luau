@@ -184,6 +184,16 @@ local function testSearchesAndAliases()
 	assert(#hub.prs == 3 and roles.A == "mine" and roles.B == "review" and roles.C == "mine")
 	assert(hub.prs[2].id == "B" and hub.prs[3].id == "C", "added PRs in alias order")
 	assert(hub.truncated == true)
+	-- Review requests: users by login, teams by slug; the team slugs are also listed apart.
+	local asked = node("D", "x") :: any
+	asked.reviewRequests = { nodes = {
+		{ requestedReviewer = { __typename = "Team", slug = "web-platform" } },
+		{ requestedReviewer = { __typename = "User", login = "me" } },
+		{ requestedReviewer = { __typename = "User", login = "devon" } },
+	} }
+	local reviews = (Github.parseHub({ data = { viewer = { login = "me" }, requested = { nodes = { asked } } } }) :: any).prs[1].reviews
+	assert(table.concat(reviews.requested, ",") == "web-platform,me,devon" and table.concat(reviews.teams, ",") == "web-platform")
+	assert(reviews.requestedMe == true)
 	-- Auto-merge asked for again after the queue removal is not a failure; asked for before is.
 	local function failing(auto: any): any
 		local out = Github.parseHub({ data = { viewer = { login = "me" }, mine = { nodes = { {
@@ -201,27 +211,32 @@ local function testRefresh()
 	local client, fake = fixtureClient()
 	local value, err = first(function(done) client.refresh({ added = {}, previous = {} }, done) end)
 	assert(err == nil, "refresh failed")
-	-- The hub-f request: one gh call, the query as its fifth argument, no thread authors in it.
-	local hubCall = fake.calls[1]
-	assert(#hubCall.argv == 5 and hubCall.stdin == nil and hubCall.cwd == nil)
-	for i, word in BASE do assert(hubCall.argv[i] == word) end
-	local query = hubCall.argv[5]
-	assert(string.sub(query, 1, 17) == "query=query Hub($")
+	-- hub-f: one request per search, the search text and page size as variables, no thread authors in it.
+	local searches = { "author:@me", "review-requested:@me", "reviewed-by:@me -author:@me" }
+	for i, text in searches do
+		local hubCall = fake.calls[i]
+		assert(#hubCall.argv == 9 and hubCall.stdin == nil and hubCall.cwd == nil)
+		for j, word in BASE do assert(hubCall.argv[j] == word) end
+		assert(string.sub(hubCall.argv[5], 1, 17) == "query=query Hub($")
+		same({ table.unpack(hubCall.argv, 6) }, { "-f", "q=is:pr is:open " .. text .. " archived:false", "-F", "n=20" }, "search " .. i)
+	end
+	assert(string.find(fake.calls[2].argv[5], "\n  requested: search(", 1, true) ~= nil, "each search under the alias parseHub reads")
+	local query = fake.calls[1].argv[5]
 	assert(string.find(query, "reviewThreads(first: 100) { totalCount nodes { isResolved } }", 1, true) ~= nil)
 	assert(not string.find(query, "isResolved comments", 1, true), "hub-f must not select thread authors")
 	assert(not string.find(query, "comments(first", 1, true), "hub-f must not select thread comments")
 	-- Threads only for PRs with an unresolved thread, none of which is cached.
 	local expected = { "PR_acme/api#106", "PR_acme/api#108", "PR_acme/api#118", "PR_acme/api#119", "PR_acme/api#120", "PR_acme/api#121" }
-	local threadsCall = fake.calls[2]
+	local threadsCall = fake.calls[4]
 	assert(#threadsCall.argv == 5 + 2 * #expected and threadsCall.stdin == nil and threadsCall.cwd == nil)
 	assert(string.sub(threadsCall.argv[5], 1, 21) == "query=query Threads($")
 	for i, id in expected do
 		assert(threadsCall.argv[4 + 2 * i] == "-f" and threadsCall.argv[5 + 2 * i] == "ids[]=" .. id)
 	end
-	fake.expectOnly(2)
+	fake.expectOnly(4)
 
 	assert(value.viewer == "jubbydev" and #value.prs == 20 and value.partial == nil and value.truncated == false)
-	assert(#value.calls == 2 and value.rateLimit == value.calls[2])
+	assert(#value.calls == 4 and value.rateLimit == value.calls[4])
 	for _, pr in value.prs do
 		if pr.key ~= "acme/api#120" then same(pr, byKey[pr.key], pr.key) end
 	end
@@ -233,7 +248,7 @@ local function testRefresh()
 	assert(checksErr == nil)
 	local total = update.rateLimit.cost
 	for _, call in value.calls do total += call.cost end
-	assert(total == RawHub.data.rateLimit.cost + RawThreads.data.rateLimit.cost + RawChecks.data.rateLimit.cost)
+	assert(total == #searches * RawHub.data.rateLimit.cost + RawThreads.data.rateLimit.cost + RawChecks.data.rateLimit.cost)
 	assert(total <= COST_LIMIT, "a refresh costs " .. total .. " points, the limit is " .. COST_LIMIT)
 	assert(update.byId["PR_acme/web#104"].checks.state == "failing")
 	-- checks: one query, the ids as array fields.
@@ -243,12 +258,12 @@ local function testRefresh()
 	assert(call.argv[6] == "-f" and call.argv[7] == "ids[]=PR_acme/web#104" and call.argv[8] == "-f" and call.argv[9] == "ids[]=PR_acme/api#114")
 	checksFake.expectOnly(1)
 
-	-- Nothing changed since the last refresh: hub-f alone, no threads call (a threads call would be unmatched).
+	-- Nothing changed since the last refresh: the searches alone, no threads call (a threads call would be unmatched).
 	local onlyHub = FakeRunner.new({ hubEntry({ stdout = "hub-f" }) })
 	local cached = Github.client(onlyHub.run, decoder(BODIES))
 	local again, againErr = first(function(done) cached.refresh({ added = {}, previous = value.prs }, done) end)
-	assert(againErr == nil and #again.calls == 1)
-	onlyHub.expectOnly(1)
+	assert(againErr == nil and #again.calls == 3)
+	onlyHub.expectOnly(3)
 	same(again.prs[11].reviews.threads, value.prs[11].reviews.threads, "cached threads")
 	for _, pr in again.prs do
 		if pr.key ~= "acme/api#120" then same(pr, byKey[pr.key], pr.key) end
@@ -263,10 +278,10 @@ local function testRefresh()
 	local changed = Github.client(oneThread.run, decoder(BODIES))
 	local _, changedErr = first(function(done) changed.refresh({ added = {}, previous = previous }, done) end)
 	assert(changedErr == nil)
-	oneThread.expectOnly(2)
-	assert(#oneThread.calls[2].argv == 7 and oneThread.calls[2].argv[7] == "ids[]=PR_acme/api#119", "only #119 has threads and changed")
+	oneThread.expectOnly(4)
+	assert(#oneThread.calls[4].argv == 7 and oneThread.calls[4].argv[7] == "ids[]=PR_acme/api#119", "only #119 has threads and changed")
 
-	-- Added by link: one alias per valid, distinct PR, ahead of the fragment.
+	-- Added by link: one alias per valid, distinct PR, ahead of the fragment, on the first search only.
 	local added, addedFake = fixtureClient()
 	first(function(done)
 		added.refresh({ added = {
@@ -277,6 +292,51 @@ local function testRefresh()
 	local aliased = addedFake.calls[1].argv[5]
 	assert(string.find(aliased, '  added0: repository(owner: "acme", name: "web") { pullRequest(number: 999) { ...Hub } }\n  added1: repository(owner: "acme", name: "api") { pullRequest(number: 12) { ...Hub } }\n}\n\nfragment Hub on PullRequest {', 1, true) ~= nil)
 	assert(not string.find(aliased, "added2", 1, true))
+	assert(not string.find(addedFake.calls[2].argv[5], "added0", 1, true) and not string.find(addedFake.calls[3].argv[5], "added0", 1, true))
+end
+
+-- A search reads its next page by cursor, up to 50 PRs. A page GitHub drops (a 502, or its "Something went
+-- wrong" timeout body) is asked again at half the size, and later pages keep the smaller size.
+local function testPagingAndRetry()
+	local function page(alias: string, from: number, count: number, cursor: string?): any
+		local nodes = {}
+		for n = from, from + count - 1 do table.insert(nodes, { id = "PR_" .. n, number = n, repository = { nameWithOwner = "o/r" } }) end
+		local data: any = { viewer = { login = "me" }, rateLimit = { cost = 1, remaining = 4000, limit = 5000, resetAt = "" } }
+		data[alias] = { nodes = nodes, pageInfo = { hasNextPage = cursor ~= nil, endCursor = cursor } }
+		return { data = data }
+	end
+	local bodies = {
+		mine1 = page("mine", 1, 10, "m10"), mine2 = page("mine", 11, 5, nil),
+		req1 = page("requested", 101, 20, "r20"), req2 = page("requested", 121, 20, "r40"), req3 = page("requested", 141, 10, "r50"),
+		none = page("reviewed", 1, 0, nil),
+	}
+	local MINE, REQ = "open author:@me archived:false -F ", "review-requested:@me archived:false -F "
+	local fake = FakeRunner.new({
+		{ prefix = BASE, contains = MINE .. "n=10 -f after=m10", reply = { status = 1, stdout = "Something went wrong while executing your query. This may be the result of a timeout" } },
+		{ prefix = BASE, contains = MINE .. "n=5 -f after=m10", reply = { stdout = "mine2" } },
+		{ prefix = BASE, contains = MINE .. "n=10", reply = { stdout = "mine1" } },
+		{ prefix = BASE, contains = MINE .. "n=20", reply = { status = 1, stdout = "<html>502 Bad Gateway</html>", stderr = "gh: HTTP 502\n" } },
+		{ prefix = BASE, contains = REQ .. "n=20 -f after=r20", reply = { stdout = "req2" } },
+		{ prefix = BASE, contains = REQ .. "n=10 -f after=r40", reply = { stdout = "req3" } },
+		{ prefix = BASE, contains = REQ .. "n=20", reply = { stdout = "req1" } },
+		{ prefix = BASE, contains = "reviewed-by:@me", reply = { stdout = "none" } },
+	})
+	local client = Github.client(fake.run, decoder(bodies))
+	local value, err = first(function(done) client.refresh({ added = {}, previous = {} }, done) end)
+	assert(err == nil, "refresh failed")
+	fake.expectOnly(8)
+	assert(#value.prs == 15 + 50, "all of mine and the first 50 requested: " .. #value.prs)
+	assert(value.truncated == true, "requested has more than 50")
+	assert(#value.calls == 6, "an envelope per page that answered")
+end
+
+local function testRefreshGivesUp()
+	-- Every page dropped: the first search is asked at 20, 10 and 5, then the refresh fails without the others.
+	local fake = FakeRunner.new({ { prefix = BASE, reply = { status = 1, stderr = "gh: HTTP 502\n" } } })
+	local value, err = first(function(done) Github.client(fake.run, decoder({})).refresh({ added = {}, previous = {} }, done) end)
+	assert(value == nil and err.message == "Couldn't refresh pull requests: HTTP 502")
+	fake.expectOnly(3)
+	for i, size in { "n=20", "n=10", "n=5" } do assert(fake.calls[i].argv[9] == size, fake.calls[i].argv[9]) end
 end
 
 local function testPartialThreadsFailure()
@@ -285,7 +345,12 @@ local function testPartialThreadsFailure()
 	})
 	local client = Github.client(fake.run, decoder(BODIES))
 	local value, err = first(function(done) client.refresh({ added = {}, previous = {} }, done) end)
-	assert(err == nil and #value.prs == 20 and #value.calls == 1)
+	assert(err == nil and #value.prs == 20 and #value.calls == 3)
+	local asked = 0
+	for _, call in fake.calls do
+		if string.find(call.argv[5], "query Threads(", 1, true) then asked += 1 end
+	end
+	assert(asked == 2, "a dropped read is asked once more")
 	assert(value.partial.message == "Couldn't read review threads: HTTP 502: Bad Gateway")
 	assert(value.partial.operation == "gh api graphql: threads")
 	for _, pr in value.prs do
@@ -506,6 +571,8 @@ return function()
 	testParsersNeverThrow()
 	testSearchesAndAliases()
 	testRefresh()
+	testPagingAndRetry()
+	testRefreshGivesUp()
 	testPartialThreadsFailure()
 	testErrors()
 	testProbeAndRun()

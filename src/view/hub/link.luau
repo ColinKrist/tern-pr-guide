@@ -36,12 +36,14 @@ local function panel(target: State.LinkTarget): Node?
 		})
 	end
 	local pr = target.pr
-	local where = if pr.role == "mine" then "your pull request, already on the board" else "already in Review requests"
+	local where = if target.kind == "folded" then "in " .. (if target.column == "team" then "Team requests" else "Inactive")
+		elseif pr.role == "mine" then "your pull request, already on the board"
+		else "already in Review requests"
 	return el("div", { class = "gp-hub-link", key = "link" }, {
 		span("gp-hub-link-t", pr.title),
 		span("gp-hub-link-m", pr.repo .. " #" .. pr.number .. " · @" .. pr.author .. " · " .. where),
 		el("span", { class = "gp-hub-link-acts" }, {
-			button("Show on the board", "⏎", "hub-link-add", true),
+			button(if target.kind == "folded" then "Add to review" else "Show on the board", "⏎", "hub-link-add", true),
 			button("Open", "⇧⏎", "hub-link-open", false),
 		}),
 	})

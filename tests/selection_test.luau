@@ -138,7 +138,7 @@ local function testCloseStale()
 	assert(State.markStale(s) == 3)
 	assert(markedKeys(s) == join(Fixture.stale), markedKeys(s))
 	assert(s.marked["acme/web#411"] == nil and s.marked["acme/web#412"] == nil)
-	assert(s.board.open.inactive and State.selection(s).group == "inactive" and State.selection(s).count == 3)
+	assert((State.fold(s, "inactive") :: State.CardFold).open and State.selection(s).group == "inactive" and State.selection(s).count == 3)
 	-- A draft is selected only by Space, and joins the selection.
 	assert(State.toggleMark(s, "acme/web#411"))
 	assert(State.selection(s).count == 4)

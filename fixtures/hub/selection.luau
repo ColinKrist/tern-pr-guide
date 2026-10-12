@@ -15,7 +15,7 @@ local function pr(repo: string, n: number, title: string, created: string, activ
 		checks = { state = "passing", passing = 4, failing = 0, pending = 0 },
 		conflicts = false, behind = false,
 		reviews = {
-			decision = "approved", latest = {}, mine = nil, requestedMe = false, requested = {}, unresolved = 0,
+			decision = "approved", latest = {}, mine = nil, requestedMe = false, requested = {}, teams = {}, unresolved = 0,
 			threads = {}, threadsKnown = true, comments = 0,
 		},
 		mergeFailure = nil, pending = nil, tandem = false, addedByMe = false,
@@ -47,7 +47,7 @@ local prs: { any } = {
 	pr("acme/mono", 414, "Chore: bump Expo SDK and fix the deprecated imports", "2026-09-03T09:00:00Z", "2026-09-20T09:00:00Z", { conflicts = true }),
 	-- #415 has exactly 7 days of silence, which is still active (In review); #416 is an hour past it, so stale.
 	pr("acme/api", 415, "Vocab: group words by root", "2026-09-30T09:00:00Z", "2026-10-02T12:00:00Z",
-		{ reviews = { decision = "review_required", latest = {}, mine = nil, requestedMe = false, requested = {}, unresolved = 0, threads = {}, threadsKnown = true, comments = 0 } }),
+		{ reviews = { decision = "review_required", latest = {}, mine = nil, requestedMe = false, requested = {}, teams = {}, unresolved = 0, threads = {}, threadsKnown = true, comments = 0 } }),
 	pr("acme/api", 416, "Grammar notes: render baybayin glyphs with the bundled font", "2026-09-30T09:00:00Z", "2026-10-02T11:00:00Z"),
 }
 
