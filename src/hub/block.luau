@@ -153,14 +153,6 @@ local function options(args: { string }): ({ generate: boolean, fixture: string?
 	return out, nil
 end
 
--- A card action whose effect arrives with its own change: the card shows its label and key already.
-local function notYet(what: string): Handler
-	return function(b, cx, value)
-		local card = State.card(b.s, value)
-		cx:toast("info", what .. " isn't available yet", if card then card.pr.key else nil)
-	end
-end
-
 -- Opens PR `number` of `slug` ("owner/repo") in the guide. The block can't open blocks, so it finds a
 -- checkout of the repo (beside the hub's folder, else PR Guide's own copy) and opens a link the window
 -- routes to the guide (`State.openPlan`). With no checkout and no copy to make, it says why and opens
@@ -272,13 +264,6 @@ local function readLocal(): Sync.Local
 		end
 	end
 	return { added = added, tandem = {} }
-end
-
--- The local facts for a refresh of `prs`, with Tandem's watched PRs flagged by the board's own keys.
-local function withTandem(b: Block, prs: { Model.HubPR }): Sync.Local
-	local facts = readLocal()
-	facts.tandem = Model.tandemFlags(b.watched, prs)
-	return facts
 end
 
 -- `prs` with Tandem's flag set. The list a fixture hands over is shared data, so a flagged PR is a copy of it.
