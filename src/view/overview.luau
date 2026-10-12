@@ -68,7 +68,7 @@ local function stage(r: Review.Review, st: Guide.Stage, n: number, flagged: bool
   table.insert(kids, el("div", { class = "gp-fl-gap" }))
   table.insert(kids, cell(st.after, "Removed", if removed then nil else st.tone, st.note, st.change, if removed then nil else go))
  end
- return el("div", { class = "gp-fs" .. (if st.tone then "" else " gp-fs-same"), key = "s" .. n }, kids)
+ return el("div", { class = "gp-fs" .. (if st.tone then "" else " gp-fs-same") .. (if flagged then " gp-fs-flag" else ""), key = "s" .. n }, kids)
 end
 
 local function arrows(on: boolean): Node
