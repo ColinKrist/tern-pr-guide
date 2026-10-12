@@ -1636,7 +1636,11 @@ ACTIONS["hub-open-generate"] = function(b, cx, value)
 end
 ACTIONS["open"] = openCard
 ACTIONS["hub-move"] = function(b, cx, direction)
-	if State.move(b.s, direction :: any) then revealSelected(b, cx) end
+	local moved = State.move(b.s, direction :: any)
+	-- On the top row the board scrolls to its start, so the column titles show too, even when k can't move
+	-- any higher.
+	if State.onTopRow(b.s) then return frameLater(cx, { { "scroll", Paths.body, "start" } }) end
+	if moved then revealSelected(b, cx) end
 end
 ACTIONS["hub-tab"] = function(b, cx, id)
 	if id == "mine" then

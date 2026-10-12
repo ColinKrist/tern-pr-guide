@@ -28,7 +28,7 @@ local EMPTY: { [Model.Column]: string } = {
 local M = {}
 
 local function rootClass(s: State.State): string
-	return "gp-root gp-hub" .. (if s.keyed then "" else " gp-soft")
+	return "gp-root gp-hub gp-hub-fit" .. (if s.keyed then "" else " gp-soft")
 end
 
 local function tabs(s: State.State): Node
