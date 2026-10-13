@@ -100,12 +100,49 @@ local function guides(s: State.State): Node
 	})
 end
 
--- Settings: the model and lens menu on the hub's agent, then where links open and background guides.
+-- Auto-land's try cap, as a − n + stepper.
+local function landTries(s: State.State): Node
+	local tries = s.landSettings.tries
+	return el("div", { class = "gp-hs-row", key = "land-tries" }, {
+		el("div", { class = "gp-hs-top", key = "top" }, {
+			span("gp-md-label", "Auto-land tries"),
+			Ui.spacer(),
+			el("div", { class = "gp-md-segs", key = "segs" }, {
+				el("span", { class = "gp-md-seg", key = "less", text = "−", aria = "Fewer tries", actions = { click = "hub-land-tries=-1" } }),
+				el("span", { class = "gp-md-seg gp-md-seg-on", key = "n", text = tostring(tries) }),
+				el("span", { class = "gp-md-seg", key = "more", text = "+", aria = "More tries", actions = { click = "hub-land-tries=+1" } }),
+			}),
+			Ui.keys("- +"),
+		}),
+	})
+end
+
+-- Auto-land's dequeue label as a chip, or the field that edits it.
+local function landLabel(s: State.State): Node
+	local edit = s.landEdit
+	local kids: { Node } = { span("gp-md-label", "Auto-land dequeue label"), Ui.spacer() }
+	if edit then
+		return el("div", { class = "gp-hs-row", key = "land-label" }, {
+			el("div", { class = "gp-hs-top", key = "top" }, kids),
+			el("div", { class = "gp-hs-top gp-hm-edit", key = "edit" }, {
+				el("div", { class = "gp-sr-box gp-hm-field", key = "box" }, { Ui.field(edit, "field", "blocked") }),
+				Ui.keys("⏎"),
+			}),
+		})
+	end
+	table.insert(kids, el("span", { class = "gp-hc-chip gp-hc-chip-wait", key = "label", text = s.landSettings.label, actions = { click = "hub-land-label" } }))
+	table.insert(kids, Ui.keys("⇧D"))
+	return el("div", { class = "gp-hs-row", key = "land-label" }, { el("div", { class = "gp-hs-top", key = "top" }, kids) })
+end
+
+-- Settings: the model and lens menu on the hub's agent, then where links open, background guides and auto-land.
 local function settings(s: State.State): { Node }
 	local agent, box = s.agent, s.models
 	local kids: { Node } = if agent and box then ModelPanel.parts(box, agent) else { span("gp-md-empty", "Couldn't find the agent: no models to choose from.") }
 	table.insert(kids, links(s))
 	table.insert(kids, guides(s))
+	table.insert(kids, landTries(s))
+	table.insert(kids, landLabel(s))
 	return kids
 end
 

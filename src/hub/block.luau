@@ -763,7 +763,7 @@ local block: BlockDef<Block> = {
 				probedAt = now, probeChanged = false, focusedAt = if live then now else nil, checksAt = nil,
 				refreshTried = nil, lastModified = if cache then cache.lastModified else nil,
 			},
-			closed = false, refetch = false, show = nil, step = 0, records = {}, detecting = {}, flakeTried = {},
+			closed = false, refetch = false, show = nil, step = 0, sampleLanding = {}, records = {}, detecting = {}, flakeTried = {},
 			histories = nil :: any, pages = { list = {}, shown = nil, opening = {} },
 			skew = if fixture then Host.time() - now else 0, chats = {},
 		}
@@ -784,6 +784,8 @@ local block: BlockDef<Block> = {
 			local data: any = FIXTURES[fixture]()
 			for repo, resolution in (data.merges or {}) do s.merges[repo] = resolution end
 			for repo, allowed in (data.autoMerge or {}) do s.autoMerge[repo] = allowed end
+			for key, record in (data.landing or {}) do b.sampleLanding[key] = table.clone(record) end
+			State.stampLanding(s, b.sampleLanding)
 			for key, agent in (data.agents or {}) do s.agents[key] = agent end
 			if data.runningKey then
 				b.agentFlight = { key = data.runningKey, settled = false, stopping = false, releasing = false, fixtureStep = data.runningStep }
@@ -877,6 +879,11 @@ local block: BlockDef<Block> = {
 		end
 		if s.mode == "menu" and s.methodEdit then
 			Fields.key(s.methodEdit.field, key)
+			return true
+		end
+		if s.mode == "menu" and s.landEdit then
+			s.keyed = true
+			Fields.key(s.landEdit, key)
 			return true
 		end
 		if s.mode == "menu" and s.menu == "settings" and s.models then

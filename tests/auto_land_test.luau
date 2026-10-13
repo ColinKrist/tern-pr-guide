@@ -4,6 +4,8 @@
 local AutoLand = require("../src/hub/auto-land")
 local Cases: any = require("../fixtures/hub/cases")
 local Github = require("../src/github")
+local Keys = require("../src/keys")
+local State = require("../src/hub/state")
 local Model = require("../src/hub/model")
 local RawAutoLand: any = require("../fixtures/hub/raw-auto-land")
 
@@ -329,7 +331,107 @@ local function testCodecs()
 	assert(AutoLand.loadSettings({ tries = "7", label = "   " }).tries == 5 and AutoLand.loadSettings({ label = "   " }).label == "blocked")
 end
 
+local function acts(list: { State.CardAction }): string
+	local out = {}
+	for _, item in list do table.insert(out, item.act) end
+	return table.concat(out, ",")
+end
+
+local function find(list: { State.CardAction }, act: string): State.CardAction?
+	for _, item in list do
+		if item.act == act then return item end
+	end
+	return nil
+end
+
+-- The sample board's cards, the toggle's key, and Settings' keys and state.
+local function testBoard()
+	local s = State.new(Cases.prs, Cases.asOf, nil)
+	for repo, resolution in Cases.merges do s.merges[repo] = resolution end
+	State.stampLanding(s, Cases.landing)
+	for _, case in Cases.prs do assert(case.autoLand == nil and case.pending == nil, "stamping leaves the fixture's PRs alone") end
+
+	local trying = State.card(s, "acme/api#120") :: State.Card
+	assert(trying.column == "in_review" and #trying.chips == 1, "an on mark is the card's one chip")
+	assert(trying.chips[1].text == "Auto-land · try 2 of 5" and trying.chips[1].kind == "agent")
+	local off = find(trying.more, "card-autoland") :: State.CardAction
+	assert(off.label == "Turn off auto-land" and off.key == "⇧L" and find(trying.more, "card-auto") == nil, "no Merge when ready while it is on")
+
+	local queued = State.card(s, "acme/api#110") :: State.Card
+	assert(queued.column == "ready" and queued.chips[1].text == "Auto-land" and queued.chips[1].kind == "agent")
+	assert(queued.note == "Labeled merge-queue · waiting for the merge" and queued.main and queued.main.act == "card-cancel")
+
+	local stopped = State.card(s, "acme/mono#206") :: State.Card
+	assert(stopped.column == "needs_fixes" and stopped.chips[1].text == "Auto-land stopped" and stopped.chips[1].kind == "bad")
+	assert(stopped.chips[2].text == "Resolve conflicts" and stopped.detail == "Merge conflict", "the reason is the detail")
+	assert((find(stopped.more, "card-autoland") :: State.CardAction).label == "Turn on auto-land", "a stopped card offers it again")
+
+	assert((find((State.card(s, "acme/api#109") :: State.Card).more, "card-autoland") :: State.CardAction).label == "Turn on auto-land", "a supported Ready card offers it")
+	assert(find((State.card(s, "acme/web#104") :: State.Card).more, "card-autoland") == nil, "a repo with no supported method doesn't")
+	State.setTab(s, "review")
+	assert(find((State.card(s, "acme/api#308") :: State.Card).more, "card-autoland") == nil, "nor does a review request")
+	State.setTab(s, "mine")
+
+	-- With an on mark in Needs fixes (a conflict stays a reason), the chip follows the reasons.
+	State.setAutoLand(s, "acme/api#105", { state = "on", tries = 1 })
+	local conflicted = State.card(s, "acme/api#105") :: State.Card
+	assert(conflicted.column == "needs_fixes" and conflicted.chips[1].text == "Resolve conflicts" and conflicted.chips[2].text == "Auto-land · try 1 of 5")
+	State.setAutoLand(s, "acme/api#105", nil)
+	assert(#(State.card(s, "acme/api#105") :: State.Card).chips == 1)
+
+	-- ⇧L reaches the selected card's toggle; l still moves.
+	local function key(name: string, shift: boolean?, text: string?): any
+		return { name = name, text = text, shift = shift == true, meta = false, ctrl = false, alt = false }
+	end
+	State.select(s, "acme/api#120")
+	local toggle = Keys.hubAction(s, key("l", true)) :: Keys.Action
+	assert(toggle.act == "card-autoland" and toggle.value == "acme/api#120", "⇧L toggles auto-land")
+	assert((Keys.hubAction(s, key("l")) :: Keys.Action).act == "hub-move", "l moves right")
+	State.select(s, "acme/web#104")
+	assert(Keys.hubAction(s, key("l", true)) == nil, "⇧L does nothing on a card without auto-land")
+	s.search.text = "x"
+	State.select(s, "acme/api#120")
+	assert(Keys.hubAction(s, key("l", true)) == nil, "letters act only while search is empty")
+	s.search.text = ""
+
+	-- Settings: - and + change the cap, ⇧D edits the label; while it is edited, ⏎ saves, Esc cancels, the rest is typed.
+	State.openMenu(s, "settings")
+	assert((Keys.hubAction(s, key("-", false, "-")) :: Keys.Action).value == "-1")
+	assert((Keys.hubAction(s, key("=", false, "=")) :: Keys.Action).value == "+1")
+	assert((Keys.hubAction(s, key("=", true, "+")) :: Keys.Action).act == "hub-land-tries")
+	assert((Keys.hubAction(s, key("d", true)) :: Keys.Action).act == "hub-land-label")
+	State.setLandTries(s, "+1")
+	assert(s.landSettings.tries == 6 and (State.card(s, "acme/api#120") :: State.Card).chips[1].text == "Auto-land · try 2 of 6", "the chip reads the cap")
+	State.setLandTries(s, "-1")
+	State.setLandTries(s, "-1")
+	assert(s.landSettings.tries == 4)
+	State.setLandTries(s, "40")
+	assert(s.landSettings.tries == 20, "the cap stops at 20")
+	State.setLandTries(s, "+1")
+	assert(s.landSettings.tries == 20)
+	State.setLandTries(s, "1")
+	State.setLandTries(s, "-1")
+	assert(s.landSettings.tries == 1, "and at 1")
+
+	State.beginLandEdit(s)
+	assert(s.landEdit and s.landEdit.text == "blocked", "the field starts with the current label")
+	assert((Keys.hubAction(s, key("enter")) :: Keys.Action).act == "hub-land-label-save")
+	assert((Keys.hubAction(s, key("escape")) :: Keys.Action).act == "hub-land-label-cancel")
+	assert(Keys.hubAction(s, key("d", true)) == nil and Keys.hubAction(s, key("-", false, "-")) == nil, "other keys type")
+	s.landEdit.text = "   "
+	assert(not State.saveLandEdit(s) and s.landSettings.label == "blocked", "an empty label is refused")
+	s.landEdit.text = "  do-not-merge "
+	assert(State.saveLandEdit(s) and s.landSettings.label == "do-not-merge" and s.landEdit == nil)
+	State.beginLandEdit(s)
+	State.cancelLandEdit(s)
+	assert(s.landEdit == nil and s.landSettings.label == "do-not-merge")
+	State.beginLandEdit(s)
+	State.closeMenu(s)
+	assert(s.landEdit == nil, "closing Settings drops the edit")
+end
+
 return function()
+	testBoard()
 	testStart()
 	testSupports()
 	testLeaving()

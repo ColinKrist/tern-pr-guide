@@ -6,6 +6,7 @@ local Agent = require("../agent")
 local Checks = require("./checks")
 local Fields = require("../text-field")
 local AgentFix = require("./agent-fix")
+local AutoLand = require("./auto-land")
 local Fixes = require("./fixes")
 local Links = require("../links")
 local ModelBox = require("../model-box")
@@ -159,6 +160,8 @@ export type State = {
 	models: ModelBox.ModelBox?, -- Settings' model and lens menu, read only while `menu` is "settings"
 	links: "tern" | "browser", -- where GitHub links open; the block loads and saves it
 	prepareGuides: boolean, -- Settings: prepare AI guides for review requests in the background; the block loads and saves it
+	landSettings: AutoLand.Settings, -- Settings: auto-land's try cap and dequeue label; the block loads and saves them, cards read the cap
+	landEdit: Fields.Field?, -- Settings is editing the dequeue label
 	keyed: boolean, -- the change being drawn came from a key: it never animates
 	born: { [string]: string },
 	booted: boolean, -- arrival motion, as src/state.luau
@@ -422,7 +425,7 @@ function M.new(prs: { HubPR }, now: number, saved: any): State
 		mode = "board", helpPage = nil, route = nil, checks = nil, checkLists = {}, menu = nil, menuCursor = 1, confirm = nil, methodEdit = nil, folded = folded, recent = {}, merged = {}, walking = false,
 		ringed = {}, agents = {}, details = {}, flakes = {}, summaries = {}, merges = {}, autoMerge = {}, acted = {}, busy = {}, timing = {}, clock = nil,
 		refreshedAt = nil, loading = false, error = nil, agent = nil, models = nil, links = "tern", prepareGuides = false,
-		keyed = false, born = {}, booted = false,
+		landSettings = table.clone(AutoLand.DEFAULTS), landEdit = nil, keyed = false, born = {}, booted = false,
 	}
 	if type(saved) == "table" then
 		for _, rule in if type(saved.titleRules) == "table" then saved.titleRules else {} do
@@ -564,6 +567,10 @@ function M.botFeedback(s: State, key: string): (AgentFix.Input?, string?)
 	return { kind = "bot", details = details, authors = authors }, AgentFix.botPrompt(details, authors)
 end
 
+local function landing(pr: HubPR): boolean
+	return pr.autoLand ~= nil and pr.autoLand.state == "on"
+end
+
 local function actionsFor(pr: HubPR, column: Column, reasons: { Model.Reason }, merge: Model.MergeResolution?, flake: Flake?, autoMerge: boolean?, details: FixDetails?): (CardAction?, { CardAction })
 	if column == "needs_fixes" then
 		local feedback, checks = false, false
@@ -620,7 +627,7 @@ local function actionsFor(pr: HubPR, column: Column, reasons: { Model.Reason }, 
 			if not (method and method.kind == "comment" and not method.cancel) then
 				table.insert(more, action("card-cancel", "Cancel merge", "M"))
 			end
-		elseif not pr.tandem and Model.canMergeWhenReady(merge, autoMerge) then
+		elseif not pr.tandem and not landing(pr) and Model.canMergeWhenReady(merge, autoMerge) then
 			-- Tandem owns the branch: no new merge is offered, only Cancel merge for one already pending.
 			table.insert(more, action("card-auto", "Merge when ready", "M"))
 		end
@@ -645,7 +652,7 @@ local function chip(text: string, kind: "bad" | "bad-soft" | "info" | "wait" | "
 end
 
 -- The chip line's labels and detail text, from the mockup's job names.
-local function chipsFor(pr: HubPR, placement: Model.Placement, now: number): ({ Chip }, string?, ("bad" | "info")?)
+local function chipsFor(pr: HubPR, placement: Model.Placement, now: number, cap: number): ({ Chip }, string?, ("bad" | "info")?)
 	local column = placement.column
 	local chips: { Chip } = {}
 	local detail: string? = nil
@@ -657,7 +664,10 @@ local function chipsFor(pr: HubPR, placement: Model.Placement, now: number): ({ 
 			if detail == nil then detail = why end
 		end
 		for _, reason in placement.reasons do
-			if reason == "merge_failed" then
+			if reason == "auto_land" then
+				local mark = pr.autoLand
+				add("Auto-land stopped", if mark and mark.state == "stopped" then mark.reason else "Auto-land stopped")
+			elseif reason == "merge_failed" then
 				add("Merge failed", if pr.mergeFailure then pr.mergeFailure.reason else "Merge failed")
 			elseif reason == "feedback" then
 				local asker: string? = nil
@@ -681,6 +691,9 @@ local function chipsFor(pr: HubPR, placement: Model.Placement, now: number): ({ 
 				add("Resolve conflicts", "Conflicts with main")
 			end
 		end
+		if pr.autoLand and landing(pr) then table.insert(chips, chip(AutoLand.label(pr.autoLand, cap), "agent")) end
+	elseif column == "ready" then
+		if pr.autoLand and landing(pr) then table.insert(chips, chip(AutoLand.label(pr.autoLand, cap), "agent")) end
 	elseif column == "to_review" then
 		kind = "info"
 		local mine = pr.reviews.mine
@@ -699,6 +712,8 @@ local function chipsFor(pr: HubPR, placement: Model.Placement, now: number): ({ 
 		local again = Model.awaitingReReview(pr)
 		if pr.tandem then
 			table.insert(chips, chip("Waiting on Tandem", "agent"))
+		elseif pr.autoLand and landing(pr) then
+			table.insert(chips, chip(AutoLand.label(pr.autoLand, cap), "agent"))
 		elseif again then
 			table.insert(chips, chip("Waiting on " .. Model.reviewerList(again.waiting) .. " to re-review", "wait"))
 		elseif pr.checks.state == "pending" or (pr.checks.state == "failing" and pr.reviews.decision == "approved") then
@@ -790,7 +805,7 @@ local function toCard(pr: HubPR, placement: Model.Placement, s: State): Card
 	local known = s.flakes[pr.key]
 	local flake = if known and known.headOid == pr.headOid then known else nil
 	local main, more = actionsFor(pr, placement.column, placement.reasons, s.merges[pr.repo], flake, s.autoMerge[pr.repo], s.details[pr.key])
-	local chips, detail, detailKind = chipsFor(pr, placement, s.now)
+	local chips, detail, detailKind = chipsFor(pr, placement, s.now, s.landSettings.tries)
 	local agent = s.agents[pr.key]
 	local summary = s.summaries[pr.key]
 	local message: string? = nil
@@ -843,6 +858,13 @@ local function toCard(pr: HubPR, placement: Model.Placement, s: State): Card
 		work = { phrase = message or "", since = agent.run.since, expected = if timing then timing.expected else 120 }
 	elseif busy == M.SUMMARIZING and timing then
 		work = { phrase = M.SUMMARIZING, since = timing.since, expected = timing.expected }
+	end
+	-- Auto-land on the viewer's own cards that can merge with it; Tandem's branches are Tandem's.
+	local column = placement.column
+	local offered = pr.autoLand ~= nil or AutoLand.supports(s.merges[pr.repo])
+	if pr.role == "mine" and not pr.tandem and offered and (column == "needs_fixes" or column == "in_review" or column == "ready") then
+		more = table.clone(more)
+		table.insert(more, action("card-autoland", if landing(pr) then "Turn off auto-land" else "Turn on auto-land", "⇧L"))
 	end
 	return {
 		flake = if flake and flake.flaky and flake.reason then "Likely flaky: " .. flake.reason else nil,
@@ -1362,10 +1384,12 @@ function M.openMenu(s: State, menu: MenuId)
 	end
 	s.methodEdit = nil
 	s.filterEdit = nil
+	s.landEdit = nil
 end
 
 function M.closeMenu(s: State)
 	s.filterEdit = nil
+	s.landEdit = nil
 	s.menu = nil
 	s.models = nil
 	s.methodEdit = nil
@@ -1438,6 +1462,36 @@ end
 -- Whether AI guides are prepared in the background: `to` ("true" or "false"), else the other one.
 function M.setPrepareGuides(s: State, to: string?)
 	s.prepareGuides = if to == "true" then true elseif to == "false" then false else not s.prepareGuides
+end
+
+-- Settings' auto-land try cap: "+1" or "-1" moves it by one, a bare number sets it; it stays within 1 to AutoLand.MAX_TRIES.
+function M.setLandTries(s: State, value: string)
+	local n = tonumber(value)
+	if n == nil then return end
+	local sign = string.sub(value, 1, 1)
+	local tries = if sign == "+" or sign == "-" then s.landSettings.tries + n else n
+	s.landSettings = { tries = math.clamp(math.floor(tries), 1, AutoLand.MAX_TRIES), label = s.landSettings.label }
+	M.project(s)
+end
+
+-- ⇧D in Settings: the dequeue label becomes a field, prefilled with the current one.
+function M.beginLandEdit(s: State)
+	s.landEdit = Fields.create(s.landSettings.label)
+end
+
+function M.cancelLandEdit(s: State)
+	s.landEdit = nil
+end
+
+-- ⏎ on the dequeue label's field: the trimmed text becomes the label. Returns whether it changed the settings.
+function M.saveLandEdit(s: State): boolean
+	local edit = s.landEdit
+	if not edit then return false end
+	local label = string.match(edit.text, "^%s*(.-)%s*$") :: string
+	if label == "" then return false end
+	s.landEdit = nil
+	s.landSettings = { tries = s.landSettings.tries, label = label }
+	return true
 end
 
 -- Applies row `index` of the open menu: a sort is chosen and the menu closes; a repository is
@@ -1740,11 +1794,48 @@ function M.setBusy(s: State, key: string, text: string?)
 	M.project(s)
 end
 
--- Records (or clears, with nil) a merge asked for through a queue, comment or label.
-function M.setPending(s: State, key: string, pending: Model.PendingMerge?)
+-- Records (or clears, with nil) a merge asked for through a queue, comment or label. `fresh`: the ask replaces a failed
+-- one, so the old failure goes with it (the failure read counts only what came after the new ask).
+function M.setPending(s: State, key: string, pending: Model.PendingMerge?, fresh: boolean?)
 	for _, pr in s.prs do
-		if pr.key == key then pr.pending = pending end
+		if pr.key == key then
+			pr.pending = pending
+			if fresh then pr.mergeFailure = nil end
+		end
 	end
+	M.project(s)
+end
+
+-- Sets (or clears, with nil) the auto-land mark on a board PR. The list and the PR are copies, since a sample board's are
+-- shared fixture data.
+function M.setAutoLand(s: State, key: string, mark: Model.LandMark?)
+	local prs = table.clone(s.prs)
+	for i, pr in prs do
+		if pr.key == key then
+			local copy = table.clone(pr)
+			copy.autoLand = mark
+			prs[i] = copy
+		end
+	end
+	s.prs = prs
+	M.project(s)
+end
+
+local PENDING_KINDS: { [string]: "queue" | "comment" | "label" } = { queue = "queue", comment = "comment", label = "label" }
+
+-- The sample board's auto-land, from its records: each PR's mark, and a queued record's merge shown pending since it was asked.
+function M.stampLanding(s: State, records: { [string]: AutoLand.Record })
+	local prs = table.clone(s.prs)
+	for i, pr in prs do
+		local record = records[pr.key]
+		local resolved = s.merges[pr.repo]
+		local kind = if resolved then PENDING_KINDS[resolved.method.kind] else nil
+		local copy = table.clone(pr)
+		copy.autoLand = AutoLand.mark(record)
+		if record and record.phase == "queued" and record.queuedAt and kind then copy.pending = { method = kind, at = record.queuedAt } end
+		prs[i] = copy
+	end
+	s.prs = prs
 	M.project(s)
 end
 

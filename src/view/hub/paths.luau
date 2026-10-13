@@ -13,6 +13,8 @@ M.titleLabel = M.ROOT .. ".header.top.title"
 M.settingsButton = M.ROOT .. ".header.top.fresh.settings"
 -- Settings' model search field, in the layer over the board.
 M.settingsField = "layer.menu.body.box.field"
+-- Settings' field for auto-land's dequeue label, while it is being edited.
+M.landField = "layer.menu.body.land-label.edit.box.field"
 M.repositoriesButton = M.ROOT .. ".header.tabs.ctls.repos"
 M.filterField = "layer.menu.body.edit.box.field"
 M.sortButton = M.ROOT .. ".header.tabs.ctls.sort"

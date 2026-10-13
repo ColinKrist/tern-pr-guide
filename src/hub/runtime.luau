@@ -5,6 +5,7 @@
 -- arrival alerts a new board brings. The sample boards' fixtures and the text helpers the hub modules share live here too.
 local Agent = require("../agent")
 local AgentFix = require("./agent-fix")
+local AutoLand = require("./auto-land")
 local Github = require("../github")
 local Host = require("../host")
 local Log = require("../ci/log")
@@ -84,6 +85,7 @@ export type Block = {
 	histories: Github.HistoryCache, -- each repo's base-branch run history, read once an hour (memory only: no kv key)
 	flakeTried: { [string]: boolean }, -- cards (by key and head) whose evidence was read this session, success or not
 	step: number, -- fixture only: how many `refreshes` entries ⌘R has applied
+	sampleLanding: { [string]: AutoLand.Record }, -- fixture only: the sample's auto-land records, toggled in memory, never kv
 	pages: Pages,
 	skew: number, -- seconds the board's clock runs behind the wall clock: a sample board keeps its recorded time
 	chats: { [string]: string }, -- by card key: the head a chat sync last read, so a change it could not take is read once

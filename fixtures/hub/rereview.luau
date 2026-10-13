@@ -79,7 +79,7 @@ return {
 		["acme/web#204"] = { column = "in_review", chip = "Waiting on @maria-k to re-review", main = "card-rerequest", more = "card-copy,card-auto" },
 		["acme/web#205"] = { column = "in_review", chip = "Waiting on review", note = "Merges when ready", main = "card-copy", more = "card-cancel" },
 		["acme/api#206"] = { column = "in_review", chip = "Waiting on review", main = "card-copy", more = "" },
-		["acme/aviator#207"] = { column = "in_review", chip = "Waiting on review", main = "card-copy", more = "card-auto" },
+		["acme/aviator#207"] = { column = "in_review", chip = "Waiting on review", main = "card-copy", more = "card-auto,card-autoland" },
 		["acme/web#208"] = { column = "in_review", chip = "Waiting on @maria-k to re-review", main = "card-copy", more = "card-auto" },
 		["acme/web#209"] = { column = "in_review", chip = "Waiting on @maria-k and 2 others to re-review", main = "card-rerequest", more = "card-copy,card-auto" },
 	},
