@@ -1,6 +1,6 @@
 --!strict
 -- The model and lens menu: its Explanation and Review slots and Tab between them, on the review page
--- and in the PR hub's Settings, and the AI row that offers Generate guide and Draft review comments.
+-- and in the PR hub's Settings, and the AI row that offers Generate AI guide and Generate LLM review.
 local Agent = require("../src/agent")
 local Fields = require("../src/text-field")
 local Guide = require("../src/guide")
@@ -68,22 +68,22 @@ local function drawn()
 		a.explain = { model = "anthropic/haiku-4", effort = "low" }
 		s.ai = Agent.idle(a)
 		local idle = texts(Header.view(s, motion))
-		assert(string.find(idle, "Generate guide|[shift+G]|Draft review comments|[shift+R]|Explain|haiku-4|low|·|Review|opus-5|high|·|Balanced", 1, true), idle)
+		assert(string.find(idle, "Generate AI guide|[shift+G]|Generate LLM review|[shift+R]|Explain|haiku-4|low|·|Review|opus-5|high", 1, true), idle)
 		local run = s.ai :: Agent.Run
 		Agent.start(run, "explain", 60)
 		local explaining = texts(Header.view(s, motion))
-		assert(string.find(explaining, "E|x|p|l|a|i|n", 1, true) and not string.find(explaining, "Draft review comments", 1, true), "the explanation writes its phrase in: " .. explaining)
+		assert(string.find(explaining, "E|x|p|l|a|i|n", 1, true) and not string.find(explaining, "Generate LLM review", 1, true), "the explanation writes its phrase in: " .. explaining)
 		run.explaining = false
 		Agent.start(run, "review", 180)
 		local reviewing = texts(Header.view(s, motion))
-		assert(string.find(reviewing, "Generate guide|[shift+G]|Reviewing for issues…|0:00", 1, true), "the review's quiet progress takes its button's place: " .. reviewing)
-		assert(not string.find(reviewing, "Draft review comments", 1, true) and not string.find(reviewing, "Explain|haiku-4", 1, true), "no Draft button or model button while it runs: " .. reviewing)
+		assert(string.find(reviewing, "Generate AI guide|[shift+G]|Reviewing for issues…|0:00", 1, true), "the review's quiet progress takes its button's place: " .. reviewing)
+		assert(not string.find(reviewing, "Generate LLM review", 1, true) and not string.find(reviewing, "Explain|haiku-4", 1, true), "no Draft button or model button while it runs: " .. reviewing)
 		s.review.guide.guided = true
 		local guided = texts(Header.view(s, motion))
-		assert(string.find(guided, "Reviewing for issues…|0:00", 1, true) and not string.find(guided, "Generate guide", 1, true), "over a guide, the review shows in the same row: " .. guided)
+		assert(string.find(guided, "Reviewing for issues…|0:00", 1, true) and not string.find(guided, "Generate AI guide", 1, true), "over a guide, the review shows in the same row: " .. guided)
 		run.reviewing = false
 		local offered = texts(Header.view(s, motion))
-		assert(string.find(offered, "Draft review comments|[shift+R]|Explain|haiku-4", 1, true) and not string.find(offered, "Generate guide", 1, true), "a guided page offers Draft review comments and the models: " .. offered)
+		assert(string.find(offered, "Generate LLM review|[shift+R]|Explain|haiku-4", 1, true) and not string.find(offered, "Generate AI guide", 1, true), "a guided page offers Generate LLM review and the models: " .. offered)
 		s.review.guide.guided = false
 
 		s.models = ModelBox.open(a, "review")

@@ -210,9 +210,11 @@ function M.key(b: Block, key: Key, cx: BlockCx): boolean?
 	return if entry then ReviewPage.key(entry.page, key, cx) else nil
 end
 
--- A click on the Fixes tab leaves the page for the fixes page: the one event the page doesn't take.
+-- A click on the Fixes tab leaves the page for the fixes page, and one on Pull requests goes back to the board:
+-- the events the page doesn't take.
 function M.tabAction(b: Block, ev: UiEvent): Keys.Action?
 	local entry = M.shown(b)
+	if entry and ev.ev == "action" and ev.act == "pages-back" then return { act = "pages-back" } end
 	if not entry or ev.ev ~= "select" or ev.item ~= "fixes" or ev.id ~= ReviewPage.tabsPath(entry.page) then return nil end
 	return { act = "pages-view", value = "fixes" }
 end

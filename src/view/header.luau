@@ -16,15 +16,13 @@ local METER_CELLS = 24
 
 local M = {}
 
-local function reviewButton(s: State.State, included: number): Node
+local function reviewButton(s: State.State): Node
  local posted = s.review.posted
  local label = if not posted then "Submit review" elseif posted.delivery.kind == "saved" then "Dry run saved" else "Review posted"
- local count = if posted then el("span", { class = "gp-rv-button-count" }, { Ui.icon("check") }) else span("gp-rv-button-count", tostring(included))
- return el("span", { class = "gp-rv-button" .. (if s.reviewOpen then " gp-rv-button-open" else ""), actions = { click = "toggle-review" } }, {
-  span("gp-rv-button-label", label),
-  count,
-  Ui.keys("r"),
- })
+ local kids = { span("gp-rv-button-label", label) }
+ if posted then table.insert(kids, el("span", { class = "gp-rv-button-count" }, { Ui.icon("check") })) end
+ table.insert(kids, Ui.keys("r"))
+ return el("span", { class = "gp-rv-button" .. (if s.reviewOpen then " gp-rv-button-open" else ""), actions = { click = "toggle-review" } }, kids)
 end
 
 -- An action in the status row; `icon` follows its label.
@@ -105,15 +103,12 @@ local function modelLabel(pass: string, choice: Agent.Choice, key: string): Node
  return el("span", { class = "gp-ai-model-pass", key = key }, kids)
 end
 
--- What a run will use, left to right as the menu lists it: the explanation's model, then the
--- review's and its lens.
+-- What a run will use, left to right as the menu lists it: the explanation's model, then the review's.
 local function modelButton(agent: Agent.Agent, open: boolean): Node
  return el("span", { class = "gp-ai-model" .. (if open then " gp-ai-model-open" else ""), key = "model", actions = { click = "toggle-models" } }, {
   modelLabel("Explain", agent.explain, "explain"),
   span("gp-ai-model-sep", "·"),
   modelLabel("Review", Agent.choiceFor(agent, "review"), "review"),
-  span("gp-ai-model-sep", "·"),
-  span("gp-ai-model-lens", Agent.currentLens(agent).name),
   Ui.icon("chev"),
   Ui.keys("⇧M"),
  })
@@ -126,18 +121,18 @@ local function aiButton(label: string, keyHint: string, action: string, primary:
  })
 end
 
--- The reader's AI agent: Generate guide while the page has none, and Draft review comments, with
+-- The reader's AI agent: Generate AI guide while the page has none, and Generate LLM review, with
 -- the models they will use (a button opening the model overlay, which Page.layer draws under it)
 -- and why the last explanation failed. While the explanation runs with nothing new to read, the row
 -- is its progress; while the review runs, the review's quiet progress takes its button's place.
 local function aiRow(run: Agent.Run, open: boolean, hasGuide: boolean): Node
  if run.explaining then return explainingRow(run) end
  local kids = {}
- if not hasGuide then table.insert(kids, aiButton("Generate guide", "⇧G", "generate-guide", true)) end
+ if not hasGuide then table.insert(kids, aiButton("Generate AI guide", "⇧G", "generate-guide", true)) end
  if run.reviewing then
   table.insert(kids, reviewing(run))
  else
-  table.insert(kids, aiButton("Draft review comments", "⇧R", "draft-review", false))
+  table.insert(kids, aiButton("Generate LLM review", "⇧R", "draft-review", false))
   table.insert(kids, modelButton(run.agent, open))
  end
  if run.error then table.insert(kids, span("gp-ai-error", "Couldn't explain the changes: " .. run.error)) end
@@ -184,8 +179,14 @@ function M.view(s: State.State, motion: Ui.Motion): Node
  local pr = s.review.pr
  local counts = Review.counts(s.review)
  local title = { span("gp-title-num", "#" .. pr.number), span("gp-title-text", pr.title), Ui.spacer() }
+ -- In the hub, the way back to the board leads the title, as on the fixes page.
+ if s.hosted then
+  table.insert(title, 1, el("span", { class = "gp-hdr-act gp-back", key = "back", actions = { click = "pages-back" } }, {
+   el("span", { class = "gp-back-ico" }, { Ui.icon("chev-r") }), span("gp-hdr-act-label", "Pull requests"), Ui.keys("esc"),
+  }))
+ end
  if State.switchable(s) or (s.hosted and s.hosted.fixes) then table.insert(title, viewSwitch(s)) end
- table.insert(title, reviewButton(s, counts.included))
+ table.insert(title, reviewButton(s))
  local parts = {
   el("div", { class = "gp-title", key = "title" }, title),
   status(s, counts),

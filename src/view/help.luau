@@ -38,9 +38,9 @@ local function groups(kind: Kind): { Group }
     table.insert(keys, 1, { "t", if kind.guided then "switch to the file view" else "switch to the guided view" })
     if not kind.guided then table.insert(keys, 2, { "n  p", "next / previous suggestion" }) end
    end
-   if not kind.switch then table.insert(keys, { "⇧ G", "generate guide" }) end
+   if not kind.switch then table.insert(keys, { "⇧ G", "generate AI guide" }) end
    if kind.hosted then table.insert(keys, { "esc", "back to the board" }) end
-   table.insert(keys, { "⇧ R", "draft review comments" })
+   table.insert(keys, { "⇧ R", "generate LLM review" })
    table.insert(keys, { "⇧ M", "AI models, effort and lens" })
    table.insert(keys, { "tab", "in that menu: explanation / review model" })
    table.insert(keys, { "⌃ E", "in that menu: edit lenses" })

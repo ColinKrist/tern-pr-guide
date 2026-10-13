@@ -937,8 +937,6 @@
 .gp-md-none { font-size: 12.5px; color: var(--t3); }
 .gp-md-more { padding: 6px 8px; border-radius: var(--r-ctl); font-size: 12.5px; color: var(--t3); cursor: pointer; transition: background-color 120ms ease; }
 .gp-md-more:hover { background: var(--l1); color: var(--t1); }
-/* the review lens: chosen in the model dropdown, named beside the model */
-.gp-ai-model-lens { color: var(--t2); }
 .gp-ai-model-sep { color: var(--t4); }
 .gp-ai-busy .gp-ai-bar, .gp-ai-quiet .gp-ai-bar { flex-shrink: 1; min-width: 40px; }
 /* the review still going under a page the reader can read: still and muted, so it never pulls the eye */
@@ -950,7 +948,6 @@
 .gp-ai-quiet .gp-ai-fill { background: var(--t4); }
 .gp-ai-model-pass { display: flex; gap: 4px; align-items: baseline; min-width: 0; max-width: 100%; white-space: nowrap; }
 .gp-ai-model-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.gp-ai-model-lens { white-space: nowrap; }
 .gp-ai-model-effort { color: var(--t4); }
 .gp-ai-model-role { color: var(--t3); }
 .gp-ai-model:hover .gp-ai-model-effort, .gp-ai-model-open .gp-ai-model-effort { color: var(--t3); }
