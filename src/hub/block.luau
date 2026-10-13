@@ -341,8 +341,6 @@ ACTIONS["models-effort"] = function(b, cx, delta) modelAction(b, "models-effort"
 ACTIONS["models-pick"] = function(b) modelAction(b, "models-pick", "") end
 ACTIONS["model-row"] = function(b, cx, n) modelAction(b, "model-row", n) end
 ACTIONS["model-effort"] = function(b, cx, effort) modelAction(b, "model-effort", effort) end
-ACTIONS["models-lens"] = function(b, cx, delta) modelAction(b, "models-lens", delta) end
-ACTIONS["model-lens"] = function(b, cx, n) modelAction(b, "model-lens", n) end
 ACTIONS["edit-lenses"] = function(b, cx)
 	local folder, err = Fetch.prepareLensFolder()
 	closeMenu(b)

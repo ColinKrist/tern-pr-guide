@@ -220,6 +220,23 @@ local function modelAction(s: State, act: string, value: string)
  s.models = if outcome.close then nil else outcome.box
 end
 
+-- Opens the model menu on `slot`, or closes it. The lens button ("lens") closes only a menu on the
+-- Lens slot and switches one on another slot to it; Esc, the scrim and the model button close any.
+local function toggleModels(s: State, cx: BlockCx, slot: ModelBox.Slot)
+ local run, box = s.ai, s.models
+ if box and (slot ~= "lens" or box.slot == "lens") then
+  s.models = nil
+  return
+ end
+ if not run or Agent.busy(run) then return end
+ if not box then
+  AgentHost.refreshChoice(run.agent)
+  Fetch.refreshLenses(run.agent)
+ end
+ s.models = ModelBox.open(run.agent, slot)
+ frameLater(cx, { { "focus", Page.modelFieldPath } })
+end
+
 -- Takes you to a search result: a step, a comment, a file's first block, or one changed line,
 -- opening whatever hides it and marking the line.
 local function searchGo(s: State, cx: BlockCx, n: number)
@@ -405,18 +422,8 @@ local ACTIONS: { [string]: Handler } = {
  ["search-close"] = function(s) s.search = nil end,
 
  -- the model dropdown
- ["toggle-models"] = function(s, cx)
-  local run = s.ai
-  if s.models then
-   s.models = nil
-   return
-  end
-  if not run or Agent.busy(run) then return end
-  AgentHost.refreshChoice(run.agent)
-  Fetch.refreshLenses(run.agent)
-  s.models = ModelBox.open(run.agent, "explain")
-  frameLater(cx, { { "focus", Page.modelFieldPath } })
- end,
+ ["toggle-models"] = function(s, cx) toggleModels(s, cx, "explain") end,
+ ["toggle-lenses"] = function(s, cx) toggleModels(s, cx, "lens") end,
  ["models-slot"] = function(s, _, slot) modelAction(s, "models-slot", slot) end,
  ["models-filter"] = function(s) modelAction(s, "models-filter", "") end,
  ["models-move"] = function(s, _, delta) modelAction(s, "models-move", delta) end,
@@ -425,8 +432,6 @@ local ACTIONS: { [string]: Handler } = {
  ["models-pick"] = function(s) modelAction(s, "models-pick", "") end,
  ["model-row"] = function(s, _, n) modelAction(s, "model-row", n) end,
  ["model-effort"] = function(s, _, effort) modelAction(s, "model-effort", effort) end,
- ["models-lens"] = function(s, _, delta) modelAction(s, "models-lens", delta) end,
- ["model-lens"] = function(s, _, n) modelAction(s, "model-lens", n) end,
  ["edit-lenses"] = function(s, cx)
   local folder, err = Fetch.prepareLensFolder()
   s.models = nil

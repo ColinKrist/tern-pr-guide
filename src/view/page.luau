@@ -186,13 +186,13 @@ local LAYER = "layer"
 M.modelFieldPath = LAYER .. ".models.body.box.field"
 
 -- The layer: while the model menu is open, a scrim that closes it on a click anywhere outside, and
--- the menu as an overlay under the model button.
+-- the menu as an overlay under the Settings button.
 function M.layer(s: State.State): Node?
  local run, box = s.ai, s.models
  if not run or not box or Agent.busy(run) then return nil end
  return el("div", {}, {
   el("div", { class = "gp-md-scrim", key = "scrim", actions = { click = "toggle-models" } }),
-  ModelPanel.view(box, run.agent, headerPath(s.root) .. ".ai.model", not s.keyed),
+  ModelPanel.view(box, run.agent, headerPath(s.root) .. ".status.settings", not s.keyed),
  })
 end
 

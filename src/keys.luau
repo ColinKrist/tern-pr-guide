@@ -30,21 +30,18 @@ local function searchKey(key: Key): Action?
 end
 
 -- The model and lens menu, on the review page and in the hub's Settings. Arrows: up and down pick
--- the model, left and right its effort (the filter's cursor gives them up; model names are short).
--- Tab flips between the Explanation and Review slots. Shift with left and right steps the review
--- lens, and ctrl-E opens the folder of the reader's own lenses. Esc is each surface's own close.
+-- the model or lens, left and right the model's effort (the filter's cursor gives them up; model
+-- names are short). Tab steps through the Explanation, Review and Lens slots, and ctrl-E opens the
+-- folder of the reader's own lenses. Esc is each surface's own close.
 local function modelsKey(box: ModelBox.ModelBox, key: Key): Action?
  local name = key.name
  local plain = not (key.shift or key.ctrl or key.meta or key.alt)
  if name == "down" then return act("models-move", 1) end
  if name == "up" then return act("models-move", -1) end
- local shifted = key.shift and not (key.ctrl or key.meta or key.alt)
- if shifted and name == "right" then return act("models-lens", 1) end
- if shifted and name == "left" then return act("models-lens", -1) end
  if key.ctrl and name == "e" then return act("edit-lenses") end
  if plain and name == "right" then return act("models-effort", 1) end
  if plain and name == "left" then return act("models-effort", -1) end
- if name == "tab" then return act("models-slot", if box.slot == "explain" then "review" else "explain") end
+ if name == "tab" then return act("models-slot", ModelBox.nextSlot(box.slot)) end
  if name == "enter" then return act("models-pick") end
  return nil
 end
@@ -84,6 +81,7 @@ local function readingKey(s: State.State, key: Key): Action?
  if name == "g" then return act("open-github") end
  if name == "i" then return act("toggle-description") end
  if (name == "m" and key.shift) or name == "M" then return act("toggle-models") end
+ if (name == "l" and key.shift) or name == "L" then return act("toggle-lenses") end
  if name == "m" then return act("mark-all") end
  if (name == "s" and key.shift) or name == "S" then return act("mark-supporting") end
  if name == "s" then return act("toggle-group") end

@@ -1,6 +1,6 @@
 --!strict
 -- The model and lens menu: its Explanation and Review slots and Tab between them, on the review page
--- and in the PR hub's Settings, and the AI row that offers Generate guide and Draft review comments.
+-- and in the PR hub's Settings, and the AI row that offers Generate AI guide and Generate LLM review.
 local Agent = require("../src/agent")
 local Fields = require("../src/text-field")
 local Guide = require("../src/guide")
@@ -57,33 +57,38 @@ local function drawn()
 		s.models = ModelBox.open(a, "explain")
 		local explain = texts(ModelPanel.view(s.models :: ModelBox.ModelBox, a, "anchor", false))
 		assert(string.find(explain, "Explains what the PR changes, step by step.", 1, true) and string.find(explain, "[tab]", 1, true), explain)
-		assert(not string.find(explain, "Lens", 1, true), "Explanation has no lens")
+		assert(not string.find(explain, "Edit lenses", 1, true), "Explanation has no lenses")
 		s.models = ModelBox.open(a, "review")
 		local review = texts(ModelPanel.view(s.models :: ModelBox.ModelBox, a, "anchor", false))
-		assert(string.find(review, "anthropic|Haiku 4||Opus 5", 1, true) and string.find(review, "Lens", 1, true), review)
+		assert(string.find(review, "anthropic|Haiku 4||Opus 5", 1, true) and not string.find(review, "Edit lenses", 1, true), review)
 		assert(not string.find(review, "Off", 1, true), "Review has no Off row: " .. review)
+		s.models = ModelBox.open(a, "lens")
+		local lens = texts(ModelPanel.view(s.models :: ModelBox.ModelBox, a, "anchor", false))
+		assert(string.find(lens, "Balanced|The comments worth making.", 1, true) and string.find(lens, "Edit lenses…|[ctrl+E]", 1, true), "Lens lists each lens with its description: " .. lens)
+		assert(not string.find(lens, "Haiku 4", 1, true), "and no models: " .. lens)
 
 		local motion = { born = {}, next = {}, booted = true, animate = false }
 		s.models = nil
 		a.explain = { model = "anthropic/haiku-4", effort = "low" }
 		s.ai = Agent.idle(a)
 		local idle = texts(Header.view(s, motion))
-		assert(string.find(idle, "Generate guide|[shift+G]|Draft review comments|[shift+R]|Explain|haiku-4|low|·|Review|opus-5|high|·|Balanced", 1, true), idle)
+		assert(string.find(idle, "Open on GitHub|[g]|Settings|[shift+M]|Generate AI guide|[shift+G]|Generate LLM review|[shift+R]", 1, true), idle)
+		assert(not string.find(idle, "haiku-4", 1, true), "the models are in Settings, not the header: " .. idle)
 		local run = s.ai :: Agent.Run
 		Agent.start(run, "explain", 60)
 		local explaining = texts(Header.view(s, motion))
-		assert(string.find(explaining, "E|x|p|l|a|i|n", 1, true) and not string.find(explaining, "Draft review comments", 1, true), "the explanation writes its phrase in: " .. explaining)
+		assert(string.find(explaining, "E|x|p|l|a|i|n", 1, true) and not string.find(explaining, "Generate LLM review", 1, true), "the explanation writes its phrase in: " .. explaining)
 		run.explaining = false
 		Agent.start(run, "review", 180)
 		local reviewing = texts(Header.view(s, motion))
-		assert(string.find(reviewing, "Generate guide|[shift+G]|Reviewing for issues…|0:00", 1, true), "the review's quiet progress takes its button's place: " .. reviewing)
-		assert(not string.find(reviewing, "Draft review comments", 1, true) and not string.find(reviewing, "Explain|haiku-4", 1, true), "no Draft button or model button while it runs: " .. reviewing)
+		assert(string.find(reviewing, "Generate AI guide|[shift+G]|Reviewing for issues…|0:00", 1, true), "the review's quiet progress takes its button's place: " .. reviewing)
+		assert(not string.find(reviewing, "Generate LLM review", 1, true) and not string.find(reviewing, "Settings", 1, true), "no Generate LLM review button or Settings while it runs: " .. reviewing)
 		s.review.guide.guided = true
 		local guided = texts(Header.view(s, motion))
-		assert(string.find(guided, "Reviewing for issues…|0:00", 1, true) and not string.find(guided, "Generate guide", 1, true), "over a guide, the review shows in the same row: " .. guided)
+		assert(string.find(guided, "Reviewing for issues…|0:00", 1, true) and not string.find(guided, "Generate AI guide", 1, true), "over a guide, the review shows in the same row: " .. guided)
 		run.reviewing = false
 		local offered = texts(Header.view(s, motion))
-		assert(string.find(offered, "Draft review comments|[shift+R]|Explain|haiku-4", 1, true) and not string.find(offered, "Generate guide", 1, true), "a guided page offers Draft review comments and the models: " .. offered)
+		assert(string.find(offered, "Settings|[shift+M]", 1, true) and string.find(offered, "Generate LLM review|[shift+R]", 1, true) and not string.find(offered, "Generate AI guide", 1, true), "a guided page offers Settings and Generate LLM review: " .. offered)
 		s.review.guide.guided = false
 
 		s.models = ModelBox.open(a, "review")
@@ -105,7 +110,6 @@ return function()
 	local box = s.models :: ModelBox.ModelBox
 	assert(names(box, a) == "Haiku 4,Opus 5", names(box, a))
 	assert(box.selected == 2 and box.effort == "medium", "the explanation starts on the review model it defaults to, at medium")
-	assert(not ModelBox.showsLens(box), "no lens on the Explanation slot")
 	box.selected, box.effort = 1, "low"
 	assert(ModelBox.choose(box, a))
 	assert(a.explain.model == "anthropic/haiku-4" and a.explain.effort == "low" and a.explainPicked, "picking on Explanation sets the explanation")
@@ -114,15 +118,38 @@ return function()
 	assert(Keys.action(s, key("tab")).act == "models-slot" and Keys.action(s, key("tab")).value == "review", "Tab goes to Review")
 	s.models = ModelBox.open(a, "review")
 	box = s.models :: ModelBox.ModelBox
-	assert(Keys.action(s, key("tab")).value == "explain", "Tab comes back to Explanation")
+	assert(Keys.action(s, key("tab")).value == "lens", "Tab goes on to Lens")
 	assert(names(box, a) == "Haiku 4,Opus 5", "Review lists the same models: " .. names(box, a))
-	assert(box.selected == 2 and ModelBox.showsLens(box), "Review highlights its model and shows the lens")
+	assert(box.selected == 2, "Review highlights its model")
 	box.selected = 1
 	assert(ModelBox.choose(box, a))
 	assert(a.model == "anthropic/haiku-4" and a.effort == "high", "picking on Review sets the review model")
 	assert(a.explain.model == "anthropic/haiku-4" and a.explain.effort == "low", "and leaves the explanation")
 	box.field = Fields.create("nothing")
 	assert(not ModelBox.choose(box, a), "a filter that matches nothing picks nothing")
+
+	-- The Lens slot: it highlights the lens in use, arrows move, choosing sets the lens and nothing else,
+	-- and Tab wraps back to Explanation.
+	a.lenses = {
+		{ name = "Balanced", description = "", instructions = "" },
+		{ name = "Security", description = "", instructions = "" },
+		{ name = "Quick skim", description = "", instructions = "" },
+	}
+	a.lens = "Security"
+	s.models = ModelBox.open(a, "lens")
+	box = s.models :: ModelBox.ModelBox
+	assert(box.selected == 2, "Lens highlights the lens in use")
+	assert(Keys.action(s, key("tab")).value == "explain", "Tab wraps to Explanation")
+	assert(Keys.action(s, key("right")).act == "models-effort", "← → stay the effort keys")
+	ModelBox.stepEffort(box, a, 1)
+	ModelBox.move(box, a, 5)
+	assert(box.selected == 3, "arrows stop at the last lens")
+	assert(ModelBox.choose(box, a) and a.lens == "Quick skim" and a.model == "anthropic/haiku-4", "choosing sets the lens and leaves the models")
+	box.field = Fields.create("sec")
+	box.selected = 1
+	assert(ModelBox.choose(box, a) and a.lens == "Security", "the filter narrows the lenses")
+	s.models = nil
+	assert(Keys.action(s, key("l", true)).act == "toggle-lenses", "⇧L opens the menu on Lens")
 
 	-- Arrowing down a list where every model has its own provider heading keeps the highlighted row
 	-- within the lines the list fits, headings and the "more" row counted.

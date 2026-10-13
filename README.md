@@ -121,7 +121,7 @@ Below the board, four folded lists keep the rest out of the way. Opening one scr
 
 To have guides ready before you open a PR, turn on **Prepare AI guides in the background** in
 Settings (`⇧S`, then `⇧G`). After each refresh, the hub has OMP explain each review request whose
-guide is missing or out of date, one at a time, the same way Generate guide does. It never drafts
+guide is missing or out of date, one at a time, the same way Generate AI guide does. It never drafts
 review comments, and a PR it couldn't explain isn't tried again until it has new commits or the hub
 reopens. The setting is off by default, since each guide is an OMP run.
 
@@ -211,13 +211,13 @@ first, then go through it in small steps:
 - Guides saved in the repository, so a reopened PR loads its guide right away in every worktree of
   the clone.
 
-**Generate guide** (`⇧G`) writes the walkthrough in one OMP request: the prompt, the PR's description
+**Generate AI guide** (`⇧G`) writes the walkthrough in one OMP request: the prompt, the PR's description
 and the diff go to the model together, and it replies with the overview and steps. The diff leaves
 out what nobody reads line by line: generated, vendored and minified files and test snapshots show as
 one line each, and whitespace-only changes are counted instead of shown, except in Python and YAML.
 The page turns guided as soon as the explanation lands.
 
-**Draft review comments** (`⇧R`) is a separate OMP run that looks for problems and questions and
+**Generate LLM review** (`⇧R`) is a separate OMP run that looks for problems and questions and
 drafts comments and a review summary. It works with or without a guide, and the two can run at the
 same time. The comments and summary join the page when the review finishes. A summary you already
 edited is kept.
@@ -228,22 +228,22 @@ edited is kept.
 
 ## Choose models and a review lens
 
-Guides and drafted comments need OMP. Before starting one, click the model button (or press `⇧M`). The menu
-has two slots, **Explanation** and **Review**, and `Tab` switches between them:
+Guides and drafted comments need OMP. Before starting one, click **Settings** at the right of the status row (or press `⇧M`). The menu
+has three slots, **Explanation**, **Review** and **Lens**, and `Tab` steps through them:
 
 - **Explanation:** the model and effort that write the walkthrough. A fast model at low effort is
   enough.
 - **Review:** the model and effort that draft comments on problems and questions. A strong model
   works best, and higher effort finds more.
+- **Lens:** what the review comments pay attention to.
 
 Until you choose an explanation model it uses OMP's `smol` model, with that role's effort or medium,
-else OMP's default model at medium effort, else the review model at medium effort. The model button shows the
-explanation model, then the review model, each with its effort, then the lens. The PR hub's Settings
+else OMP's default model at medium effort, else the review model at medium effort. The menu checks the model each
+pass uses. The PR hub's Settings
 (`⇧S`) show the same menu and save the same choice. Agent fixes and feedback summaries use the review
 model.
 
-The lens control is on the Review slot, because a lens steers only the review comments. PR Guide
-ships four lenses:
+`⇧L` opens the menu straight on the Lens slot. A lens steers only the review comments. PR Guide ships four lenses:
 
 - **Balanced:** the comments worth making on the whole PR.
 - **Security:** the change from an attacker's point of view.
@@ -348,10 +348,11 @@ Press `?` for shortcuts that apply to the current page. In the hub, the panel fo
 | `i` | Show the PR description |
 | `m` | Mark or unmark everything reviewed |
 | `g` | Open the PR on GitHub |
-| `⇧G` | Generate a guide |
-| `⇧R` | Draft review comments |
-| `⇧M` | Choose the explanation and review models, their effort, and the lens |
-| `Tab` | In that menu, switch between Explanation and Review |
+| `⇧G` | Generate AI guide |
+| `⇧R` | Generate LLM review |
+| `⇧M` | Settings: the explanation and review models, their effort, and the lens |
+| `⇧L` | Choose the review lens |
+| `Tab` | In that menu, switch between Explanation, Review and Lens |
 | `⌃E` | Edit lenses |
 | `r` | Open the review panel |
 | `x` | Include or leave out the selected review comment |

@@ -1,7 +1,6 @@
 --!strict
 -- The keys that matter right now, pinned to the bottom of the pane. It follows the mode (reading,
 -- writing a comment, finishing the review) and offers a suggestion's keys only when one is in reach.
-local ModelBox = require("../model-box")
 local Review = require("../review")
 local State = require("../state")
 local Ui = require("./ui")
@@ -39,10 +38,9 @@ local function readingKeys(s: State.State): (string, { { string } })
  return "Step " .. r.cur .. " of " .. #r.steps .. "  ·  " .. step.title, keys
 end
 
--- The model menu's keys; the lens's only where the menu shows it. Tab shows in the menu itself.
+-- The model menu's keys, or on Lens the lens's. Tab shows in the menu itself.
 local function modelKeys(s: State.State): { { string } }
- local keys = { { "↑ ↓", "model" }, { "← →", "effort" } }
- if s.models and ModelBox.showsLens(s.models) then table.insert(keys, { "⇧ ← →", "lens" }) end
+ local keys = if s.models and s.models.slot == "lens" then { { "↑ ↓", "lens" } } else { { "↑ ↓", "model" }, { "← →", "effort" } }
  table.insert(keys, { "⏎", "use it" })
  table.insert(keys, { "esc", "close" })
  return keys
@@ -55,7 +53,7 @@ function M.view(s: State.State): Node
  if fixed then
   title, keys = fixed.title, fixed.keys
  elseif mode == "models" then
-  title, keys = "Choosing models", modelKeys(s)
+  title, keys = if s.models and s.models.slot == "lens" then "Choosing a lens" else "Choosing models", modelKeys(s)
  else
   title, keys = readingKeys(s)
  end
