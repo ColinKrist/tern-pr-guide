@@ -804,6 +804,11 @@ function M.startGuide(b: ReviewPage, cx: BlockCx)
  autoGenerate(b, cx)
 end
 
+-- Shown again by its host: the body starts at the top, so the reader's place comes back into view.
+function M.resume(b: ReviewPage, cx: BlockCx)
+ if b.page then follow(b.page, cx, false) end
+end
+
 function M.title(b: ReviewPage): string?
  if b.page then return "Review · #" .. b.page.review.pr.number end
  return if b.name ~= "" then "PR " .. b.name else "PR Guide"

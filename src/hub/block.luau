@@ -799,6 +799,9 @@ local block: BlockDef<Block> = {
 		return b
 	end,
 	title = function(b: Block): string?
+		local route = b.s.route
+		local pr = if route then State.prOf(b.s, route.key) else nil
+		if pr and not b.pages.shown then return (if route and route.kind == "review-fix" then "Review fix · #" else "Fixes · #") .. pr.number end
 		return Pages.title(b) or "Pull requests"
 	end,
 	view = function(b: Block): BlockView

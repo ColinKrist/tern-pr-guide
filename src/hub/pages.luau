@@ -130,6 +130,7 @@ function M.open(b: Block, cx: BlockCx, spec: Spec)
 	if entry then
 		entry.cardKey = spec.cardKey or entry.cardKey
 		show(b, cx, entry, spec.view)
+		if spec.view == nil then ReviewPage.resume(entry.page, cx) end
 		if spec.generate then ReviewPage.startGuide(entry.page, cx) end
 		return
 	end
