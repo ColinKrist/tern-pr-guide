@@ -1,6 +1,6 @@
 --!strict
 -- The review page's Actions menu: what to do with the PR, its rows in groups set off by a hairline, each with its key, as
--- a Tern overlay under the header's Actions button.
+-- a Tern overlay under the header's Actions button, drawn as the hub's menus are (role gp.hubmenu).
 local State = require("../state")
 local Ui = require("./ui")
 
@@ -21,7 +21,7 @@ function M.view(rows: { State.ActionRow }, cursor: number, anchor: string, soft:
  local body = el("div", { class = "gp-md gp-hm" .. (if soft then " gp-soft" else ""), key = "body" }, {
   el("div", { class = "gp-md-list gp-hm-list", key = "list" }, kids),
  })
- return { k = "overlay", p = { key = "actions", role = "gp.actions", aria = "Actions", anchor = { node = anchor, side = "below" }, size = "md" }, c = { body } } :: any
+ return { k = "overlay", p = { key = "actions", role = "gp.hubmenu", aria = "Actions", anchor = { node = anchor, side = "below" }, size = "md" }, c = { body } } :: any
 end
 
 return M

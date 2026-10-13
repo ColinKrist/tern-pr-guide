@@ -1384,7 +1384,7 @@
 .gp-hub-rc-when { width: 64px; flex-shrink: 0; text-align: right; font-size: 12.5px; color: var(--t3); font-variant-numeric: tabular-nums; }
 
 /* the menus and the key panel: Tern overlays holding rows like the model menu's */
-[data-role='gp.hubfilter'] .sf-ov-body, [data-role='gp.hubmenu'] .sf-ov-body, [data-role='gp.actions'] .sf-ov-body, [data-role='gp.hubsettings'] .sf-ov-body, [data-role='gp.hubhelp'] .sf-ov-body, [data-role='gp.hubchecks'] .sf-ov-body { padding: 0; gap: 0; }
+[data-role='gp.hubfilter'] .sf-ov-body, [data-role='gp.hubmenu'] .sf-ov-body, [data-role='gp.hubsettings'] .sf-ov-body, [data-role='gp.hubhelp'] .sf-ov-body, [data-role='gp.hubchecks'] .sf-ov-body { padding: 0; gap: 0; }
 .gp-hm-head { padding: 10px 14px 0; font-family: var(--sans); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--t3); }
 .gp-hm-list { max-height: 360px; }
 .gp-hm-row { font-size: 13px; white-space: nowrap; }
