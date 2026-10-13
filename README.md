@@ -160,11 +160,13 @@ page, returns to the board with the card still selected.
 - The hub keeps the last three PRs you opened, with their drafts, marks and any guide being
   written. A page with an unsent comment or an agent run in progress is never dropped.
 
-**Pull request menu.** On a PR's page in the hub, `⇧P` (or the **Pull request** button) lists what
-the PR offers: Merge, Merge when ready, Cancel merge, Update branch, Re-request review and Close
-pull request. The rules match the card on the board. `j` `k` move, `⏎` or a row's own key chooses,
-`Esc` closes. Merge and Close ask first: `⌘⏎` confirms and `Esc` cancels. The page stays open with
-a notice of what happened. The standalone guide block has no menu.
+**Actions menu.** `⇧P` (or the **Actions** button at the right of the status row) lists what to do
+with the PR, in groups: Merge, Merge when ready or Cancel merge, and Update branch; Re-request
+review and Mark all reviewed; Copy link and Open on GitHub; Close pull request. The rules match the
+card on the board. Outside the hub the menu has Mark all reviewed and Open on GitHub only. `j` `k`
+move, `⏎` or a row's own key chooses, `Esc` closes. `u` updates the branch without opening the menu,
+when the PR offers it. Merge and Close ask first: `⌘⏎` confirms and `Esc` cancels. The page stays
+open with a notice of what happened.
 
 ## Fix what's blocking
 

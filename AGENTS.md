@@ -14,7 +14,7 @@ A Tern plugin (Luau and one stylesheet) with two surfaces: the PR hub organizes 
 | Hub selection, filters, search and prepared board | `src/hub/state.luau` |
 | Cache, refresh scheduling, recent PRs and merge settings | `src/hub/sync.luau` |
 | GitHub commands and response parsing | `src/github.luau` |
-| Pull request actions (merge, merge when ready, cancel merge, update branch, re-request review, close): which a PR offers, refusals, questions and commands, for the board and the Pull request menu (⇧P) on a PR's page | `src/pr-actions.luau` |
+| Pull request actions (merge, merge when ready, cancel merge, update branch, re-request review, close): which a PR offers, refusals, questions and commands, for the board, the Actions menu (⇧P) on a PR's review page and the fixes page's Pull request menu | `src/pr-actions.luau` |
 | Processes, files, kv and worktree effects | `src/fetch.luau` |
 | Hub actions, callbacks and window effects | `src/hub/block.luau` |
 | Auto-land: rules and merge kinds, the workflow and its kv | `src/hub/auto-land.luau`, `src/hub/auto-land-run.luau` |
@@ -24,6 +24,7 @@ A Tern plugin (Luau and one stylesheet) with two surfaces: the PR hub organizes 
 | Saved guide model and parsing | `src/guide.luau` |
 | Guided review interaction state and effects | `src/state.luau`, `src/review-page.luau` (the runtime, mounted at a root node path), `src/block.luau` (the `prguide.guide` block shell) |
 | Guided review rendering | `src/view/*.luau` outside `src/view/hub/` |
+| Review page's Actions menu (⇧P): its rows and groups, the hub's rows through `State.Hosted.actions` | `src/state.luau` (`actionRows`), `src/view/actions-menu.luau`, `src/hub/state.luau` (`pageActions`) |
 | Model and lens menu (review page and hub Settings) | `src/model-box.luau`, `src/view/model-panel.luau` |
 | Keyboard actions and help | `src/keys.luau`, `src/view/help.luau`, `src/view/hub/help.luau`, `docs/keys.md` |
 | Shared presentation | `guide.css` |
