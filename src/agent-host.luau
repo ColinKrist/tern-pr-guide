@@ -120,7 +120,7 @@ function M.explain(agent: Agent.Agent, repo: Fetch.Repo, pr: Pr.PR, done: (Guide
   local json = Agent.replyJson(reply)
   if json == "" then return fail(Agent.shortName(agent.explain.model) .. " finished without replying") end
   Host.fs.write(path, json)
-  local guide, problem = Guide.read(path, pr)
+  local guide, problem = Fetch.readGuide(path, pr)
   if guide then return done(guide, nil) end
   fail("its explanation isn't usable: " .. (problem :: string) .. " (kept at " .. setAside(pr, path, "guide.json") .. ")")
  end)
@@ -135,7 +135,7 @@ function M.draftReview(agent: Agent.Agent, repo: Fetch.Repo, pr: Pr.PR, done: (G
  local fail = function(message: string) done(nil, message) end
  runPass(agent, "review", repo, pr, path, { reviewPath = path, lens = Host.json.encode(lens.name), focus = Agent.focus(lens) }, fail, function()
   if not Host.fs.exists(path) then return fail(Agent.shortName(agent.model) .. " finished without writing " .. path) end
-  local draft, problem = Guide.readDraft(path, pr)
+  local draft, problem = Fetch.readDraft(path, pr)
   if draft then return done(draft, nil) end
   fail("the review it wrote isn't usable: " .. (problem :: string) .. " (kept at " .. setAside(pr, path, "review.json") .. ")")
  end)
