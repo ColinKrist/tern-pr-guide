@@ -329,7 +329,7 @@ local function fill(s: State, plan: Plan, forced: { Candidate }, queue: { Candid
   local fd = s.diffs[block.file]
   if fd.file.binary then return 0, true end
   local rows = Diff.layout(fd, M.show(s, block.file, block.id, block.steps)).rows
-  local plain = not fd.highlighted or rows > PLAIN_OVER
+  local plain = not fd.syntax or rows > PLAIN_OVER
   return rows * (if plain then PLAIN_COST else 1), plain
  end
  for _, block in forced do

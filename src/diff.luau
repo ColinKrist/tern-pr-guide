@@ -26,6 +26,17 @@ export type Entry = {
 
 export type Token = { text: string, kind: string, changed: boolean }
 
+-- How one language's lines are colored: its keywords, the markers that comment out the rest of a
+-- line, a block comment's open and close, and the characters that open a string. `caseless`
+-- matches keywords in any case.
+export type Syntax = {
+ keywords: { [string]: boolean },
+ comments: { string },
+ block: { string }?,
+ quotes: string,
+ caseless: boolean?,
+}
+
 export type Rows = { kind: "rows", first: number, last: number }
 -- A run of unchanged lines of a big file, left to Tern's own code viewer.
 export type Native = { kind: "native", first: number, last: number }
@@ -43,7 +54,9 @@ export type Layout = { key: string, segments: { Segment }, rows: number }
 export type FileDiff = {
  file: Pr.File,
  entries: { Entry },
- highlighted: boolean,
+ -- How to color its lines; nil draws them plain.
+ syntax: Syntax?,
+ -- The language name Tern's own code viewer gets.
  language: string,
  -- Joined text of native runs, by "first-last".
  runs: { [string]: string },
@@ -69,12 +82,91 @@ export type Show = {
  reveals: { Interval },
 }
 
-local KEYWORDS: { [string]: boolean } = {}
-for word in string.gmatch("const let var function return if else for while of in new await async export import from type interface class extends implements this null undefined true false throw try catch typeof as readonly", "%S+") do
- KEYWORDS[word] = true
+local function wordSet(list: string): { [string]: boolean }
+ local set = {}
+ for word in string.gmatch(list, "%S+") do set[word] = true end
+ return set
 end
 
-local LANGUAGES: { [string]: string } = { ts = "ts", tsx = "tsx", js = "js", md = "markdown", json = "json", luau = "lua", css = "css" }
+local C_BLOCK = { "/*", "*/" }
+
+local JS: Syntax = {
+ keywords = wordSet("const let var function return if else for while do switch case default break continue of in new delete void await async yield export import from type interface enum class extends implements this super null undefined true false throw try catch finally typeof instanceof as readonly static public private protected"),
+ comments = { "//" }, block = C_BLOCK, quotes = "\"'`",
+}
+local PYTHON: Syntax = {
+ keywords = wordSet("def class return if elif else for while in not and or is import from as with try except finally raise pass break continue lambda yield global nonlocal assert del async await None True False self"),
+ comments = { "#" }, quotes = "\"'",
+}
+local GO: Syntax = {
+ keywords = wordSet("package import func return if else for range switch case default break continue go defer select chan map struct interface type var const fallthrough goto nil true false"),
+ comments = { "//" }, block = C_BLOCK, quotes = "\"'`",
+}
+-- `'` also opens a lifetime (`'a`), so only `"` opens a string.
+local RUST: Syntax = {
+ keywords = wordSet("fn let mut const static return if else match for while loop in break continue struct enum trait impl pub use mod crate self super where as ref move async await dyn unsafe extern type true false"),
+ comments = { "//" }, block = C_BLOCK, quotes = "\"",
+}
+local RUBY: Syntax = {
+ keywords = wordSet("def end class module return if elsif else unless case when while until for in do begin rescue ensure raise yield self nil true false and or not then require"),
+ comments = { "#" }, quotes = "\"'",
+}
+local JAVA: Syntax = {
+ keywords = wordSet("class interface enum extends implements package import public private protected static final abstract void return if else for while do switch case default break continue new this super null true false throw throws try catch finally instanceof var record"),
+ comments = { "//" }, block = C_BLOCK, quotes = "\"'",
+}
+local KOTLIN: Syntax = {
+ keywords = wordSet("fun val var class object interface data sealed enum open override private public internal protected return if else when for while do in is as break continue null true false this super throw try catch finally import package companion suspend"),
+ comments = { "//" }, block = C_BLOCK, quotes = "\"'",
+}
+local SWIFT: Syntax = {
+ keywords = wordSet("func let var class struct enum protocol extension import return if else guard switch case default for in while repeat break continue nil true false self throw throws try catch do async await public private internal fileprivate static override init deinit some any"),
+ comments = { "//" }, block = C_BLOCK, quotes = "\"",
+}
+local C: Syntax = {
+ keywords = wordSet("int char float double long short unsigned signed void bool auto const static extern struct union enum typedef return if else for while do switch case default break continue goto sizeof class namespace template typename public private protected virtual override new delete this nullptr true false using include define ifdef ifndef endif"),
+ comments = { "//" }, block = C_BLOCK, quotes = "\"'",
+}
+local CSHARP: Syntax = {
+ keywords = wordSet("class interface struct enum namespace using public private protected internal static readonly const void var return if else for foreach in while do switch case default break continue new this base null true false throw try catch finally async await override virtual abstract sealed record get set"),
+ comments = { "//" }, block = C_BLOCK, quotes = "\"'",
+}
+local SHELL: Syntax = {
+ keywords = wordSet("if then else elif fi for in do done while until case esac function return local export set unset echo exit source"),
+ comments = { "#" }, quotes = "\"'",
+}
+local LUA: Syntax = {
+ keywords = wordSet("local function return if then elseif else end for in do while repeat until break continue not and or nil true false type export"),
+ comments = { "--" }, quotes = "\"'`",
+}
+local CSS: Syntax = {
+ keywords = wordSet("important media import supports keyframes"),
+ comments = { "//" }, block = C_BLOCK, quotes = "\"'",
+}
+local JSON: Syntax = { keywords = wordSet("true false null"), comments = {}, quotes = "\"" }
+local YAML: Syntax = { keywords = wordSet("true false null yes no"), comments = { "#" }, quotes = "\"'" }
+local TOML: Syntax = { keywords = wordSet("true false"), comments = { "#" }, quotes = "\"'" }
+local SQL: Syntax = {
+ keywords = wordSet("select from where and or not insert into values update set delete create table alter drop index join left right inner outer on as group by order having limit offset null is in like between case when then else end primary key references default distinct union all"),
+ comments = { "--" }, block = C_BLOCK, quotes = "\"'", caseless = true,
+}
+
+-- What each file extension is colored as, and the name Tern's own code viewer knows it by (the
+-- extension when unset). A new language is one entry here.
+local EXTENSIONS: { [string]: { syntax: Syntax?, language: string? } } = {
+ ts = { syntax = JS }, tsx = { syntax = JS }, js = { syntax = JS }, jsx = { syntax = JS },
+ mjs = { syntax = JS, language = "js" }, cjs = { syntax = JS, language = "js" },
+ py = { syntax = PYTHON }, go = { syntax = GO }, rs = { syntax = RUST }, rb = { syntax = RUBY },
+ java = { syntax = JAVA }, kt = { syntax = KOTLIN }, kts = { syntax = KOTLIN }, swift = { syntax = SWIFT },
+ c = { syntax = C }, h = { syntax = C }, cc = { syntax = C }, cpp = { syntax = C }, hpp = { syntax = C },
+ cs = { syntax = CSHARP },
+ sh = { syntax = SHELL }, bash = { syntax = SHELL }, zsh = { syntax = SHELL },
+ lua = { syntax = LUA }, luau = { syntax = LUA, language = "lua" },
+ css = { syntax = CSS }, scss = { syntax = CSS },
+ json = { syntax = JSON }, yaml = { syntax = YAML }, yml = { syntax = YAML }, toml = { syntax = TOML },
+ sql = { syntax = SQL },
+ md = { language = "markdown" },
+}
 
 -- Entries a step shows on each side of its range.
 local STEP_CONTEXT = 2
@@ -382,7 +474,14 @@ local function gapAt(first: number, last: number, total: number, label: string?)
  return { kind = "gap", first = first, last = last, hidden = hidden, reveal = { first = from, last = to }, arrow = arrow, label = label }
 end
 
-local function tokenize(line: string): { { string } }
+local function startsAt(line: string, i: number, marker: string): boolean
+ return string.sub(line, i, i + #marker - 1) == marker
+end
+
+-- Splits a line into colored pieces, each `{ text, kind }`.
+-- ponytail: a block comment or string that spans lines colors only the line it opens on, since
+-- lines are tokenized one at a time.
+local function tokenize(line: string, syntax: Syntax): { { string } }
  local tokens, i, n = {}, 1, #line
  local function take(last: number, kind: string)
   table.insert(tokens, { string.sub(line, i, last), kind })
@@ -392,8 +491,16 @@ local function tokenize(line: string): { { string } }
   local c = string.sub(line, i, i)
   local _, last = string.find(line, "^%s+", i)
   if last then take(last, "plain"); continue end
-  if string.sub(line, i, i + 1) == "//" then take(n, "com"); break end
-  if c == '"' or c == "'" or c == "`" then
+  local comment = false
+  for _, marker in syntax.comments do comment = comment or startsAt(line, i, marker) end
+  if comment then take(n, "com"); break end
+  local block = syntax.block
+  if block and startsAt(line, i, block[1]) then
+   local _, close = string.find(line, block[2], i + #block[1], true)
+   take(close or n, "com")
+   continue
+  end
+  if string.find(syntax.quotes, c, 1, true) then
    local j = i + 1
    while j <= n and string.sub(line, j, j) ~= c do
     if string.sub(line, j, j) == "\\" then j += 1 end
@@ -405,7 +512,8 @@ local function tokenize(line: string): { { string } }
   _, last = string.find(line, "^[%a_$][%w_$]*", i)
   if last then
    local word = string.sub(line, i, last)
-   take(last, if KEYWORDS[word] then "kw" elseif string.match(word, "^%u") then "type" elseif string.sub(line, last + 1, last + 1) == "(" then "fn" else "plain")
+   local keyword = syntax.keywords[if syntax.caseless then string.lower(word) else word]
+   take(last, if keyword then "kw" elseif string.match(word, "^%u") then "type" elseif string.sub(line, last + 1, last + 1) == "(" then "fn" else "plain")
    continue
   end
   _, last = string.find(line, "^%d+", i)
@@ -448,11 +556,12 @@ function M.analyze(file: Pr.File, moves: { [number]: Move }?): FileDiff
  local entries = buildEntries(file, pairChanges(file.rows, moves or {}), moves or {})
  anchorEntries(entries)
  local extension = Text.extension(file.path)
+ local kind = EXTENSIONS[extension]
  return {
   file = file,
   entries = entries,
-  highlighted = extension == "ts",
-  language = LANGUAGES[extension] or extension,
+  syntax = kind and kind.syntax,
+  language = kind and kind.language or extension,
   runs = {},
   tokens = {},
   layouts = {},
@@ -567,12 +676,12 @@ function M.runText(fd: FileDiff, first: number, last: number): string
  return text
 end
 
--- Colored pieces of entry `i` of a highlighted file, tokenized once.
+-- Colored pieces of entry `i` of a file with a syntax, tokenized once.
 function M.tokens(fd: FileDiff, i: number): { Token }
  local entry = fd.entries[i]
  local tokens = fd.tokens[i]
  if not tokens then
-  tokens = markChanged(tokenize(entry.row.text), entry.changed)
+  tokens = markChanged(tokenize(entry.row.text, fd.syntax :: Syntax), entry.changed)
   fd.tokens[i] = tokens
  end
  return tokens
