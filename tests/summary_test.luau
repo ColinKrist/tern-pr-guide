@@ -540,9 +540,8 @@ return function()
 	assert(State.installSummary(s, d.three, Fixture.transcripts.three.stdout))
 	assert(card(s, d.three.key).detail == "Reply to @maria-k" and #card(s, d.three.key).chips == 1 and #card(s, d.three.key).reasons == 3)
 	State.select(s, d.comments.key)
-	s.search.text = "filter"; assert(Keys.hubAction(s, { name = "a" } :: any) == nil)
-	s.search.text = ""; s.link.text = "link"; assert(Keys.hubAction(s, { name = "a", shift = true } :: any) == nil)
-	s.link.text = ""
+	s.search.text = "filter"; State.openSearch(s); assert(Keys.hubAction(s, { name = "a" } :: any) == nil)
+	State.closeSearch(s, true)
 
 	-- A bot's body-only comment review at the current head is actionable (its body is in the details as a
 	-- review-level thread); one on an older head is not. Bot threads and bot requested changes stay actionable.

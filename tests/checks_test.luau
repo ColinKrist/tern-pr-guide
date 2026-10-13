@@ -199,7 +199,7 @@ local function keys()
 	local v = Keys.hubAction(s, key("v"))
 	assert(v and v.act == "hub-checks" and v.value == "acme/web#111", "V opens the selected card's checks")
 	s.search.text = "web"
-	assert(Keys.hubAction(s, key("v")) == nil, "letters type while the search field has text")
+	assert((Keys.hubAction(s, key("v")) :: Keys.Action).act == "hub-checks", "letters act on a filtered board")
 	s.search.text = ""
 	State.openFixes(s, "acme/web#111")
 	local onPage = Keys.hubAction(s, key("v"))

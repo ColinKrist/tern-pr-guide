@@ -95,7 +95,7 @@ local function strips()
 	assert(u and u.act == "fixes-update", "U sends the button's action")
 	assert(table.find(State.fixItems(s, State.fixStep(s)), "update"), "j/k reach the button")
 	s.search.text = "x"
-	assert(Keys.hubAction(s, key("u")) == nil, "letters type while the search field has text")
+	assert((Keys.hubAction(s, key("u")) :: Keys.Action).act == "fixes-update", "letters act with a filter applied")
 
 	assert(has(strip(page(1)), "1 commit behind main"))
 

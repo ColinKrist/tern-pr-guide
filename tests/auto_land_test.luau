@@ -391,7 +391,7 @@ local function testBoard()
 	assert(Keys.hubAction(s, key("q", true)) == nil, "⇧Q does nothing on a card without auto-land")
 	s.search.text = "x"
 	State.select(s, "acme/api#120")
-	assert(Keys.hubAction(s, key("q", true)) == nil, "letters act only while search is empty")
+	assert((Keys.hubAction(s, key("q", true)) :: Keys.Action).act == "card-autoland", "letters act on a filtered board")
 	s.search.text = ""
 
 	-- Settings: - and + change the cap, ⇧D edits the label; while it is edited, ⏎ saves, Esc cancels, the rest is typed.

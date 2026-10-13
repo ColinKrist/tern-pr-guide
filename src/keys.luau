@@ -200,7 +200,6 @@ local function fixesKey(s: HubState.State, key: Key): Action?
 	if key.ctrl or key.meta or key.alt then return nil end
 	if isQuestionMark(key) then return act("hub-help") end
 	if name == "escape" then return act("fixes-close") end
-	if string.match(name, "^%a$") and (s.search.text ~= "" or s.link.text ~= "") then return nil end
 	local label = cardKeyLabel(key)
 	if label == "⇧L" then return act("fixes-log") end
 	if label == "⇧R" then return act("fixes-rerun") end
@@ -240,8 +239,6 @@ local function hubBoardKey(s: HubState.State, key: Key): Action?
 	if key.ctrl or key.meta or key.alt then return nil end
 	if name == "escape" then return act("hub-escape") end
 	if name == "enter" then return act(if key.shift then "hub-open-generate" else "hub-open") end
-	-- Letter shortcuts act only when both fields are empty, even after search lost focus.
-	if string.match(name, "^%a$") and (s.search.text ~= "" or s.link.text ~= "") then return nil end
 	local label = cardKeyLabel(key)
 	if name == "space" then return act("hub-mark") end
 	if label == "⇧X" and s.tab == "mine" then return act("hub-mark-stale") end
@@ -277,7 +274,8 @@ local function hubBoardKey(s: HubState.State, key: Key): Action?
 end
 
 -- The action `key` triggers on the PR hub, or nil when it changes nothing or, in the search field, types
--- into it. Letters act only on the board and in menus: while the filter is typed they are text.
+-- into it. While the search or add-by-link field has focus, letters are text; once ⏎ leaves the field
+-- they act again, its filter still applied.
 function M.hubAction(s: HubState.State, key: Key): Action?
 	local mode = HubState.mode(s)
 	if mode == "review-fix" then
@@ -293,7 +291,6 @@ function M.hubAction(s: HubState.State, key: Key): Action?
 		if key.ctrl or key.meta or key.alt then return nil end
 		if key.name == "escape" then return act("review-fix-close") end
 		if key.name == "enter" then return act("review-fix-reviewed") end
-		if string.match(key.name, "^%a$") and (s.search.text ~= "" or s.link.text ~= "") then return nil end
 		if key.name == "down" or key.name == "j" then return act("review-fix-move", 1) end
 		if key.name == "up" or key.name == "k" then return act("review-fix-move", -1) end
 		local label = cardKeyLabel(key)
