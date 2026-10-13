@@ -12,25 +12,17 @@ export type ModelBox = { slot: Agent.Pass, field: Fields.Field, query: string, s
 
 local M = {}
 
--- The Review slot's first row, which turns the review off.
-M.OFF = { selector = "", name = "Off", efforts = {} } :: Agent.Model
-
 -- Rows the model list fits before it scrolls.
 local MODEL_ROWS = 8
 
--- Whether `model` is the one `slot` uses; Off is when the review is off.
+-- Whether `model` is the one `slot` uses.
 function M.inUse(agent: Agent.Agent, slot: Agent.Pass, model: Agent.Model): boolean
- if slot == "review" and not agent.review then return model == M.OFF end
- return model ~= M.OFF and model.selector == Agent.choiceFor(agent, slot).model
+ return model.selector == Agent.choiceFor(agent, slot).model
 end
 
--- The rows matching the filter: the models, under Off on the Review slot.
+-- The models matching the filter.
 function M.choices(box: ModelBox, agent: Agent.Agent): { Agent.Model }
- local models = Agent.matching(agent.models, box.field.text)
- if box.slot ~= "review" or #Agent.matching({ M.OFF }, box.field.text) == 0 then return models end
- local rows = { M.OFF }
- table.move(models, 1, #models, 2, rows)
- return rows
+ return Agent.matching(agent.models, box.field.text)
 end
 
 -- The menu on `slot`, highlighting what that pass uses.
@@ -44,13 +36,10 @@ function M.open(agent: Agent.Agent, slot: Agent.Pass): ModelBox
 end
 
 -- The lines the list draws from row `top` down to row `last`: each row, a provider heading where the
--- provider changes, the pinned Off row and the "more" row above a list that starts lower down.
+-- provider changes, and the "more" row above a list that starts lower down.
 local function linesTo(choices: { Agent.Model }, top: number, last: number): number
- local pinned = choices[1] == M.OFF
- local first = if pinned then 2 else 1
- local from = math.max(top, first)
- local lines, group = (if pinned then 1 else 0) + (if from > first then 1 else 0), nil
- for n = from, last do
+ local lines, group = if top > 1 then 1 else 0, nil
+ for n = top, last do
   local name = string.match(choices[n].selector, "^([^/]+)/") or ""
   if name ~= group then
    group = name
@@ -88,18 +77,14 @@ function M.stepEffort(box: ModelBox, agent: Agent.Agent, delta: number)
  box.effort = model.efforts[(at - 1 + delta) % #model.efforts + 1]
 end
 
--- Makes the highlighted model, with the effort it can take, the one the slot's pass runs with, or
--- turns the review off; false when the filter matches nothing.
+-- Makes the highlighted model, with the effort it can take, the one the slot's pass runs with;
+-- false when the filter matches nothing.
 function M.choose(box: ModelBox, agent: Agent.Agent): boolean
  local model = M.choices(box, agent)[box.selected]
  if not model then return false end
- if model == M.OFF then
-  agent.review = false
-  return true
- end
  local effort = Agent.effortFor(model, box.effort)
  if box.slot == "review" then
-  agent.model, agent.effort, agent.review = model.selector, effort, true
+  agent.model, agent.effort = model.selector, effort
  else
   agent.explain, agent.explainPicked = { model = model.selector, effort = effort }, true
  end
@@ -107,9 +92,9 @@ function M.choose(box: ModelBox, agent: Agent.Agent): boolean
  return true
 end
 
--- Whether the menu offers the lens: on the Review slot, while the review is on.
-function M.showsLens(box: ModelBox, agent: Agent.Agent): boolean
- return box.slot == "review" and agent.review
+-- Whether the menu offers the lens: on the Review slot.
+function M.showsLens(box: ModelBox): boolean
+ return box.slot == "review"
 end
 
 -- What a menu action left behind: the box to show (a fresh one when the slot switched), whether the
@@ -146,12 +131,12 @@ function M.act(box: ModelBox, agent: Agent.Agent, act: string, value: string): O
   box.effort = value
   return stay(M.choose(box, agent))
  elseif act == "models-lens" then
-  if not M.showsLens(box, agent) then return stay(false) end
+  if not M.showsLens(box) then return stay(false) end
   agent.lens = Lens.step(agent.lenses, agent.lens, tonumber(value) :: number).name
   return stay(true)
  elseif act == "model-lens" then
   local lens = agent.lenses[tonumber(value) :: number]
-  if not M.showsLens(box, agent) or not lens then return stay(false) end
+  if not M.showsLens(box) or not lens then return stay(false) end
   agent.lens = lens.name
   return stay(true)
  end

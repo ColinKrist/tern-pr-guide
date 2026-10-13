@@ -178,13 +178,16 @@ first, then go through it in small steps:
 - Guides saved in the repository, so a reopened PR loads its guide right away in every worktree of
   the clone.
 
-Generating a guided review starts two OMP runs at once. The explanation is one request: the prompt,
-the PR's description and the diff go to the model together, and it replies with the overview and
-steps. The diff leaves out what nobody reads line by line: generated, vendored and minified files and
-test snapshots show as one line each, and whitespace-only changes are counted instead of shown, except
-in Python and YAML. The page turns guided as soon as the explanation lands, with "Reviewing for issues…" in the status line
-while the review is still drafting comments. The comments and summary join the page when the review
-finishes. A summary you already edited is kept.
+**Generate guide** (`⇧G`) writes the walkthrough in one OMP request: the prompt, the PR's description
+and the diff go to the model together, and it replies with the overview and steps. The diff leaves
+out what nobody reads line by line: generated, vendored and minified files and test snapshots show as
+one line each, and whitespace-only changes are counted instead of shown, except in Python and YAML.
+The page turns guided as soon as the explanation lands.
+
+**Draft review comments** (`⇧R`) is a separate OMP run that looks for problems and questions and
+drafts comments and a review summary. It works with or without a guide, and the two can run at the
+same time. The comments and summary join the page when the review finishes. A summary you already
+edited is kept.
 
 ![A guided review with an overview, diagram and the first change](docs/screenshots/overview.png)
 
@@ -192,14 +195,13 @@ finishes. A summary you already edited is kept.
 
 ## Choose models and a review lens
 
-Guided reviews need OMP. Before generating one, click the model button (or press `⇧M`). The menu
+Guides and drafted comments need OMP. Before starting one, click the model button (or press `⇧M`). The menu
 has two slots, **Explanation** and **Review**, and `Tab` switches between them:
 
 - **Explanation:** the model and effort that write the walkthrough. A fast model at low effort is
   enough.
 - **Review:** the model and effort that draft comments on problems and questions. A strong model
-  works best, and higher effort finds more. Choose **Off** to get the explanation only, with no
-  drafted comments.
+  works best, and higher effort finds more.
 
 Until you choose an explanation model it uses OMP's `smol` model, with that role's effort or medium,
 else OMP's default model at medium effort, else the review model at medium effort. The model button shows the
@@ -255,11 +257,11 @@ Press `?` for shortcuts that apply to the current page. In the hub, the panel fo
 | Key | Action |
 |---|---|
 | `⌥⌘R` | Open or focus the hub |
-| `⌥⇧⌘R` | Open the hub so `⏎` starts a guided review |
+| `⌥⇧⌘R` | Open the hub so `⏎` generates the PR's guide |
 | `h` `j` `k` `l` or arrows | Move between cards |
 | `.` | Select the most urgent PR |
 | `⏎` or click | Open the PR, its fixes page or a ready agent fix |
-| `⇧⏎` | Open and start a guided review |
+| `⇧⏎` | Open and generate the PR's guide |
 | `T` | Switch between your PRs and review requests |
 | `/` | Search |
 | `F` | Filter by repository or title; ignore named checks |
@@ -309,7 +311,8 @@ Press `?` for shortcuts that apply to the current page. In the hub, the panel fo
 | `i` | Show the PR description |
 | `m` | Mark or unmark everything reviewed |
 | `g` | Open the PR on GitHub |
-| `⇧G` | Generate a guided review |
+| `⇧G` | Generate a guide |
+| `⇧R` | Draft review comments |
 | `⇧M` | Choose the explanation and review models, their effort, and the lens |
 | `Tab` | In that menu, switch between Explanation and Review |
 | `⌃E` | Edit lenses |
@@ -364,7 +367,7 @@ cx:new_block("prguide.guide", {"pr=123", "repo=/path/to/your/clone"}, "tab")
 | `pr=` | A PR number or URL |
 | `guide=` | A saved guide JSON file; see [GUIDE.md](GUIDE.md) |
 | `post=false` | Save the review under `/tmp` |
-| `generate=true` | Start a guided review when the PR opens |
+| `generate=true` | Generate a guide when the PR opens |
 
 PR Guide fetches the PR into `refs/prguide/<number>/*` and doesn't touch your branches or working
 tree. When there's no local clone to use, it keeps a light copy under Tern's plugin-data folder and

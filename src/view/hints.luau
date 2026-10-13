@@ -37,8 +37,7 @@ end
 -- The model menu's keys; the lens's only where the menu shows it. Tab shows in the menu itself.
 local function modelKeys(s: State.State): { { string } }
  local keys = { { "↑ ↓", "model" }, { "← →", "effort" } }
- local box, run = s.models, s.ai
- if box and run and ModelBox.showsLens(box, run.agent) then table.insert(keys, { "⇧ ← →", "lens" }) end
+ if s.models and ModelBox.showsLens(s.models) then table.insert(keys, { "⇧ ← →", "lens" }) end
  table.insert(keys, { "⏎", "use it" })
  table.insert(keys, { "esc", "close" })
  return keys

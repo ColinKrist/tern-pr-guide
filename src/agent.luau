@@ -1,6 +1,6 @@
 --!strict
--- The reader's own AI agent (OMP) writing a guide in two passes that run side by side: a fast
--- explanation of the PR, and a review that drafts comments. Holds the model and effort of each, the
+-- The reader's own AI agent (OMP) writing a guide in two passes the reader starts on their own: a
+-- fast explanation of the PR, and a review that drafts comments. Holds the model and effort of each, the
 -- models there are to pick from, and the files a run reads. src/agent-host.luau finds the agent and runs it.
 local Lens = require("./lens")
 local Pr = require("./pr")
@@ -18,23 +18,23 @@ export type Choice = { model: string, effort: string? }
 
 -- `omp` as the login shell finds it, that shell's PATH (`omp` runs on an interpreter found there),
 -- the review model and effort (agent fixes and the feedback summary run with them too), the
--- explanation's and whether the reader picked it (else it is OMP's fast model), whether a run reviews
--- at all, the models there are to choose from (empty until listed), the lenses there are to review
--- through and the name of the one a review uses.
+-- explanation's and whether the reader picked it (else it is OMP's fast model), the models there are
+-- to choose from (empty until listed), the lenses there are to review through and the name of the
+-- one a review uses.
 export type Agent = {
- command: string, path: string, model: string, effort: string?, explain: Choice, explainPicked: boolean, review: boolean,
+ command: string, path: string, model: string, effort: string?, explain: Choice, explainPicked: boolean,
  models: { Model }, lenses: { Lens.Lens }, lens: string,
 }
 
 -- What the reader picked, as kept between starts: `Agent` without what is found or listed.
-export type Picks = { model: string, effort: string?, explain: Choice, explainPicked: boolean, review: boolean, lens: string }
+export type Picks = { model: string, effort: string?, explain: Choice, explainPicked: boolean, lens: string }
 
 -- The models OMP's config names for each pass when the reader picked none.
 export type Defaults = { review: Choice?, explain: Choice? }
 
--- Writing a guide for the page's PR: which passes are going, the seconds since the run started,
--- how long each pass is expected to take, and the first line of why the explanation last failed.
-export type Run = { agent: Agent, explaining: boolean, reviewing: boolean, seconds: number, expected: { [Pass]: number }, error: string? }
+-- The page's AI passes: which are going, the seconds since each started, how long each is expected
+-- to take, and the first line of why the explanation last failed.
+export type Run = { agent: Agent, explaining: boolean, reviewing: boolean, seconds: { [Pass]: number }, expected: { [Pass]: number }, error: string? }
 
 local MARKS = { ctx = " ", add = "+", del = "-" }
 
@@ -67,8 +67,8 @@ end
 
 -- The picks kept under the "model" key, `saved`, over OMP's `defaults`: the review model, the
 -- explanation's (OMP's fast model until the reader picks one, else the review model at medium
--- effort, never the review's effort), the review on unless turned off, and the lens. Nil when
--- there is no model at all.
+-- effort, never the review's effort), and the lens. A `review` key an older version kept is ignored.
+-- Nil when there is no model at all.
 function M.picks(saved: any, defaults: Defaults): Picks?
  local kept = if type(saved) == "table" then saved else {}
  local review: Choice? = if type(kept.model) == "string"
@@ -80,7 +80,7 @@ function M.picks(saved: any, defaults: Defaults): Picks?
   then { model = kept.explainModel, effort = if type(kept.explainEffort) == "string" then kept.explainEffort else nil }
   else defaults.explain or { model = review.model, effort = EXPLAIN_EFFORT }
  return {
-  model = review.model, effort = review.effort, explain = explain, explainPicked = picked, review = kept.review ~= false,
+  model = review.model, effort = review.effort, explain = explain, explainPicked = picked,
   lens = if type(kept.lens) == "string" then kept.lens else Lens.DEFAULT,
  }
 end
@@ -92,14 +92,14 @@ function M.saved(agent: Agent): { [string]: any }
   model = agent.model, effort = agent.effort,
   explainModel = if agent.explainPicked then agent.explain.model else nil,
   explainEffort = if agent.explainPicked then agent.explain.effort else nil,
-  review = agent.review, lens = agent.lens,
+  lens = agent.lens,
  }
 end
 
 function M.new(command: string, path: string, picks: Picks): Agent
  return {
   command = command, path = path, model = picks.model, effort = picks.effort, explain = picks.explain,
-  explainPicked = picks.explainPicked, review = picks.review, models = {}, lenses = {}, lens = picks.lens,
+  explainPicked = picks.explainPicked, models = {}, lenses = {}, lens = picks.lens,
  }
 end
 
@@ -115,12 +115,18 @@ end
 
 -- A run with no pass going.
 function M.idle(agent: Agent): Run
- return { agent = agent, explaining = false, reviewing = false, seconds = 0, expected = { explain = 0, review = 0 }, error = nil }
+ return { agent = agent, explaining = false, reviewing = false, seconds = { explain = 0, review = 0 }, expected = { explain = 0, review = 0 }, error = nil }
 end
 
--- Starts both passes of `run`, or only the explanation when the reader turned the review off.
-function M.start(run: Run, expected: { [Pass]: number })
- run.explaining, run.reviewing, run.seconds, run.expected, run.error = true, run.agent.review, 0, expected, nil
+-- Starts `pass` of `run`, expected to take `expected` seconds. Starting the explanation clears why
+-- the last one failed.
+function M.start(run: Run, pass: Pass, expected: number)
+ run.seconds[pass], run.expected[pass] = 0, expected
+ if pass == "explain" then
+  run.explaining, run.error = true, nil
+ else
+  run.reviewing = true
+ end
 end
 
 -- Whether either pass is still going.

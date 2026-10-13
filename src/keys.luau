@@ -77,6 +77,7 @@ local function readingKey(s: State.State, key: Key): Action?
  if name == "a" then return act("decide-current", "added") end
  if name == "d" then return act("decide-current", "dismissed") end
  if name == "c" then return act("comment-step") end
+ if (name == "r" and key.shift) or name == "R" then return act("draft-review") end
  if name == "r" then return act("open-review") end
  if name == "/" or key.text == "/" then return act("open-search") end
  if (name == "g" and key.shift) or name == "G" then return act("generate-guide") end

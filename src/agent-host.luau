@@ -66,8 +66,7 @@ end
 function M.refreshChoice(agent: Agent.Agent)
  local defaults: Agent.Defaults = { review = { model = agent.model, effort = agent.effort }, explain = if agent.explainPicked then nil else agent.explain }
  local picks = Agent.picks(savedChoice(), defaults) :: Agent.Picks
- agent.model, agent.effort, agent.explain, agent.explainPicked = picks.model, picks.effort, picks.explain, picks.explainPicked
- agent.review, agent.lens = picks.review, picks.lens
+ agent.model, agent.effort, agent.explain, agent.explainPicked, agent.lens = picks.model, picks.effort, picks.explain, picks.explainPicked, picks.lens
 end
 
 -- The models `agent` can run with, from `omp models`. Calls `done` once; the list is empty when

@@ -910,7 +910,6 @@
 .gp-md-slots { display: flex; flex-direction: column; gap: 6px; padding: 10px 14px; border-bottom: 1px solid var(--l2); }
 .gp-md-slots-row { display: flex; gap: 12px; align-items: center; }
 .gp-md-hint { font-size: 12.5px; line-height: 1.4; color: var(--t3); }
-.gp-md-row-hint { min-width: 0; font-size: 12.5px; color: var(--t3); }
 .gp-md-search { display: flex; gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--l2); }
 .gp-md-search .sf-icon { color: var(--t3); }
 .gp-md-search .sf-input, .gp-md-search .sf-input.focused, .gp-sr-box .sf-input, .gp-sr-box .sf-input.focused { flex-grow: 1; border: none; outline: none; box-shadow: none; background: transparent; padding: 0; }
@@ -944,7 +943,7 @@
 .gp-ai-model-sep { color: var(--t4); }
 .gp-ai-busy .gp-ai-bar, .gp-ai-quiet .gp-ai-bar { flex-shrink: 1; min-width: 40px; }
 /* the review still going under a page the reader can read: still and muted, so it never pulls the eye */
-.gp-ai-quiet { gap: 8px; min-height: 22px; }
+.gp-ai-quiet { display: flex; gap: 8px; align-items: center; min-width: 0; }
 .gp-ai-quiet-icon { display: flex; color: var(--t3); }
 .gp-ai-quiet-icon .sf-icon, .gp-ai-quiet-icon .ico { width: 12px; height: 12px; }
 .gp-ai-quiet-text { flex-shrink: 0; font-family: var(--sans); font-size: 13px; color: var(--t2); }

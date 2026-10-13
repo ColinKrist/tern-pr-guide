@@ -65,7 +65,7 @@ local SAMPLE_MERGED: { Sync.Opened } = {
 }
 
 -- The models a fixture board's Settings offers, so it has something to choose from without running omp. Names
--- and efforts are as long as omp's real ones, and there are enough that the Review list scrolls under Off.
+-- and efforts are as long as omp's real ones, and there are enough that the list scrolls.
 local SAMPLE_MODELS: { Agent.Model } = {
 	{ selector = "anthropic/claude-fable-5-1", name = "Claude Fable 5.1", efforts = { "low", "medium", "high", "xhigh", "max" } },
 	{ selector = "anthropic/claude-haiku-4-5", name = "Claude Haiku 4.5", efforts = { "minimal", "low", "medium", "high", "xhigh" } },

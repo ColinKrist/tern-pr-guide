@@ -45,16 +45,17 @@ local function picks()
 	assert(fresh, "OMP's review model stands in")
 	assert(fresh.model == "anthropic/opus-5" and fresh.effort == "high")
 	assert(fresh.explain.model == "openai/luna" and fresh.explain.effort == "medium" and not fresh.explainPicked, "OMP's fast model explains until one is picked")
-	assert(fresh.review == true, "the review is on by default")
 	assert(fresh.lens == "Balanced")
 
 	-- A review model the reader picked doesn't decide the explanation's.
 	local old = Agent.picks({ model = "openai/gpt-6", effort = "low", lens = "Security" }, OMP)
 	assert(old and old.model == "openai/gpt-6" and old.explain.model == "openai/luna" and old.explain.effort == "medium")
-	assert(old.review == true and old.lens == "Security")
+	assert(old.lens == "Security")
 
+	-- An older version's `review = false` switch is ignored: drafting comments is its own action.
 	local off = Agent.picks({ model = "openai/gpt-6", explainModel = "anthropic/haiku-4", explainEffort = "low", review = false }, OMP)
-	assert(off and off.explain.model == "anthropic/haiku-4" and off.explain.effort == "low" and off.explainPicked and off.review == false, "a picked model wins")
+	assert(off and off.explain.model == "anthropic/haiku-4" and off.explain.effort == "low" and off.explainPicked, "a picked model wins")
+	assert((off :: any).review == nil, "the old review switch isn't read")
 	local noEffort = Agent.picks({ model = "openai/gpt-6", effort = "high", explainModel = "local/tiny" }, {})
 	assert(noEffort and noEffort.explain.effort == nil, "an explanation model saved without effort keeps none")
 
@@ -63,7 +64,8 @@ local function picks()
 	agent.lens = "Architecture"
 	local back = Agent.picks(Agent.saved(agent), OMP)
 	assert(back and back.model == "openai/gpt-6" and back.explain.model == "anthropic/haiku-4" and back.explain.effort == "low")
-	assert(back.review == false and back.lens == "Architecture")
+	assert(back.lens == "Architecture")
+	assert(Agent.saved(agent).review == nil, "and isn't written back")
 
 	-- A default is never saved as a pick, so a later OMP change still reaches it.
 	local saved = Agent.saved(Agent.new("/omp", "/bin", fresh :: Agent.Picks))
@@ -94,16 +96,17 @@ local function runs()
 	local run = Agent.idle(agent)
 	assert(not Agent.busy(run))
 	run.error = "old failure"
-	Agent.start(run, { explain = 60, review = 200 })
-	assert(run.explaining and run.reviewing and Agent.busy(run) and run.error == nil and run.expected.review == 200)
+	Agent.start(run, "review", 200)
+	assert(run.reviewing and not run.explaining and Agent.busy(run), "the review starts on its own")
+	assert(run.error == "old failure", "a review leaves the explanation's failure showing")
+	run.seconds.review = 30
+	Agent.start(run, "explain", 60)
+	assert(run.explaining and run.reviewing and run.error == nil and run.expected.explain == 60 and run.expected.review == 200)
+	assert(run.seconds.explain == 0 and run.seconds.review == 30, "each pass keeps its own clock")
 	run.explaining = false
 	assert(Agent.busy(run), "busy while the review is still going")
 	run.reviewing = false
 	assert(not Agent.busy(run))
-
-	agent.review = false
-	Agent.start(run, { explain = 60, review = 200 })
-	assert(run.explaining and not run.reviewing, "with the review off only the explanation runs")
 end
 
 -- Teaching is no longer built in: a reader who saved it reviews through Balanced, unless they wrote

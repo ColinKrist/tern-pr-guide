@@ -17,7 +17,7 @@ local GUIDED: { Group } = {
 }
 
 -- A plain file list: every step is a whole file and there is one change, the whole PR. With no
--- guide the AI keys are offered; with one, `n  p` and `a  d` walk its suggested comments.
+-- guide the generate key is offered; with one, `n  p` and `a  d` walk its suggested comments.
 local FILES: { Group } = {
  { title = "1  Read", keys = { { "j  k", "next / previous file" }, { "/", "search the PR" }, { "i", "PR description" }, { "b", "hide / show the file tree" }, { "g", "open on GitHub" } } },
  { title = "2  React", keys = { { "⏎", "file reviewed, move on" }, { "m", "mark / unmark all reviewed" }, { "c", "comment on this file" } } },
@@ -33,11 +33,12 @@ local function groups(kind: Kind): { Group }
    if kind.switch then
     table.insert(keys, 1, { "t", if kind.guided then "switch to the file view" else "switch to the guided view" })
     if not kind.guided then table.insert(keys, 2, { "n  p", "next / previous suggestion" }) end
-   elseif not kind.guided then
-    table.insert(keys, { "⇧ G", "generate AI guided review" })
-    table.insert(keys, { "⇧ M", "AI models, effort and lens" })
-    table.insert(keys, { "tab", "in that menu: explanation / review model" })
+   else
+    table.insert(keys, { "⇧ G", "generate guide" })
    end
+   table.insert(keys, { "⇧ R", "draft review comments" })
+   table.insert(keys, { "⇧ M", "AI models, effort and lens" })
+   table.insert(keys, { "tab", "in that menu: explanation / review model" })
   elseif group.title == "2  React" and kind.switch and not kind.guided then
    table.insert(keys, { "a  d", "add / dismiss suggestion" })
   end
