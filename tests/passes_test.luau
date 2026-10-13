@@ -35,7 +35,7 @@ local function world(review: boolean): World
 	local cx: any = {}
 	function cx:render() end
 	function cx:toast(_level: string, text: string) table.insert(toasts, text) end
-	local agent = Agent.new("/omp", "/bin", Agent.picks({ model = "a/opus-5", review = review }, nil) :: Agent.Picks)
+	local agent = Agent.new("/omp", "/bin", Agent.picks({ model = "a/opus-5", review = review }, {}) :: Agent.Picks)
 	local b: any = {
 		opts = { pr = "7", repo = "/r", post = false }, dir = "/r", name = "#7",
 		repo = { root = "/r", guides = "/r/.git/prguide" }, guided = false, ai = Agent.idle(agent),

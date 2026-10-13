@@ -17,7 +17,7 @@ local function page(): State.State
 end
 
 local function agent(): Agent.Agent
-	local a = Agent.new("/omp", "/bin", Agent.picks({ model = "anthropic/opus-5", effort = "high" }, nil) :: Agent.Picks)
+	local a = Agent.new("/omp", "/bin", Agent.picks({ model = "anthropic/opus-5", effort = "high" }, {}) :: Agent.Picks)
 	a.models = {
 		{ selector = "anthropic/haiku-4", name = "Haiku 4", efforts = { "low", "high" } },
 		{ selector = "anthropic/opus-5", name = "Opus 5", efforts = { "low", "high", "max" } },
@@ -99,11 +99,11 @@ return function()
 	s.models = ModelBox.open(a, "explain")
 	local box = s.models :: ModelBox.ModelBox
 	assert(names(box, a) == "Haiku 4,Opus 5", "the Explanation slot has no Off row: " .. names(box, a))
-	assert(box.selected == 2 and box.effort == "high", "the explanation starts on the review model it defaults to")
+	assert(box.selected == 2 and box.effort == "medium", "the explanation starts on the review model it defaults to, at medium")
 	assert(not ModelBox.showsLens(box, a), "no lens on the Explanation slot")
 	box.selected, box.effort = 1, "low"
 	assert(ModelBox.choose(box, a))
-	assert(a.explain.model == "anthropic/haiku-4" and a.explain.effort == "low", "picking on Explanation sets the explanation")
+	assert(a.explain.model == "anthropic/haiku-4" and a.explain.effort == "low" and a.explainPicked, "picking on Explanation sets the explanation")
 	assert(a.model == "anthropic/opus-5" and a.effort == "high", "and leaves the review model")
 
 	assert(Keys.action(s, key("tab")).act == "models-slot" and Keys.action(s, key("tab")).value == "review", "Tab goes to Review")

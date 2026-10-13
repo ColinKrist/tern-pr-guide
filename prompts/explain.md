@@ -12,17 +12,27 @@ judge the code here.
   the working tree. The PR's changes are `git diff {{base}}...{{head}}` (three dots: from where it
   branched) and its commits `git log {{base}}..{{head}}`.
 - PR title: {{title}}
-- Start with `{{diffPath}}`: every changed file's diff. Each line starts with two numbers, the line's
-  number in the old file (before the PR) and in the new file (after it), then a mark and the code:
-  context lines (space) have both numbers, added lines (`+`) only the new one, removed lines (`-`)
-  only the old one. Take every line number you write from it, from the column the rules below name.
+- The attached diff is every changed file's diff, complete, so don't read it again. Each line starts
+  with two numbers, the line's number in the old file (before the PR) and in the new file (after
+  it), then a mark and the code: context lines (space) have both numbers, added lines (`+`) only the
+  new one, removed lines (`-`) only the old one. Take every line number you write from it, from the
+  column the rules below name. A file shown as one bracketed line, such as `(generated, 1,204 lines
+  not shown)`, is left out on purpose: don't read it, and point no step at it.
+
+## The author's description
+
+The PR's author wrote this to say what it does and why. Use it for the why. When it and the code
+disagree, describe what the code does.
+
+<description>
+{{description}}
+</description>
 
 ## Rules
 
-- Work from the diff. Open another file only when a step can't be explained without it, and read
-  just the part you need. Speed matters more than completeness here.
-- Read-only: use read-only `git` and `gh` commands. Run nothing else and change no file except the
-  explanation.
+- Work from the attached diff. Read the callers or definitions of changed code only when a step
+  depends on them, and read just the part you need. Speed matters more than completeness here.
+- Read-only: use read-only `git` and `gh` commands. Run nothing else and change no file.
 - Write for someone who doesn't know the project. Use everyday words and short sentences. Define a
   project term or abbreviation the first time it appears.
 - Titles name what the code does, verb first, in a few plain words: "Verify and gate shipping",
@@ -30,10 +40,10 @@ judge the code here.
   Step titles follow the same rule at a smaller scale: "Check the token", "Return early on empty".
 - Only claim what the code shows. When you're inferring how something works, say so.
 
-## Write
+## Reply
 
-Write one valid JSON object (no comments, no trailing commas) to `{{guidePath}}` and nothing else
-there. Format:
+Reply with one valid JSON object (no comments, no trailing commas) and nothing else: no prose before
+or after it, and no code fence. Format:
 
 ```json
 {
@@ -97,5 +107,3 @@ there. Format:
     "launchWorker()", "note": "reads saved copy", "change": 2 } ], "check": { "text": "Tasks created
     before this PR have no saved specialist.", "stage": 2 } }`. Not "Before: fixed playbook" as a
     name, and not a stage per sentence.
-
-When the file is written, reply with one line: `explanation written`.

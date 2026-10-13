@@ -29,6 +29,7 @@ local modules: { { name: string, run: () -> () } } = {
 	{ name = "ci_log_test", run = require("./ci_log_test") },
 	{ name = "draft_test", run = require("./draft_test") },
 	{ name = "agent_test", run = require("./agent_test") },
+	{ name = "agent_diff_test", run = require("./agent_diff_test") },
 	{ name = "passes_test", run = require("./passes_test") },
 	{ name = "model_menu_test", run = require("./model_menu_test") },
 	{ name = "hub_settings_test", run = require("./hub_settings_test") },

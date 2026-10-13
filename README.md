@@ -172,14 +172,17 @@ first, then go through it in small steps:
   from src/a.ts:12" or "Moved to line 40".
 - Supporting changes folded away. Files no step visits sit under "Supporting changes", followed by
   a folded "Tests" group and a folded "Generated" group (files marked `linguist-generated` in
-  `.gitattributes`). A test file a step visits stays in its step. The guide agent never reads
-  generated files, so no step or comment points at one, and lockfiles are left out of the PR
+  `.gitattributes`). A test file a step visits stays in its step. The guide agent sees a generated
+  file as one line, so no step or comment points at one, and lockfiles are left out of the PR
   altogether.
 - Guides saved in the repository, so a reopened PR loads its guide right away in every worktree of
   the clone.
 
-Generating a guided review starts two OMP runs at once. The explanation writes the overview and
-steps, and the page turns guided as soon as it lands, with "Reviewing for issues…" in the status line
+Generating a guided review starts two OMP runs at once. The explanation is one request: the prompt,
+the PR's description and the diff go to the model together, and it replies with the overview and
+steps. The diff leaves out what nobody reads line by line: generated, vendored and minified files and
+test snapshots show as one line each, and whitespace-only changes are counted instead of shown, except
+in Python and YAML. The page turns guided as soon as the explanation lands, with "Reviewing for issues…" in the status line
 while the review is still drafting comments. The comments and summary join the page when the review
 finishes. A summary you already edited is kept.
 
@@ -198,7 +201,8 @@ has two slots, **Explanation** and **Review**, and `Tab` switches between them:
   works best, and higher effort finds more. Choose **Off** to get the explanation only, with no
   drafted comments.
 
-Until you choose an explanation model it uses the review model. The model button shows the
+Until you choose an explanation model it uses OMP's `smol` model, with that role's effort or medium,
+else OMP's default model at medium effort, else the review model at medium effort. The model button shows the
 explanation model, then the review model, each with its effort, then the lens. The PR hub's Settings
 (`⇧S`) show the same menu and save the same choice. Agent fixes and feedback summaries use the review
 model.

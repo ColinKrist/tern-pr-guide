@@ -4,6 +4,7 @@
 -- models there are to pick from, and the files a run reads. src/agent-host.luau finds the agent and runs it.
 local Lens = require("./lens")
 local Pr = require("./pr")
+local Text = require("./text")
 
 -- One model `omp models` lists: what `--model` takes, its display name, and the thinking levels
 -- `--thinking` takes for it (none when it can't think).
@@ -17,15 +18,19 @@ export type Choice = { model: string, effort: string? }
 
 -- `omp` as the login shell finds it, that shell's PATH (`omp` runs on an interpreter found there),
 -- the review model and effort (agent fixes and the feedback summary run with them too), the
--- explanation's, whether a run reviews at all, the models there are to choose from (empty until
--- listed), the lenses there are to review through and the name of the one a review uses.
+-- explanation's and whether the reader picked it (else it is OMP's fast model), whether a run reviews
+-- at all, the models there are to choose from (empty until listed), the lenses there are to review
+-- through and the name of the one a review uses.
 export type Agent = {
- command: string, path: string, model: string, effort: string?, explain: Choice, review: boolean,
+ command: string, path: string, model: string, effort: string?, explain: Choice, explainPicked: boolean, review: boolean,
  models: { Model }, lenses: { Lens.Lens }, lens: string,
 }
 
 -- What the reader picked, as kept between starts: `Agent` without what is found or listed.
-export type Picks = { model: string, effort: string?, explain: Choice, review: boolean, lens: string }
+export type Picks = { model: string, effort: string?, explain: Choice, explainPicked: boolean, review: boolean, lens: string }
+
+-- The models OMP's config names for each pass when the reader picked none.
+export type Defaults = { review: Choice?, explain: Choice? }
 
 -- Writing a guide for the page's PR: which passes are going, the seconds since the run started,
 -- how long each pass is expected to take, and the first line of why the explanation last failed.
@@ -37,6 +42,9 @@ local MARKS = { ctx = " ", add = "+", del = "-" }
 local EFFORTS: { [string]: boolean } = { off = true, minimal = true, low = true, medium = true, high = true, xhigh = true, max = true, auto = true }
 -- The effort a newly picked model gets when it can't keep the current one.
 local DEFAULT_EFFORT = "high"
+-- The effort an explanation runs with when neither the reader nor OMP's role names one: it writes a
+-- walkthrough, it doesn't hunt for bugs.
+local EXPLAIN_EFFORT = "medium"
 
 local M = {}
 
@@ -57,36 +65,41 @@ function M.parseChoice(raw: string): (string, string?)
  return raw, nil
 end
 
--- The picks kept under the "model" key, `saved`, over OMP's own review model `fallback`: the review
--- model, the explanation's (the review model until the reader picks one), the review on unless
--- turned off, and the lens. Nil when there is no model at all.
-function M.picks(saved: any, fallback: Choice?): Picks?
+-- The picks kept under the "model" key, `saved`, over OMP's `defaults`: the review model, the
+-- explanation's (OMP's fast model until the reader picks one, else the review model at medium
+-- effort, never the review's effort), the review on unless turned off, and the lens. Nil when
+-- there is no model at all.
+function M.picks(saved: any, defaults: Defaults): Picks?
  local kept = if type(saved) == "table" then saved else {}
  local review: Choice? = if type(kept.model) == "string"
   then { model = kept.model, effort = if type(kept.effort) == "string" then kept.effort else nil }
-  else fallback
+  else defaults.review
  if not review then return nil end
- local explain: Choice = if type(kept.explainModel) == "string"
+ local picked = type(kept.explainModel) == "string"
+ local explain: Choice = if picked
   then { model = kept.explainModel, effort = if type(kept.explainEffort) == "string" then kept.explainEffort else nil }
-  else table.clone(review)
+  else defaults.explain or { model = review.model, effort = EXPLAIN_EFFORT }
  return {
-  model = review.model, effort = review.effort, explain = explain, review = kept.review ~= false,
+  model = review.model, effort = review.effort, explain = explain, explainPicked = picked, review = kept.review ~= false,
   lens = if type(kept.lens) == "string" then kept.lens else Lens.DEFAULT,
  }
 end
 
--- What `M.picks` reads back.
+-- What `M.picks` reads back. The explanation's model is kept only once the reader picked it, so a
+-- default never hardens into a pick.
 function M.saved(agent: Agent): { [string]: any }
  return {
-  model = agent.model, effort = agent.effort, explainModel = agent.explain.model, explainEffort = agent.explain.effort,
+  model = agent.model, effort = agent.effort,
+  explainModel = if agent.explainPicked then agent.explain.model else nil,
+  explainEffort = if agent.explainPicked then agent.explain.effort else nil,
   review = agent.review, lens = agent.lens,
  }
 end
 
 function M.new(command: string, path: string, picks: Picks): Agent
  return {
-  command = command, path = path, model = picks.model, effort = picks.effort, explain = picks.explain, review = picks.review,
-  models = {}, lenses = {}, lens = picks.lens,
+  command = command, path = path, model = picks.model, effort = picks.effort, explain = picks.explain,
+  explainPicked = picks.explainPicked, review = picks.review, models = {}, lenses = {}, lens = picks.lens,
  }
 end
 
@@ -160,16 +173,36 @@ function M.effortFor(model: Model, wanted: string?): string?
  return model.efforts[#model.efforts]
 end
 
--- The `omp` command that has `agent` follow the prompt at `promptPath` with `pass`'s model.
-function M.argv(agent: Agent, pass: Pass, promptPath: string): { string }
+-- What makes the explanation one request: no saved session, no skills, rules, extensions or title
+-- to load, and only the tools it needs to open a caller or definition.
+local ONE_REQUEST = { "--no-session", "--no-skills", "--no-rules", "--no-extensions", "--no-title", "--tools=read,grep,bash" }
+
+-- The `omp` command that has `agent` follow the prompt at `promptPath` with `pass`'s model. The
+-- explanation gets the prompt and the diff at `diffPath` attached and replies with the guide; the
+-- review reads its prompt and writes its file.
+function M.argv(agent: Agent, pass: Pass, promptPath: string, diffPath: string): { string }
  local choice = M.choiceFor(agent, pass)
- local argv = { agent.command, "-p", "--model", choice.model }
+ local argv = { agent.command, "-p" }
+ if pass == "explain" then table.move(ONE_REQUEST, 1, #ONE_REQUEST, #argv + 1, argv) end
+ table.insert(argv, "--model")
+ table.insert(argv, choice.model)
  if choice.effort then
   table.insert(argv, "--thinking")
   table.insert(argv, choice.effort)
  end
- table.insert(argv, M.request(promptPath))
+ if pass == "explain" then
+  table.insert(argv, "@" .. promptPath)
+  table.insert(argv, "@" .. diffPath)
+  table.insert(argv, "Follow the attached instructions exactly.")
+ else
+  table.insert(argv, "Read " .. promptPath .. " and follow it exactly.")
+ end
  return argv
+end
+
+-- The guide JSON in the explanation's reply: what a ```json fence holds, else the whole reply.
+function M.replyJson(reply: string): string
+ return string.match(reply, "```%w*[ \t]*\n(.-)\n%s*```") or (string.match(reply, "^%s*(.-)%s*$") :: string)
 end
 
 -- The first `omp` in the directories of `path` (a colon-separated PATH value) that `exists`.
@@ -188,9 +221,8 @@ local function scalar(raw: string): string
  return (string.gsub(raw, "%s+#.*$", ""))
 end
 
--- The model of OMP's `review` role, else its `default` one, from the `modelRoles:` block of its
--- config.yml; nil when neither is set.
-function M.reviewModel(config: string): string?
+-- The roles in the `modelRoles:` block of OMP's config.yml, each as "provider/id:effort".
+local function modelRoles(config: string): { [string]: string }
  local roles: { [string]: string } = {}
  local inRoles = false
  for line in string.gmatch(config .. "\n", "([^\n]*)\n") do
@@ -203,10 +235,30 @@ function M.reviewModel(config: string): string?
    if key and value then roles[key] = scalar(value) end
   end
  end
- for _, role in { "review", "default" } do
-  if roles[role] and roles[role] ~= "" then return roles[role] end
+ return roles
+end
+
+-- The first of `names` that `roles` sets, as a model and its effort.
+local function role(roles: { [string]: string }, names: { string }): Choice?
+ for _, name in names do
+  if roles[name] and roles[name] ~= "" then
+   local model, effort = M.parseChoice(roles[name])
+   return { model = model, effort = effort }
+  end
  end
  return nil
+end
+
+-- What OMP's config.yml says each pass runs with: the review its `review` role, else its `default`
+-- one; the explanation its `smol` role (at medium effort unless the role names one), else the
+-- `default` model at medium effort.
+function M.defaults(config: string): Defaults
+ local roles = modelRoles(config)
+ local fast, plain = role(roles, { "smol" }), role(roles, { "default" })
+ local explain: Choice? = if fast then { model = fast.model, effort = fast.effort or EXPLAIN_EFFORT }
+  elseif plain then { model = plain.model, effort = EXPLAIN_EFFORT }
+  else nil
+ return { review = role(roles, { "review", "default" }), explain = explain }
 end
 
 -- Where a run for `pr` keeps the diff and prompt it reads.
@@ -218,22 +270,98 @@ end
 M.DIFF_LEGEND = "Columns: old line number, new line number, then a mark (space = unchanged, + = added, - = removed) and the line. "
  .. "Added lines have only a new number; removed lines have only an old number."
 
--- Every changed file's diff but generated files', with the line numbers in front of each line, so the
--- agent can point at lines without counting: the old-file number (blank on an added line), the
--- new-file number (blank on a removed line), the mark and the text.
+-- Folders whose files are someone else's code, wherever they sit in a path.
+local VENDORED: { [string]: boolean } = { vendor = true, node_modules = true, third_party = true }
+-- A line longer than this is a minified file's.
+local LONG_LINE = 2000
+-- Extensions where indentation is meaning, so a whitespace-only change is read like any other.
+local INDENTED: { [string]: boolean } = { py = true, yml = true, yaml = true }
+
+-- Why the agent reads `file` as one line instead of its diff: a generated or vendored file, a
+-- minified one (by name, or a line too long to be written by hand), or a test snapshot. Nil when
+-- it reads the diff.
+function M.cutReason(file: Pr.File): string?
+ if file.group == "generated" then return "generated" end
+ local parts = string.split(file.path, "/")
+ local name = table.remove(parts) :: string
+ for _, dir in parts do
+  if VENDORED[dir] then return "vendored" end
+  if dir == "__snapshots__" then return "snapshot" end
+ end
+ if string.match(name, "%.snap$") then return "snapshot" end
+ if string.match(name, "%.min%.js$") or string.match(name, "%.min%.css$") then return "minified" end
+ for _, row in file.rows do
+  if row.kind ~= "hunk" and #row.text > LONG_LINE then return "minified" end
+ end
+ return nil
+end
+
+-- `n` with a comma between each group of three digits: 1,204.
+local function count(n: number): string
+ local digits = tostring(n)
+ return (string.reverse((string.gsub(string.reverse(digits), "(%d%d%d)(%d)", "%1,%2"))))
+end
+
+-- `rows` cut at each hunk header: each hunk is its header and the lines under it.
+local function hunks(rows: { Pr.Row }): { { Pr.Row } }
+ local cut: { { Pr.Row } } = {}
+ for _, row in rows do
+  if row.kind == "hunk" or #cut == 0 then table.insert(cut, {}) end
+  table.insert(cut[#cut], row)
+ end
+ return cut
+end
+
+-- How many lines `hunk` changes when it only changes whitespace: its removed and added lines say
+-- the same once every space is gone. Zero when it changes anything else.
+local function whitespaceOnly(hunk: { Pr.Row }): number
+ local removed, added, changed = {}, {}, 0
+ for _, row in hunk do
+  if row.kind == "del" or row.kind == "add" then
+   changed += 1
+   table.insert(if row.kind == "del" then removed else added, (string.gsub(row.text, "%s", "")))
+  end
+ end
+ return if changed > 0 and table.concat(removed) == table.concat(added) then changed else 0
+end
+
+-- Every changed file's diff with the line numbers in front of each line, so the agent can point at
+-- lines without counting: the old-file number (blank on an added line), the new-file number (blank
+-- on a removed line), the mark and the text. A file the agent needn't read (see `cutReason`) is
+-- one line under its header, and hunks that only change whitespace are left out, said in one line,
+-- except where indentation is meaning.
 function M.numberedDiff(files: { Pr.File }): string
  local out = { M.DIFF_LEGEND, "" }
  for _, file in files do
-  if file.group == "generated" then continue end
   table.insert(out, "=== " .. file.path .. " (" .. file.status .. ")")
-  if file.binary then table.insert(out, "(binary, no lines)") end
-  for _, row in file.rows do
-   if row.kind == "hunk" then
-    table.insert(out, "")
-    table.insert(out, "@@ -" .. row.oldStart .. " +" .. row.newStart .. " @@" .. (if row.label then " " .. row.label else ""))
-   else
-    table.insert(out, string.format("%5s %5s %s %s", if row.old then tostring(row.old) else "", if row.new then tostring(row.new) else "", MARKS[row.kind], row.text))
+  local reason = M.cutReason(file)
+  if file.binary then
+   table.insert(out, "(binary, no lines)")
+  elseif reason then
+   local lines = 0
+   for _, row in file.rows do
+    if row.kind ~= "hunk" then lines += 1 end
    end
+   table.insert(out, "(" .. reason .. ", " .. count(lines) .. (if lines == 1 then " line" else " lines") .. " not shown)")
+  else
+   local keepWhitespace, leftOut, shown = INDENTED[string.lower(Text.extension(file.path))], 0, {}
+   for _, hunk in hunks(file.rows) do
+    local cut = if keepWhitespace then 0 else whitespaceOnly(hunk)
+    leftOut += cut
+    if cut > 0 then continue end
+    for _, row in hunk do
+     if row.kind == "hunk" then
+      table.insert(shown, "")
+      table.insert(shown, "@@ -" .. row.oldStart .. " +" .. row.newStart .. " @@" .. (if row.label then " " .. row.label else ""))
+     else
+      table.insert(shown, string.format("%5s %5s %s %s", if row.old then tostring(row.old) else "", if row.new then tostring(row.new) else "", MARKS[row.kind], row.text))
+     end
+    end
+   end
+   if leftOut > 0 then
+    table.insert(out, "(" .. count(leftOut) .. " whitespace-only " .. (if leftOut == 1 then "line" else "lines") .. " not shown)")
+   end
+   table.move(shown, 1, #shown, #out + 1, out)
   end
   table.insert(out, "")
  end
@@ -255,11 +383,6 @@ function M.focus(lens: Lens.Lens): string
   .. "The reader chose this lens. It changes what you look for and how you word comments, never the "
   .. "format you write below, which stays exactly the same.\n\n"
   .. lens.instructions .. "\n\n"
-end
-
--- The one message `omp -p` gets.
-function M.request(promptPath: string): string
- return "Read " .. promptPath .. " and follow it exactly."
 end
 
 return M

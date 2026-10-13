@@ -101,7 +101,7 @@ function M.choose(box: ModelBox, agent: Agent.Agent): boolean
  if box.slot == "review" then
   agent.model, agent.effort, agent.review = model.selector, effort, true
  else
-  agent.explain = { model = model.selector, effort = effort }
+  agent.explain, agent.explainPicked = { model = model.selector, effort = effort }, true
  end
  box.effort = effort
  return true

@@ -80,7 +80,7 @@ local SAMPLE_MODELS: { Agent.Model } = {
 
 -- A sample board's agent; its picks are never saved.
 local function sampleAgent(): Agent.Agent
-	local agent = Agent.new("", "", (Agent.picks(nil, { model = "anthropic/claude-fable-5-1", effort = "high" }) :: Agent.Picks))
+	local agent = Agent.new("", "", (Agent.picks(nil, { review = { model = "anthropic/claude-fable-5-1", effort = "high" }, explain = { model = "openai-codex/gpt-5.6-luna", effort = "medium" } }) :: Agent.Picks))
 	agent.models = table.clone(SAMPLE_MODELS)
 	return agent
 end

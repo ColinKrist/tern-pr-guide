@@ -174,7 +174,7 @@ Each module's one job comes from its header comment. A verdict says what the por
 | `src/file-tree.luau` | Changed files as a folder tree, laid out the way GitHub lists them, with tests and generated files after the others, each as a tree of its own. | Port 1:1. | `groups_test` |
 | `src/git-output.luau` | Turns the output of the git commands prdata.luau runs into the PR's files, each marked with its `FileGroup` group. | Replace with GitHub API (`GET /pulls/{n}/files` gives status and patch). Keep it only on the worker. | `groups_test` (the group marking) |
 | `src/lens.luau` | Review lenses: what the AI reviewer pays attention to, parsed from markdown. | Port 1:1. The lens files are `lenses/*.md`. | none |
-| `src/agent.luau` | The reader's own AI agent writing a guide: the model and effort, the models it can pick from, and the files a run reads. | Port 1:1. `workDir` and `CONFIG` name local paths the worker sets. | none |
+| `src/agent.luau` | The reader's own AI agent writing a guide: the model and effort of each pass (OMP's `smol` role explains until the reader picks a model), the models it can pick from, and the files a run reads (the numbered diff, with generated, vendored, minified and snapshot files as one line each and whitespace-only hunks counted). | Port 1:1. `workDir` and `CONFIG` name local paths the worker sets. | `agent_test`, `agent_diff_test` |
 | `src/text.luau` | String helpers. No header comment. | Port 1:1. | none |
 | `src/text-field.luau` | A text field's editing model (`Field`, `key`, cursor and selection). No header comment. | Port 1:1, or replace with native inputs. `keys.luau` reads its `Outcome`. | through `state_test`, `agent_state_test`, `review_fix_test` |
 | `src/keys.luau` | What each key does in each mode, as the same actions the page's clicks send. | Port 1:1. | `agent_state_test`, `review_fix_test`, `summary_test` |
@@ -502,7 +502,7 @@ interface PrData {
 |---|---|---|
 | `openPr` metadata | `gh pr view <pr> --json number,title,body,url,author,createdAt,baseRefName,headRefOid,mergeCommit` | `GET /repos/{o}/{r}/pulls/{n}`. `author` is `user.login`, `createdAt` is `created_at`, `baseRefName` is `base.ref`, `headRefOid` is `head.sha`, `mergeCommit` is `merge_commit_sha` when merged. |
 | `openPr` refs and merge base | `git fetch` into `refs/prguide/<n>/*`, `git rev-parse`, `git merge-base` | `GET /repos/{o}/{r}/compare/{base}...{head}` gives `merge_base_commit`. A merged PR's exact parent needs git. |
-| `openPr` changes and patches | `git diff --name-status`, `git diff -- <paths>`, `git check-attr ... linguist-generated` | `GET /repos/{o}/{r}/pulls/{n}/files` (status, renames, `patch`; paginated, 3,000-file cap). Read `.gitattributes` and match `linguist-generated` in code, or on the worker. Generated files stay, marked `generated`: the page lists them apart (`FileGroup`) and the guide agent never reads them. Lockfiles are left out (`GitOutput`). |
+| `openPr` changes and patches | `git diff --name-status`, `git diff -- <paths>`, `git check-attr ... linguist-generated` | `GET /repos/{o}/{r}/pulls/{n}/files` (status, renames, `patch`; paginated, 3,000-file cap). Read `.gitattributes` and match `linguist-generated` in code, or on the worker. Generated files stay, marked `generated`: the page lists them apart (`FileGroup`) and the guide agent sees each as one line. Lockfiles are left out (`GitOutput`). |
 | `openPr` file contents | `git ls-tree`, `git cat-file --batch` at the head | `GET /repos/{o}/{r}/contents/{path}?ref={head}` or `GET /git/blobs/{sha}`. |
 | `submitReview` head check | `gh pr view <url> --json headRefOid`. A different head refuses with "The PR moved on to … since this page loaded". | `GET /repos/{o}/{r}/pulls/{n}`, same check. |
 | `submitReview` post | `gh api --method POST repos/<repo>/pulls/<n>/reviews --input -`, reading `html_url`. | `POST /repos/{o}/{r}/pulls/{n}/reviews` with the same payload. |
@@ -548,7 +548,7 @@ interface AgentHost {
 	saveChoice(agent: Agent): void // kv "model": { model, effort, lens, explainModel, explainEffort, review }
 	refreshChoice(agent: Agent): void // takes up kv "model" again: the review page or the hub's Settings may have saved since
 	listModels(agent: Agent): Promise<AgentModel[]> // `omp models --json`; [] on failure
-	explain(agent: Agent, repo: Repo, pr: PR): Promise<Result<Guide>> // prompts/explain.md, `omp -p --model M [--thinking E] <request>` with the explanation model, writes <n>.json
+	explain(agent: Agent, repo: Repo, pr: PR): Promise<Result<Guide>> // prompts/explain.md with the PR description, one request: `omp -p --no-session --no-skills --no-rules --no-extensions --no-title --tools=read,grep,bash --model M [--thinking E] @prompt @diff "Follow the attached instructions exactly."`; the reply (bare or in a ```json fence) is written to <n>.json and read with Guide.read
 	draftReview(agent: Agent, repo: Repo, pr: PR): Promise<Result<GuideDraft>> // prompts/review.md with the review model and lens, writes <n>.review.json; runs alongside explain
 	summarizeFeedback(agent: { command: string; model: string; effort?: string }, prompt: string): Promise<Result<string>> // `Summary.plan` argv only
 	startAgentFix(request: AgentFixRequest, agent: Agent, now: number, changed: (o: AgentOutcome) => void): { engine?: AgentEngine; done: Promise<Result<AgentFix>> }
@@ -577,7 +577,7 @@ The store is the `Host.kv` keys the plugin writes. Every window of a Tern sessio
 | `hub.merge.<owner>/<repo>` | `MergeRecord` | `Lookups.saveRecord` | one per repo |
 | `hub.recent` | `Opened[]` | `Fetch.rememberPr`, `Fetch.migrateRecent` | 8 (`Sync.RECENT_CAP`) |
 | `hub.clones` | `Record<slug, path>` | `AgentHost.rememberAgentClone` | Plugin only. Drop. |
-| `model` | `{ model, effort?, lens, explainModel?, explainEffort?, review? }`: `model` and `effort` are the review model, which agent fixes also use | `AgentHost.saveChoice` (the review page's model menu and the hub's Settings), read again by `AgentHost.refreshChoice` when either opens | one |
+| `model` | `{ model, effort?, lens, explainModel?, explainEffort?, review? }`: `model` and `effort` are the review model, which agent fixes also use; `explainModel` is kept only once the reader picks one, and until then OMP's `smol` role explains | `AgentHost.saveChoice` (the review page's model menu and the hub's Settings), read again by `AgentHost.refreshChoice` when either opens | one |
 | `runSeconds` | number: the last explanation's seconds | `Fetch.saveSeconds("explain")` | one |
 | `reviewSeconds` | number: the last review's seconds | `Fetch.saveSeconds("review")` | one |
 | `links` | `"tern" \| "browser"`: where GitHub links open | `Fetch.saveLinkTarget` (Settings, `hub-links`) | one. Drop: a web app opens links in a new tab. |
@@ -803,6 +803,7 @@ Run all of them with `/opt/homebrew/bin/luau tests/run.luau`. `tests/run.luau` l
 | `tests/groups_test.luau` | `agent`, `file-group`, `file-tree`, `git-output`, `guide`, `pr`, `review`, `state` | Tests and generated files: the path classifier, git's output marking them, the order and sections the page lists files in, what a guide and the agent's diff leave out, and how the supporting area folds and opens them. |
 | `tests/model_menu_test.luau` | `model-box`, `keys`, `state`, `view/model-panel`, `view/header`, `view/ui`'s `tern.ui` stubbed | The model menu's Explanation and Review slots, Off pinned first on Review, Tab, choosing, and the model button's text. |
 | `tests/hub_settings_test.luau` | the real `hub/block`, `Host` stubbed, `view/ui`'s `tern.ui` stubbed | Settings: opening focuses the search, typing filters, Tab to Review, Off, a click, the lens, the saved choice, and L only with an empty search. |
+| `tests/agent_diff_test.luau` | `agent`, `pr` | What the explanation's diff shows as one line (generated, vendored, minified and snapshot files) and the whitespace-only hunks it counts instead of showing, outside Python and YAML. |
 | `tests/fold_test.luau` | the real `hub/block`, `Host` stubbed, `view/ui`'s `tern.ui` stubbed | Opening a fold scrolls its header to the top of the board; closing one doesn't scroll. |
 | `tests/ci_log_test.luau` | `ci/actions`, `ci/buildkite`, `ci/log` | The log contract and both CI modules on recorded output (`fixtures/hub/ci-logs.luau`): which checks each owns, the exact commands and env, the cut, failures, and `Log.refs`. |
 | `tests/summary_test.luau` | the real `hub/block` and `agent-host`, `Host` stubbed | Summarize and bot fixes end to end through `ACTIONS`: stale refs, edited comments, timeouts, a closed block, duplicate callbacks. |
