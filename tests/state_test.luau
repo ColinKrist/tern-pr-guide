@@ -265,8 +265,8 @@ return function()
 	assert(mainOf("acme/api#122") == "none" and mainOf("acme/web#306", "review") == "none")
 	assert(State.card(fresh(), "acme/api#103") == nil)
 	local fixes = State.card(fresh(), "acme/web#103") :: State.Card
-	assert(fixes.main and fixes.main.label == "Fix with agent" and fixes.main.key == "A" and #fixes.more == 2
-		and fixes.more[1].label == "Summarize" and fixes.more[1].key == "⇧A" and fixes.more[2].act == "card-close" and fixes.more[2].key == "X", "a requested change: A fixes, ⇧A summarizes")
+	assert(fixes.main and fixes.main.label == "Summarize" and fixes.main.key == "A" and #fixes.more == 1
+		and fixes.more[1].act == "card-close" and fixes.more[1].key == "X", "a requested change with no conflict: A summarizes, since the agent fix resolves conflicts only")
 	local comments = State.card(fresh(), "acme/api#119") :: State.Card
 	assert(comments.main and comments.main.label == "Summarize" and comments.main.key == "A" and #comments.more == 1, "comments alone: A summarizes")
 	local both = State.card(fresh(), "acme/api#116") :: State.Card
@@ -513,7 +513,7 @@ return function()
 	local mineA = fresh()
 	State.select(mineA, "acme/web#103")
 	local fixA = pressed(mineA, "a", false)
-	assert(fixA and fixA.act == "card-agent" and fixA.value == "acme/web#103")
+	assert(fixA and fixA.act == "card-summarize" and fixA.value == "acme/web#103")
 
 	-- N opens the field on Review requests; choosing a card leaves it; Esc empties it.
 	local ns = fresh()
