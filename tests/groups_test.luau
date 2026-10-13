@@ -25,7 +25,7 @@ local function file(path: string, group: FileGroup.Group?, added: number?): Pr.F
 end
 
 local function pr(files: { Pr.File }): Pr.PR
-	return { repo = "acme/api", number = 1, title = "t", body = "", url = "", author = "a", baseRef = "main", head = "abc", files = files }
+	return { repo = "acme/api", number = 1, title = "t", body = "", url = "", author = "a", createdAt = "", baseRef = "main", head = "abc", files = files }
 end
 
 -- A guide with one change whose steps visit `visited`.

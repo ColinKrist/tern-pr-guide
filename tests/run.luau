@@ -24,12 +24,14 @@ local modules: { { name: string, run: () -> () } } = {
 	{ name = "moves_test", run = require("./moves_test") },
 	{ name = "diff_test", run = require("./diff_test") },
 	{ name = "groups_test", run = require("./groups_test") },
+	{ name = "flow_test", run = require("./flow_test") },
 	{ name = "fold_test", run = require("./fold_test") },
 	{ name = "ci_log_test", run = require("./ci_log_test") },
 	{ name = "draft_test", run = require("./draft_test") },
 	{ name = "agent_test", run = require("./agent_test") },
 	{ name = "passes_test", run = require("./passes_test") },
 	{ name = "model_menu_test", run = require("./model_menu_test") },
+	{ name = "hub_settings_test", run = require("./hub_settings_test") },
 }
 
 local failed = 0

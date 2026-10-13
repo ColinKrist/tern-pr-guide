@@ -2,10 +2,12 @@
 -- The hub's interaction state (tab, selection, filter, sort, search, open menus) and the board
 -- built from it. Views read `State.board` and never filter, sort or classify: every rule is `model`'s.
 -- Pure: no clock, no network, no Tern. `now` is passed in.
+local Agent = require("../agent")
 local Fields = require("../text-field")
 local AgentFix = require("./agent-fix")
 local Fixes = require("./fixes")
 local Links = require("../links")
+local ModelBox = require("../model-box")
 local Model = require("./model")
 local ReviewFix = require("./review-fix")
 local Summary = require("./summary")
@@ -20,6 +22,7 @@ export type Summary = Summary.Summary
 export type FixDetails = Fixes.FixDetails
 
 export type Mode = "board" | "search" | "link" | "menu" | "confirm" | "help" | "fixes" | "reply" | "review-fix"
+export type HelpPage = "board" | "fixes" | "review-fix"
 export type MenuId = "filters" | "title-filter" | "check-repository" | "check-filter" | "repositories" | "sort" | "merge" | "actions" | "settings"
 export type Ring = "bad" | "good" | "bad-out" | "good-out" -- red ring, green wash, then the same fading
 -- What the flake evidence says about a card's failing checks, for the commit it was read on. `runs` are the workflow
@@ -85,10 +88,6 @@ export type BoardData = {
 	empty: boolean,
 }
 
--- The agent's model and effort for fixes, summaries and guides; the models it can pick from.
-export type AgentModel = { selector: string, name: string, efforts: { string } }
-export type AgentChoice = { models: { AgentModel }, model: string, effort: string? }
-
 -- The fixes page, open on the Needs fixes card `key`. Its steps come from `s.details[key]` and the card's PR.
 export type Route = {
 	kind: "fixes" | "review-fix",
@@ -122,6 +121,7 @@ export type State = {
 	search: Fields.Field,
 	link: Fields.Field,
 	mode: Mode,
+	helpPage: HelpPage?, -- the page to return to, and show shortcuts for, while help is open
 	route: Route?, -- the fixes page, while it is open
 	menu: MenuId?,
 	menuCursor: number,
@@ -143,7 +143,8 @@ export type State = {
 	refreshedAt: string?,
 	loading: boolean,
 	error: Model.Error?,
-	agent: AgentChoice?, -- nil until the block has found the agent
+	agent: Agent.Agent?, -- what Settings picks for: the reader's agent once the block finds it, or a sample's
+	models: ModelBox.ModelBox?, -- Settings' model and lens menu, read only while `menu` is "settings"
 	links: "tern" | "browser", -- where GitHub links open; the block loads and saves it
 	keyed: boolean, -- the change being drawn came from a key: it never animates
 	born: { [string]: string },
@@ -365,9 +366,9 @@ function M.new(prs: { HubPR }, now: number, saved: any): State
 		prs = prs, now = now, board = emptyBoard(tab), tab = tab, selected = nil, marked = {},
 		repositories = repositories, repositoriesEnabled = not (type(saved) == "table" and saved.repositoriesEnabled == false),
 		titleRules = {}, ignoredChecks = {}, filterEdit = nil, sort = sort, search = Fields.create(""), link = Fields.create(""),
-		mode = "board", route = nil, menu = nil, menuCursor = 1, confirm = nil, methodEdit = nil, folded = folded, recent = {}, merged = {}, walking = false,
+		mode = "board", helpPage = nil, route = nil, menu = nil, menuCursor = 1, confirm = nil, methodEdit = nil, folded = folded, recent = {}, merged = {}, walking = false,
 		ringed = {}, agents = {}, details = {}, flakes = {}, summaries = {}, merges = {}, autoMerge = {}, acted = {}, busy = {},
-		refreshedAt = nil, loading = false, error = nil, agent = nil, links = "tern",
+		refreshedAt = nil, loading = false, error = nil, agent = nil, models = nil, links = "tern",
 		keyed = false, born = {}, booted = false,
 	}
 	if type(saved) == "table" then
@@ -1145,9 +1146,17 @@ function M.closeSearch(s: State, clear: boolean)
 	if clear and s.search.text ~= "" then M.setSearch(s, "") end
 end
 
+-- Opening a fold selects its first row, so j and k carry on from there.
 function M.toggleFold(s: State, name: string)
 	s.folded[name] = not s.folded[name]
 	M.project(s)
+	if s.folded[name] then return end
+	if name == M.ROW_FOLD[s.tab] then
+		if s.board.open.recent and #s.board.recent > 0 then M.select(s, M.recentKey(s.board.recent[1])) end
+		return
+	end
+	local fold = M.fold(s, name :: Column)
+	if fold and fold.open then M.select(s, fold.cards[1].pr.key) end
 end
 
 -- The card the Next up banner shows: the next item as a board card, whichever tab it sits on.
@@ -1185,12 +1194,16 @@ function M.walk(s: State): boolean
 end
 
 function M.openHelp(s: State)
+	s.helpPage = if s.mode == "fixes" or s.mode == "review-fix" then s.mode else "board"
 	s.mode = "help"
 	s.menu = nil
 end
 
 function M.closeHelp(s: State)
-	if s.mode == "help" then s.mode = "board" end
+	if s.mode == "help" then
+		s.mode = s.helpPage or "board"
+		s.helpPage = nil
+	end
 end
 
 -- The rows of the open menu.
@@ -1259,10 +1272,6 @@ function M.menuRows(s: State): { MenuRow }
 		if card then
 			for _, more in card.more do table.insert(rows, row(more.label, more.key, nil, false, "choice")) end
 		end
-	elseif s.menu == "settings" and s.agent then
-		for _, model in s.agent.models do
-			table.insert(rows, row(model.name, string.match(model.selector, "^([^/]+)/"), nil, model.selector == (s.agent :: AgentChoice).model, "choice"))
-		end
 	end
 	return rows
 end
@@ -1275,10 +1284,8 @@ function M.openMenu(s: State, menu: MenuId)
 		for index, sort in M.SORTS do
 			if sort.id == s.sort then s.menuCursor = index end
 		end
-	elseif menu == "settings" and s.agent then
-		for index, model in s.agent.models do
-			if model.selector == s.agent.model then s.menuCursor = index end
-		end
+	elseif menu == "settings" then
+		s.models = if s.agent then ModelBox.open(s.agent, "explain") else nil
 	elseif menu == "merge" then
 		local repo = M.mergeRepo(s)
 		local current = if repo and s.merges[repo] then s.merges[repo].method.kind else "squash"
@@ -1293,36 +1300,13 @@ end
 function M.closeMenu(s: State)
 	s.filterEdit = nil
 	s.menu = nil
+	s.models = nil
 	s.methodEdit = nil
 	if s.mode == "menu" then s.mode = "board" end
 end
 
 function M.menuMove(s: State, delta: number)
 	s.menuCursor = math.clamp(s.menuCursor + delta, 1, math.max(1, #M.menuRows(s)))
-end
-
--- The efforts the highlighted model takes in Settings, and the one now chosen.
-function M.agentEfforts(s: State): ({ string }, string?)
-	local agent = s.agent
-	if s.menu ~= "settings" or not agent then return {}, nil end
-	local model = agent.models[s.menuCursor]
-	if not model then return {}, nil end
-	return model.efforts, agent.effort
-end
-
--- Steps the effort of the highlighted model along its levels.
-function M.stepEffort(s: State, delta: number)
-	local agent = s.agent
-	if not agent then return end
-	local efforts, current = M.agentEfforts(s)
-	if #efforts == 0 then return end
-	local at = (current and table.find(efforts, current)) or table.find(efforts, "high") or 1
-	agent.effort = efforts[math.clamp(at + delta, 1, #efforts)]
-end
-
-function M.setEffort(s: State, level: string)
-	local efforts = M.agentEfforts(s)
-	if s.agent and table.find(efforts, level) then s.agent.effort = level end
 end
 
 -- Where GitHub links open: `to`, else the other one.
@@ -1384,7 +1368,7 @@ function M.removeFilter(s: State)
 	M.openMenu(s, "filters")
 end
 
--- Applies row `index` of the open menu: a sort or model is chosen and the menu closes; a repository is
+-- Applies row `index` of the open menu: a sort is chosen and the menu closes; a repository is
 -- toggled and the menu stays; Clear filter clears and closes. Returns whether the menu closed.
 function M.menuPick(s: State, index: number): boolean
 	local rows = M.menuRows(s)
@@ -1428,16 +1412,6 @@ function M.menuPick(s: State, index: number): boolean
 		end
 		M.toggleRepository(s, s.board.repositories[index].repo)
 		return false
-	elseif s.menu == "settings" and s.agent then
-		local model = s.agent.models[index]
-		s.agent.model = model.selector
-		if #model.efforts == 0 then
-			s.agent.effort = nil
-		elseif not s.agent.effort or not table.find(model.efforts, s.agent.effort) then
-			s.agent.effort = if table.find(model.efforts, "high") then "high" else model.efforts[1]
-		end
-		M.closeMenu(s)
-		return true
 	end
 	return false
 end
@@ -1447,14 +1421,6 @@ function M.actionAt(s: State, index: number): CardAction?
 	local card = M.selectedCard(s)
 	if s.menu == "actions" and card then return card.more[index] end
 	return nil
-end
-
--- The model button's text: the model and effort, or what the button is for before the agent is found.
-function M.agentLabel(s: State): string
-	local agent = s.agent
-	if not agent then return "Agent model" end
-	local name = string.match(agent.model, "[^/]+$") or agent.model
-	return if agent.effort then name .. " · " .. agent.effort else name
 end
 
 -- The merge chooser ----------------------------------------------------------------------------------------

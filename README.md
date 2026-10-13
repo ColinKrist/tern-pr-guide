@@ -46,6 +46,10 @@ block** for a board of recorded sample data, or **New PR Guide sample block** fo
 review is a dry run.
 
 To work on the plugin itself, clone it and run `tern plugin link /path/to/tern-pr-guide`.
+**New PR Guide worst-case sample block** opens a PR built to stress the page: long titles and
+paths, 60 files, a 12-step change and long comments (`fixtures/pr-worst.json`,
+`fixtures/guide-worst.json`). **…, no guide** opens it without the guide, with long model names and
+every effort level in the model menu (`fixtures/agent-worst.json`).
 
 ## Your pull requests
 
@@ -98,7 +102,7 @@ The **Review requests** tab sorts the PRs others asked you to review:
   PRs whose review from you was dismissed, and PRs you added by pasting a link.
 - **Waiting on author:** you requested changes or left comments.
 
-Below the board, four folded lists keep the rest out of the way. Opening one scrolls it into view.
+Below the board, four folded lists keep the rest out of the way. Opening one scrolls it into view and selects its first row, so `j` and `k` carry on from there.
 
 - **Inactive:** requests that name you but have had no activity for 7 days. PRs you added by link
   always stay in To review.
@@ -140,19 +144,24 @@ failed checks from the same page.
 ## Read a PR
 
 Open any card to see the whole PR in Tern, with two ways to read it. Press `t` to switch between
-them. Comments, reviewed marks and the summary carry over.
+them. Comments, reviewed marks and the summary carry over. Under the title, the header shows who opened the PR
+and how long ago, as in "jubbydev opened 3h ago".
 
 **Files** works like GitHub's PR page: the description, the changed files as a folder tree,
 search across the changed code, and comments on any line. The diff comes from local git, so
 GitHub's diff size limit doesn't apply, and large PRs stay responsive. Tests and generated files
-come last, under their own folding rows.
+come last, under their own folding rows. Code is colored by language, with the changed words of an
+edited line marked, for JavaScript and TypeScript, Python, Go, Rust, Ruby, Java, Kotlin, Swift, C
+and C++, C#, shell, Lua and Luau, CSS and SCSS, JSON, YAML, TOML and SQL. Other files show plain text.
 
 ![The PR file browser with the changed files and description](docs/screenshots/pr-view.png)
 
 **Guided** is an AI walkthrough inspired by Linear Diffs. You see the overall shape of the change
 first, then go through it in small steps:
 
-- A plain-language overview and, for some PRs, a before-and-after diagram.
+- A plain-language overview and, for some PRs, a before-and-after diagram: one run through the
+  code, with what each stage did before the PR above what it does now, the changed parts linked to
+  their changes, and a "Check" line naming the consequence to confirm.
 - The PR split into a few changes, and each change into steps pinned to their lines.
 - Code blocks that start at the enclosing function, method or class, so a step reads in context. When
   that line is far above the change, the block keeps a few lines of context and the hidden lines
@@ -191,7 +200,8 @@ has two slots, **Explanation** and **Review**, and `Tab` switches between them:
 
 Until you choose an explanation model it uses the review model. The model button shows the
 explanation model, then the review model, each with its effort, then the lens. The PR hub's Settings
-choose the review model, which agent fixes and feedback summaries also use.
+(`⇧S`) show the same menu and save the same choice. Agent fixes and feedback summaries use the review
+model.
 
 The lens control is on the Review slot, because a lens steers only the review comments. PR Guide
 ships four lenses:
@@ -234,7 +244,7 @@ Comment, Approve or Request changes, edit the summary, and submit everything as 
 
 ## Keyboard reference
 
-Press `?` on any PR Guide page for the keys that apply there.
+Press `?` for shortcuts that apply to the current page. In the hub, the panel follows the board, fixes page or agent fix review page you are on.
 
 ### PR hub
 
@@ -258,7 +268,7 @@ Press `?` on any PR Guide page for the keys that apply there.
 | `A` | Show or hide approved PRs, on Review requests |
 | `R` | Show or hide recently merged PRs, or recently opened PRs on Review requests |
 | `N` | Add a PR by link |
-| `⇧S` | Settings: the review model and effort (agent fixes use it too), and whether GitHub links open in Tern or the default browser (`L` switches). `⇧M` opens it too |
+| `⇧S` | Settings: the explanation and review models, their effort and the lens, in the same menu as the review page, and whether GitHub links open in Tern or the default browser (`L` switches while the search field is empty). `⇧M` opens it too |
 | `A` | Run the selected card's main action, on your PRs |
 | `⇧A` | Summarize feedback or return a retained worktree |
 | `C` | Copy the PR title and link |
@@ -274,6 +284,7 @@ Press `?` on any PR Guide page for the keys that apply there.
 | `⌘R` | Refresh |
 | `⌘⏎` | Confirm an inline question |
 | `Esc` | Cancel, close or clear the selection |
+| `?` | Show shortcuts for the current hub page |
 
 ### PR view
 
@@ -285,6 +296,7 @@ Press `?` on any PR Guide page for the keys that apply there.
 | `⇧⏎` | Mark the whole change reviewed |
 | `v` | Mark the whole file reviewed |
 | `t` | Switch between Guided and Files |
+| `b` | Hide or show the file tree in the file view |
 | `/` | Search steps, files, comments and code |
 | `s` | Show supporting changes |
 | `o` | Open all supporting files and unfold Tests; generated files stay as they are |
@@ -320,6 +332,7 @@ Replies and resolves write to GitHub right away.
 | `G` | Open GitHub's conflict editor |
 | `B` | Show bot comments |
 | `Esc` | Back to the hub with the same card selected |
+| `?` | Show shortcuts for the fixes page |
 
 ### Agent fix review
 
@@ -331,6 +344,7 @@ Replies and resolves write to GitHub right away.
 | `P` | Push, once every conflict is reviewed |
 | `D` | Discard the fix, after a confirmation |
 | `Esc` | Back to the hub |
+| `?` | Show shortcuts for Review fix |
 
 ## For tool authors
 

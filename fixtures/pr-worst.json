@@ -1,0 +1,2667 @@
+{
+ "pr": {
+  "repo": "northwind-industries-holdings/payments-reconciliation-ledger-service",
+  "number": 12847,
+  "title": "Reconciliation: replace PaymentReconciliationLedgerEntryRepositoryAdapterImpl with the streaming ledger adapter, backfill 18.4M rows, and drop LegacyLedgerEntryMapper (RFC-0412)",
+  "url": "https://github.com/northwind-industries-holdings/payments-reconciliation-ledger-service/pull/12847",
+  "author": "aleksandra-wisniewska-kowalczyk",
+  "createdAt": "2024-11-29T23:59:59Z",
+  "baseRef": "release/2026-q3-payments-reconciliation-hotfix",
+  "head": "f00dfacecafebeef0000000000000000deadbeef",
+  "body": "Closes #12846\n\nThis replaces the reconciliation ledger adapter. See https://northwind-industries-holdings.example.com/engineering/rfcs/2026/payments/reconciliation/RFC-0412-ledger-entry-repository-adapter-replacement-and-backfill-plan?version=7&reviewers=bartholomew.fitzgerald%40northwind-industries-holdings.example.com\n\n| Service | Before (p99) | After (p99) | Rows backfilled | Owner |\n|---|---|---|---|---|\n| payments-reconciliation-ledger-entry-repository | 1,284 ms | 212 ms | 18,446,744 | bartholomew.fitzgerald@northwind-industries-holdings.example.com |\n\n```\nERROR 2026-10-11T23:59:59.999Z [payments-reconciliation-ledger-entry-repository-adapter] LedgerEntryRepositoryAdapterImpl.reconcile(PaymentReconciliationLedgerEntryRepositoryAdapterImpl.java:4127) ConstraintViolation: duplicate key value violates unique constraint \"ledger_entries_payment_id_reconciliation_window_idx\"\n```\n"
+ },
+ "files": [
+  {
+   "path": "services/payments-gateway/src/main/java/com/northwind/industries/holdings/payments/reconciliation/internal/adapters/persistence/PaymentReconciliationLedgerEntryRepositoryAdapterImpl.java",
+   "status": "modified",
+   "adds": 12847,
+   "dels": 9999,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 91,
+     "newStart": 1,
+     "newCount": 91,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "package com.northwind.industries.holdings.payments.reconciliation.internal.adapters.persistence;",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_02 = \"payments_reconciliation_ledger_entry_column_02\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 2
+    },
+    {
+     "kind": "ctx",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_03 = \"payments_reconciliation_ledger_entry_column_03\"; // backfilled from LegacyLedgerEntryMapper",
+     "old": 2,
+     "new": 3
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_04 = \"payments_reconciliation_ledger_entry_column_04\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 4
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_05 = \"payments_reconciliation_ledger_entry_column_05\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 5
+    },
+    {
+     "kind": "ctx",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_06 = \"payments_reconciliation_ledger_entry_column_06\"; // backfilled from LegacyLedgerEntryMapper",
+     "old": 3,
+     "new": 6
+    },
+    {
+     "kind": "del",
+     "text": "    // legacy: load the whole reconciliation window into memory (7)",
+     "old": 4
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_07 = \"payments_reconciliation_ledger_entry_column_07\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 7
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_08 = \"payments_reconciliation_ledger_entry_column_08\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 8
+    },
+    {
+     "kind": "ctx",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_09 = \"payments_reconciliation_ledger_entry_column_09\"; // backfilled from LegacyLedgerEntryMapper",
+     "old": 5,
+     "new": 9
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_10 = \"payments_reconciliation_ledger_entry_column_10\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 10
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_11 = \"payments_reconciliation_ledger_entry_column_11\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 11
+    },
+    {
+     "kind": "ctx",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_12 = \"payments_reconciliation_ledger_entry_column_12\"; // backfilled from LegacyLedgerEntryMapper",
+     "old": 6,
+     "new": 12
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_13 = \"payments_reconciliation_ledger_entry_column_13\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 13
+    },
+    {
+     "kind": "del",
+     "text": "    // legacy: load the whole reconciliation window into memory (14)",
+     "old": 7
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_14 = \"payments_reconciliation_ledger_entry_column_14\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 14
+    },
+    {
+     "kind": "ctx",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_15 = \"payments_reconciliation_ledger_entry_column_15\"; // backfilled from LegacyLedgerEntryMapper",
+     "old": 8,
+     "new": 15
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_16 = \"payments_reconciliation_ledger_entry_column_16\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 16
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_17 = \"payments_reconciliation_ledger_entry_column_17\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 17
+    },
+    {
+     "kind": "ctx",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_18 = \"payments_reconciliation_ledger_entry_column_18\"; // backfilled from LegacyLedgerEntryMapper",
+     "old": 9,
+     "new": 18
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_19 = \"payments_reconciliation_ledger_entry_column_19\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 19
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_20 = \"payments_reconciliation_ledger_entry_column_20\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 20
+    },
+    {
+     "kind": "del",
+     "text": "    // legacy: load the whole reconciliation window into memory (21)",
+     "old": 10
+    },
+    {
+     "kind": "ctx",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_21 = \"payments_reconciliation_ledger_entry_column_21\"; // backfilled from LegacyLedgerEntryMapper",
+     "old": 11,
+     "new": 21
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_22 = \"payments_reconciliation_ledger_entry_column_22\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 22
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_23 = \"payments_reconciliation_ledger_entry_column_23\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 23
+    },
+    {
+     "kind": "ctx",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_24 = \"payments_reconciliation_ledger_entry_column_24\"; // backfilled from LegacyLedgerEntryMapper",
+     "old": 12,
+     "new": 24
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_25 = \"payments_reconciliation_ledger_entry_column_25\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 25
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_26 = \"payments_reconciliation_ledger_entry_column_26\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 26
+    },
+    {
+     "kind": "ctx",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_27 = \"payments_reconciliation_ledger_entry_column_27\"; // backfilled from LegacyLedgerEntryMapper",
+     "old": 13,
+     "new": 27
+    },
+    {
+     "kind": "del",
+     "text": "    // legacy: load the whole reconciliation window into memory (28)",
+     "old": 14
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_28 = \"payments_reconciliation_ledger_entry_column_28\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 28
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_29 = \"payments_reconciliation_ledger_entry_column_29\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 29
+    },
+    {
+     "kind": "ctx",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_30 = \"payments_reconciliation_ledger_entry_column_30\"; // backfilled from LegacyLedgerEntryMapper",
+     "old": 15,
+     "new": 30
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_31 = \"payments_reconciliation_ledger_entry_column_31\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 31
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_32 = \"payments_reconciliation_ledger_entry_column_32\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 32
+    },
+    {
+     "kind": "ctx",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_33 = \"payments_reconciliation_ledger_entry_column_33\"; // backfilled from LegacyLedgerEntryMapper",
+     "old": 16,
+     "new": 33
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_34 = \"payments_reconciliation_ledger_entry_column_34\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 34
+    },
+    {
+     "kind": "del",
+     "text": "    // legacy: load the whole reconciliation window into memory (35)",
+     "old": 17
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_35 = \"payments_reconciliation_ledger_entry_column_35\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 35
+    },
+    {
+     "kind": "ctx",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_36 = \"payments_reconciliation_ledger_entry_column_36\"; // backfilled from LegacyLedgerEntryMapper",
+     "old": 18,
+     "new": 36
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_37 = \"payments_reconciliation_ledger_entry_column_37\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 37
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_38 = \"payments_reconciliation_ledger_entry_column_38\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 38
+    },
+    {
+     "kind": "ctx",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_39 = \"payments_reconciliation_ledger_entry_column_39\"; // backfilled from LegacyLedgerEntryMapper",
+     "old": 19,
+     "new": 39
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_40 = \"payments_reconciliation_ledger_entry_column_40\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 40
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_41 = \"payments_reconciliation_ledger_entry_column_41\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 41
+    },
+    {
+     "kind": "del",
+     "text": "    // legacy: load the whole reconciliation window into memory (42)",
+     "old": 20
+    },
+    {
+     "kind": "ctx",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_42 = \"payments_reconciliation_ledger_entry_column_42\"; // backfilled from LegacyLedgerEntryMapper",
+     "old": 21,
+     "new": 42
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_43 = \"payments_reconciliation_ledger_entry_column_43\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 43
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_44 = \"payments_reconciliation_ledger_entry_column_44\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 44
+    },
+    {
+     "kind": "ctx",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_45 = \"payments_reconciliation_ledger_entry_column_45\"; // backfilled from LegacyLedgerEntryMapper",
+     "old": 22,
+     "new": 45
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_46 = \"payments_reconciliation_ledger_entry_column_46\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 46
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_47 = \"payments_reconciliation_ledger_entry_column_47\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 47
+    },
+    {
+     "kind": "ctx",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_48 = \"payments_reconciliation_ledger_entry_column_48\"; // backfilled from LegacyLedgerEntryMapper",
+     "old": 23,
+     "new": 48
+    },
+    {
+     "kind": "del",
+     "text": "    // legacy: load the whole reconciliation window into memory (49)",
+     "old": 24
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_49 = \"payments_reconciliation_ledger_entry_column_49\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 49
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_50 = \"payments_reconciliation_ledger_entry_column_50\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 50
+    },
+    {
+     "kind": "ctx",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_51 = \"payments_reconciliation_ledger_entry_column_51\"; // backfilled from LegacyLedgerEntryMapper",
+     "old": 25,
+     "new": 51
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_52 = \"payments_reconciliation_ledger_entry_column_52\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 52
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_53 = \"payments_reconciliation_ledger_entry_column_53\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 53
+    },
+    {
+     "kind": "ctx",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_54 = \"payments_reconciliation_ledger_entry_column_54\"; // backfilled from LegacyLedgerEntryMapper",
+     "old": 26,
+     "new": 54
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_55 = \"payments_reconciliation_ledger_entry_column_55\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 55
+    },
+    {
+     "kind": "del",
+     "text": "    // legacy: load the whole reconciliation window into memory (56)",
+     "old": 27
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_56 = \"payments_reconciliation_ledger_entry_column_56\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 56
+    },
+    {
+     "kind": "ctx",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_57 = \"payments_reconciliation_ledger_entry_column_57\"; // backfilled from LegacyLedgerEntryMapper",
+     "old": 28,
+     "new": 57
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_58 = \"payments_reconciliation_ledger_entry_column_58\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 58
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_59 = \"payments_reconciliation_ledger_entry_column_59\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 59
+    },
+    {
+     "kind": "ctx",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_60 = \"payments_reconciliation_ledger_entry_column_60\"; // backfilled from LegacyLedgerEntryMapper",
+     "old": 29,
+     "new": 60
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_61 = \"payments_reconciliation_ledger_entry_column_61\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 61
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_62 = \"payments_reconciliation_ledger_entry_column_62\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 62
+    },
+    {
+     "kind": "del",
+     "text": "    // legacy: load the whole reconciliation window into memory (63)",
+     "old": 30
+    },
+    {
+     "kind": "ctx",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_63 = \"payments_reconciliation_ledger_entry_column_63\"; // backfilled from LegacyLedgerEntryMapper",
+     "old": 31,
+     "new": 63
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_64 = \"payments_reconciliation_ledger_entry_column_64\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 64
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_65 = \"payments_reconciliation_ledger_entry_column_65\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 65
+    },
+    {
+     "kind": "ctx",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_66 = \"payments_reconciliation_ledger_entry_column_66\"; // backfilled from LegacyLedgerEntryMapper",
+     "old": 32,
+     "new": 66
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_67 = \"payments_reconciliation_ledger_entry_column_67\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 67
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_68 = \"payments_reconciliation_ledger_entry_column_68\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 68
+    },
+    {
+     "kind": "ctx",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_69 = \"payments_reconciliation_ledger_entry_column_69\"; // backfilled from LegacyLedgerEntryMapper",
+     "old": 33,
+     "new": 69
+    },
+    {
+     "kind": "del",
+     "text": "    // legacy: load the whole reconciliation window into memory (70)",
+     "old": 34
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_70 = \"payments_reconciliation_ledger_entry_column_70\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 70
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_71 = \"payments_reconciliation_ledger_entry_column_71\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 71
+    },
+    {
+     "kind": "ctx",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_72 = \"payments_reconciliation_ledger_entry_column_72\"; // backfilled from LegacyLedgerEntryMapper",
+     "old": 35,
+     "new": 72
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_73 = \"payments_reconciliation_ledger_entry_column_73\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 73
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_74 = \"payments_reconciliation_ledger_entry_column_74\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 74
+    },
+    {
+     "kind": "ctx",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_75 = \"payments_reconciliation_ledger_entry_column_75\"; // backfilled from LegacyLedgerEntryMapper",
+     "old": 36,
+     "new": 75
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_76 = \"payments_reconciliation_ledger_entry_column_76\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 76
+    },
+    {
+     "kind": "del",
+     "text": "    // legacy: load the whole reconciliation window into memory (77)",
+     "old": 37
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_77 = \"payments_reconciliation_ledger_entry_column_77\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 77
+    },
+    {
+     "kind": "ctx",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_78 = \"payments_reconciliation_ledger_entry_column_78\"; // backfilled from LegacyLedgerEntryMapper",
+     "old": 38,
+     "new": 78
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_79 = \"payments_reconciliation_ledger_entry_column_79\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 79
+    },
+    {
+     "kind": "add",
+     "text": "    private static final String LEDGER_ENTRY_COLUMN_80 = \"payments_reconciliation_ledger_entry_column_80\"; // backfilled from LegacyLedgerEntryMapper",
+     "new": 80
+    }
+   ],
+   "src": [
+    "package com.northwind.industries.holdings.payments.reconciliation.internal.adapters.persistence;",
+    "    private static final String LEDGER_ENTRY_COLUMN_02 = \"payments_reconciliation_ledger_entry_column_02\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_03 = \"payments_reconciliation_ledger_entry_column_03\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_04 = \"payments_reconciliation_ledger_entry_column_04\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_05 = \"payments_reconciliation_ledger_entry_column_05\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_06 = \"payments_reconciliation_ledger_entry_column_06\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_07 = \"payments_reconciliation_ledger_entry_column_07\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_08 = \"payments_reconciliation_ledger_entry_column_08\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_09 = \"payments_reconciliation_ledger_entry_column_09\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_10 = \"payments_reconciliation_ledger_entry_column_10\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_11 = \"payments_reconciliation_ledger_entry_column_11\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_12 = \"payments_reconciliation_ledger_entry_column_12\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_13 = \"payments_reconciliation_ledger_entry_column_13\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_14 = \"payments_reconciliation_ledger_entry_column_14\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_15 = \"payments_reconciliation_ledger_entry_column_15\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_16 = \"payments_reconciliation_ledger_entry_column_16\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_17 = \"payments_reconciliation_ledger_entry_column_17\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_18 = \"payments_reconciliation_ledger_entry_column_18\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_19 = \"payments_reconciliation_ledger_entry_column_19\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_20 = \"payments_reconciliation_ledger_entry_column_20\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_21 = \"payments_reconciliation_ledger_entry_column_21\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_22 = \"payments_reconciliation_ledger_entry_column_22\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_23 = \"payments_reconciliation_ledger_entry_column_23\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_24 = \"payments_reconciliation_ledger_entry_column_24\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_25 = \"payments_reconciliation_ledger_entry_column_25\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_26 = \"payments_reconciliation_ledger_entry_column_26\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_27 = \"payments_reconciliation_ledger_entry_column_27\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_28 = \"payments_reconciliation_ledger_entry_column_28\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_29 = \"payments_reconciliation_ledger_entry_column_29\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_30 = \"payments_reconciliation_ledger_entry_column_30\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_31 = \"payments_reconciliation_ledger_entry_column_31\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_32 = \"payments_reconciliation_ledger_entry_column_32\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_33 = \"payments_reconciliation_ledger_entry_column_33\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_34 = \"payments_reconciliation_ledger_entry_column_34\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_35 = \"payments_reconciliation_ledger_entry_column_35\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_36 = \"payments_reconciliation_ledger_entry_column_36\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_37 = \"payments_reconciliation_ledger_entry_column_37\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_38 = \"payments_reconciliation_ledger_entry_column_38\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_39 = \"payments_reconciliation_ledger_entry_column_39\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_40 = \"payments_reconciliation_ledger_entry_column_40\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_41 = \"payments_reconciliation_ledger_entry_column_41\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_42 = \"payments_reconciliation_ledger_entry_column_42\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_43 = \"payments_reconciliation_ledger_entry_column_43\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_44 = \"payments_reconciliation_ledger_entry_column_44\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_45 = \"payments_reconciliation_ledger_entry_column_45\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_46 = \"payments_reconciliation_ledger_entry_column_46\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_47 = \"payments_reconciliation_ledger_entry_column_47\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_48 = \"payments_reconciliation_ledger_entry_column_48\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_49 = \"payments_reconciliation_ledger_entry_column_49\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_50 = \"payments_reconciliation_ledger_entry_column_50\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_51 = \"payments_reconciliation_ledger_entry_column_51\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_52 = \"payments_reconciliation_ledger_entry_column_52\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_53 = \"payments_reconciliation_ledger_entry_column_53\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_54 = \"payments_reconciliation_ledger_entry_column_54\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_55 = \"payments_reconciliation_ledger_entry_column_55\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_56 = \"payments_reconciliation_ledger_entry_column_56\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_57 = \"payments_reconciliation_ledger_entry_column_57\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_58 = \"payments_reconciliation_ledger_entry_column_58\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_59 = \"payments_reconciliation_ledger_entry_column_59\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_60 = \"payments_reconciliation_ledger_entry_column_60\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_61 = \"payments_reconciliation_ledger_entry_column_61\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_62 = \"payments_reconciliation_ledger_entry_column_62\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_63 = \"payments_reconciliation_ledger_entry_column_63\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_64 = \"payments_reconciliation_ledger_entry_column_64\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_65 = \"payments_reconciliation_ledger_entry_column_65\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_66 = \"payments_reconciliation_ledger_entry_column_66\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_67 = \"payments_reconciliation_ledger_entry_column_67\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_68 = \"payments_reconciliation_ledger_entry_column_68\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_69 = \"payments_reconciliation_ledger_entry_column_69\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_70 = \"payments_reconciliation_ledger_entry_column_70\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_71 = \"payments_reconciliation_ledger_entry_column_71\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_72 = \"payments_reconciliation_ledger_entry_column_72\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_73 = \"payments_reconciliation_ledger_entry_column_73\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_74 = \"payments_reconciliation_ledger_entry_column_74\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_75 = \"payments_reconciliation_ledger_entry_column_75\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_76 = \"payments_reconciliation_ledger_entry_column_76\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_77 = \"payments_reconciliation_ledger_entry_column_77\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_78 = \"payments_reconciliation_ledger_entry_column_78\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_79 = \"payments_reconciliation_ledger_entry_column_79\"; // backfilled from LegacyLedgerEntryMapper",
+    "    private static final String LEDGER_ENTRY_COLUMN_80 = \"payments_reconciliation_ledger_entry_column_80\"; // backfilled from LegacyLedgerEntryMapper"
+   ]
+  },
+  {
+   "path": "a.c",
+   "status": "modified",
+   "adds": 1,
+   "dels": 0,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 1,
+     "newStart": 1,
+     "newCount": 1,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "add",
+     "text": "int main(void) { return 0; }",
+     "new": 1
+    }
+   ],
+   "src": [
+    "int main(void) { return 0; }"
+   ]
+  },
+  {
+   "path": "CHANGELOG-2026-q3-payments-reconciliation-service-migration-notes-and-rollback-plan.md",
+   "status": "modified",
+   "adds": 48,
+   "dels": 0,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": ".github/workflows/ci.yml",
+   "status": "modified",
+   "adds": 3,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "docs/design/Payment flow (v2) — final, reviewed by Aleksandra Wiśniewska-Kowalczyk.md",
+   "status": "modified",
+   "adds": 220,
+   "dels": 18,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "docs/i18n/日本語/支払い照合サービスの移行ガイド.md",
+   "status": "modified",
+   "adds": 12,
+   "dels": 4,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "web/dist/assets/payments-reconciliation-dashboard.chunk.4f9a2c1e8b7d6053.min.js",
+   "status": "modified",
+   "adds": 1,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 2,
+     "newStart": 1,
+     "newCount": 2,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "del",
+     "text": "!function(e,t){var n0=e.reconcile(t[0],{ledger:\"payments-reconciliation-ledger-entry-0\"});var n1=e.reconcile(t[1],{ledger:\"payments-reconciliation-ledger-entry-1\"});var n2=e.reconcile(t[2],{ledger:\"payments-reconciliation-ledger-entry-2\"});var n3=e.reconcile(t[3],{ledger:\"payments-reconciliation-ledger-entry-3\"});var n4=e.reconcile(t[4],{ledger:\"payments-reconciliation-ledger-entry-4\"});var n5=e.reconcile(t[5],{ledger:\"payments-reconciliation-ledger-entry-5\"});var n6=e.reconcile(t[6],{ledger:\"payments-reconciliation-ledger-entry-6\"});var n7=e.reconcile(t[7],{ledger:\"payments-reconciliation-ledger-entry-7\"});var n8=e.reconcile(t[8],{ledger:\"payments-reconciliation-ledger-entry-8\"});var n9=e.reconcile(t[9],{ledger:\"payments-reconciliation-ledger-entry-9\"});var n10=e.reconcile(t[10],{ledger:\"payments-reconciliation-ledger-entry-10\"});var n11=e.reconcile(t[11],{ledger:\"payments-reconciliation-ledger-entry-11\"});var n12=e.reconcile(t[12],{ledger:\"payments-reconciliation-ledger-entry-12\"});var n13=e.reconcile(t[13],{ledger:\"payments-reconciliation-ledger-entry-13\"});var n14=e.reconcile(t[14],{ledger:\"payments-reconciliation-ledger-entry-14\"});var n15=e.reconcile(t[15],{ledger:\"payments-reconciliation-ledger-entry-15\"});var n16=e.reconcile(t[16],{ledger:\"payments-reconciliation-ledger-entry-16\"});var n17=e.reconcile(t[17],{ledger:\"payments-reconciliation-ledger-entry-17\"});var n18=e.reconcile(t[18],{ledger:\"payments-reconciliation-ledger-entry-18\"});var n19=e.reconcile(t[19],{ledger:\"payments-reconciliation-ledger-entry-19\"});var n20=e.reconcile(t[20],{ledger:\"payments-reconciliation-ledger-entry-20\"});var n21=e.reconcile(t[21],{ledger:\"payments-reconciliation-ledger-entry-21\"});var n22=e.reconcile(t[22],{ledger:\"payments-reconciliation-ledger-entry-22\"});var n23=e.reconcile(t[23],{ledger:\"payments-reconciliation-ledger-entry-23\"});var n24=e.reconcile(t[24],{ledger:\"payments-reconciliation-ledger-entry-24\"});var n25=e.reconcile(t[25],{ledger:\"payments-reconciliation-ledger-entry-25\"});var n26=e.reconcile(t[26],{ledger:\"payments-reconciliation-ledger-entry-26\"});var n27=e.reconcile(t[27],{ledger:\"payments-reconciliation-ledger-entry-27\"});var n28=e.reconcile(t[28],{ledger:\"payments-reconciliation-ledger-entry-28\"});var n29=e.reconcile(t[29],{ledger:\"payments-reconciliation-ledger-entry-29\"});var n30=e.reconcile(t[30],{ledger:\"payments-reconciliation-ledger-entry-30\"});var n31=e.reconcile(t[31],{ledger:\"payments-reconciliation-ledger-entry-31\"});var n32=e.reconcile(t[32],{ledger:\"payments-reconciliation-ledger-entry-32\"});var n33=e.reconcile(t[33],{ledger:\"payments-reconciliation-ledger-entry-33\"});var n34=e.reconcile(t[34],{ledger:\"payments-reconciliation-ledger-entry-34\"});var n35=e.reconcile(t[35],{ledger:\"payments-reconciliation-ledger-entry-35\"});var n36=e.reconcile(t[36],{ledger:\"payments-reconciliation-ledger-entry-36\"});var n37=e.reconcile(t[37],{ledger:\"payments-reconciliation-ledger-entry-37\"});var n38=e.reconcile(t[38],{ledger:\"payments-reconciliation-ledger-entry-38\"});var n39=e.reconcile(t[39],{ledger:\"payments-reconciliation-ledger-entry-39\"})}(window,[]);",
+     "old": 1
+    },
+    {
+     "kind": "add",
+     "text": "!function(e,t){var n0=e.reconcile(t[0],{ledger:\"payments-reconciliation-ledger-entry-0\"});var n1=e.reconcile(t[1],{ledger:\"payments-reconciliation-ledger-entry-1\"});var n2=e.reconcile(t[2],{ledger:\"payments-reconciliation-ledger-entry-2\"});var n3=e.reconcile(t[3],{ledger:\"payments-reconciliation-ledger-entry-3\"});var n4=e.reconcile(t[4],{ledger:\"payments-reconciliation-ledger-entry-4\"});var n5=e.reconcile(t[5],{ledger:\"payments-reconciliation-ledger-entry-5\"});var n6=e.reconcile(t[6],{ledger:\"payments-reconciliation-ledger-entry-6\"});var n7=e.reconcile(t[7],{ledger:\"payments-reconciliation-ledger-entry-7\"});var n8=e.reconcile(t[8],{ledger:\"payments-reconciliation-ledger-entry-8\"});var n9=e.reconcile(t[9],{ledger:\"payments-reconciliation-ledger-entry-9\"});var n10=e.reconcile(t[10],{ledger:\"payments-reconciliation-ledger-entry-10\"});var n11=e.reconcile(t[11],{ledger:\"payments-reconciliation-ledger-entry-11\"});var n12=e.reconcile(t[12],{ledger:\"payments-reconciliation-ledger-entry-12\"});var n13=e.reconcile(t[13],{ledger:\"payments-reconciliation-ledger-entry-13\"});var n14=e.reconcile(t[14],{ledger:\"payments-reconciliation-ledger-entry-14\"});var n15=e.reconcile(t[15],{ledger:\"payments-reconciliation-ledger-entry-15\"});var n16=e.reconcile(t[16],{ledger:\"payments-reconciliation-ledger-entry-16\"});var n17=e.reconcile(t[17],{ledger:\"payments-reconciliation-ledger-entry-17\"});var n18=e.reconcile(t[18],{ledger:\"payments-reconciliation-ledger-entry-18\"});var n19=e.reconcile(t[19],{ledger:\"payments-reconciliation-ledger-entry-19\"});var n20=e.reconcile(t[20],{ledger:\"payments-reconciliation-ledger-entry-20\"});var n21=e.reconcile(t[21],{ledger:\"payments-reconciliation-ledger-entry-21\"});var n22=e.reconcile(t[22],{ledger:\"payments-reconciliation-ledger-entry-22\"});var n23=e.reconcile(t[23],{ledger:\"payments-reconciliation-ledger-entry-23\"});var n24=e.reconcile(t[24],{ledger:\"payments-reconciliation-ledger-entry-24\"});var n25=e.reconcile(t[25],{ledger:\"payments-reconciliation-ledger-entry-25\"});var n26=e.reconcile(t[26],{ledger:\"payments-reconciliation-ledger-entry-26\"});var n27=e.reconcile(t[27],{ledger:\"payments-reconciliation-ledger-entry-27\"});var n28=e.reconcile(t[28],{ledger:\"payments-reconciliation-ledger-entry-28\"});var n29=e.reconcile(t[29],{ledger:\"payments-reconciliation-ledger-entry-29\"});var n30=e.reconcile(t[30],{ledger:\"payments-reconciliation-ledger-entry-30\"});var n31=e.reconcile(t[31],{ledger:\"payments-reconciliation-ledger-entry-31\"});var n32=e.reconcile(t[32],{ledger:\"payments-reconciliation-ledger-entry-32\"});var n33=e.reconcile(t[33],{ledger:\"payments-reconciliation-ledger-entry-33\"});var n34=e.reconcile(t[34],{ledger:\"payments-reconciliation-ledger-entry-34\"});var n35=e.reconcile(t[35],{ledger:\"payments-reconciliation-ledger-entry-35\"});var n36=e.reconcile(t[36],{ledger:\"payments-reconciliation-ledger-entry-36\"});var n37=e.reconcile(t[37],{ledger:\"payments-reconciliation-ledger-entry-37\"});var n38=e.reconcile(t[38],{ledger:\"payments-reconciliation-ledger-entry-38\"});var n39=e.reconcile(t[39],{ledger:\"payments-reconciliation-ledger-entry-39\"})}(window,[]);",
+     "new": 1
+    }
+   ],
+   "src": [
+    "!function(e,t){var n0=e.reconcile(t[0],{ledger:\"payments-reconciliation-ledger-entry-0\"});var n1=e.reconcile(t[1],{ledger:\"payments-reconciliation-ledger-entry-1\"});var n2=e.reconcile(t[2],{ledger:\"payments-reconciliation-ledger-entry-2\"});var n3=e.reconcile(t[3],{ledger:\"payments-reconciliation-ledger-entry-3\"});var n4=e.reconcile(t[4],{ledger:\"payments-reconciliation-ledger-entry-4\"});var n5=e.reconcile(t[5],{ledger:\"payments-reconciliation-ledger-entry-5\"});var n6=e.reconcile(t[6],{ledger:\"payments-reconciliation-ledger-entry-6\"});var n7=e.reconcile(t[7],{ledger:\"payments-reconciliation-ledger-entry-7\"});var n8=e.reconcile(t[8],{ledger:\"payments-reconciliation-ledger-entry-8\"});var n9=e.reconcile(t[9],{ledger:\"payments-reconciliation-ledger-entry-9\"});var n10=e.reconcile(t[10],{ledger:\"payments-reconciliation-ledger-entry-10\"});var n11=e.reconcile(t[11],{ledger:\"payments-reconciliation-ledger-entry-11\"});var n12=e.reconcile(t[12],{ledger:\"payments-reconciliation-ledger-entry-12\"});var n13=e.reconcile(t[13],{ledger:\"payments-reconciliation-ledger-entry-13\"});var n14=e.reconcile(t[14],{ledger:\"payments-reconciliation-ledger-entry-14\"});var n15=e.reconcile(t[15],{ledger:\"payments-reconciliation-ledger-entry-15\"});var n16=e.reconcile(t[16],{ledger:\"payments-reconciliation-ledger-entry-16\"});var n17=e.reconcile(t[17],{ledger:\"payments-reconciliation-ledger-entry-17\"});var n18=e.reconcile(t[18],{ledger:\"payments-reconciliation-ledger-entry-18\"});var n19=e.reconcile(t[19],{ledger:\"payments-reconciliation-ledger-entry-19\"});var n20=e.reconcile(t[20],{ledger:\"payments-reconciliation-ledger-entry-20\"});var n21=e.reconcile(t[21],{ledger:\"payments-reconciliation-ledger-entry-21\"});var n22=e.reconcile(t[22],{ledger:\"payments-reconciliation-ledger-entry-22\"});var n23=e.reconcile(t[23],{ledger:\"payments-reconciliation-ledger-entry-23\"});var n24=e.reconcile(t[24],{ledger:\"payments-reconciliation-ledger-entry-24\"});var n25=e.reconcile(t[25],{ledger:\"payments-reconciliation-ledger-entry-25\"});var n26=e.reconcile(t[26],{ledger:\"payments-reconciliation-ledger-entry-26\"});var n27=e.reconcile(t[27],{ledger:\"payments-reconciliation-ledger-entry-27\"});var n28=e.reconcile(t[28],{ledger:\"payments-reconciliation-ledger-entry-28\"});var n29=e.reconcile(t[29],{ledger:\"payments-reconciliation-ledger-entry-29\"});var n30=e.reconcile(t[30],{ledger:\"payments-reconciliation-ledger-entry-30\"});var n31=e.reconcile(t[31],{ledger:\"payments-reconciliation-ledger-entry-31\"});var n32=e.reconcile(t[32],{ledger:\"payments-reconciliation-ledger-entry-32\"});var n33=e.reconcile(t[33],{ledger:\"payments-reconciliation-ledger-entry-33\"});var n34=e.reconcile(t[34],{ledger:\"payments-reconciliation-ledger-entry-34\"});var n35=e.reconcile(t[35],{ledger:\"payments-reconciliation-ledger-entry-35\"});var n36=e.reconcile(t[36],{ledger:\"payments-reconciliation-ledger-entry-36\"});var n37=e.reconcile(t[37],{ledger:\"payments-reconciliation-ledger-entry-37\"});var n38=e.reconcile(t[38],{ledger:\"payments-reconciliation-ledger-entry-38\"});var n39=e.reconcile(t[39],{ledger:\"payments-reconciliation-ledger-entry-39\"})}(window,[]);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/main/java/com/northwind/industries/holdings/payments/reconciliation/internal/adapters/persistence/LegacyLedgerEntryMapper.java",
+   "status": "deleted",
+   "adds": 0,
+   "dels": 412,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ]
+  },
+  {
+   "path": "assets/logo@2x.png",
+   "status": "modified",
+   "adds": 0,
+   "dels": 0,
+   "rows": []
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case001/ReconciliationScenario001Test.java",
+   "status": "modified",
+   "adds": 1,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case002/ReconciliationScenario002Test.java",
+   "status": "modified",
+   "adds": 2,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case003/ReconciliationScenario003Test.java",
+   "status": "modified",
+   "adds": 3,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case004/ReconciliationScenario004Test.java",
+   "status": "modified",
+   "adds": 4,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case005/ReconciliationScenario005Test.java",
+   "status": "modified",
+   "adds": 5,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case006/ReconciliationScenario006Test.java",
+   "status": "modified",
+   "adds": 6,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case007/ReconciliationScenario007Test.java",
+   "status": "modified",
+   "adds": 7,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case008/ReconciliationScenario008Test.java",
+   "status": "modified",
+   "adds": 8,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case009/ReconciliationScenario009Test.java",
+   "status": "modified",
+   "adds": 9,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case010/ReconciliationScenario010Test.java",
+   "status": "modified",
+   "adds": 10,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case011/ReconciliationScenario011Test.java",
+   "status": "modified",
+   "adds": 11,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case012/ReconciliationScenario012Test.java",
+   "status": "modified",
+   "adds": 12,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case013/ReconciliationScenario013Test.java",
+   "status": "modified",
+   "adds": 13,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case014/ReconciliationScenario014Test.java",
+   "status": "modified",
+   "adds": 14,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case015/ReconciliationScenario015Test.java",
+   "status": "modified",
+   "adds": 15,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case016/ReconciliationScenario016Test.java",
+   "status": "modified",
+   "adds": 16,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case017/ReconciliationScenario017Test.java",
+   "status": "modified",
+   "adds": 17,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case018/ReconciliationScenario018Test.java",
+   "status": "modified",
+   "adds": 18,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case019/ReconciliationScenario019Test.java",
+   "status": "modified",
+   "adds": 19,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case020/ReconciliationScenario020Test.java",
+   "status": "modified",
+   "adds": 20,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case021/ReconciliationScenario021Test.java",
+   "status": "modified",
+   "adds": 21,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case022/ReconciliationScenario022Test.java",
+   "status": "modified",
+   "adds": 22,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case023/ReconciliationScenario023Test.java",
+   "status": "modified",
+   "adds": 23,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case024/ReconciliationScenario024Test.java",
+   "status": "modified",
+   "adds": 24,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case025/ReconciliationScenario025Test.java",
+   "status": "modified",
+   "adds": 25,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case026/ReconciliationScenario026Test.java",
+   "status": "modified",
+   "adds": 26,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case027/ReconciliationScenario027Test.java",
+   "status": "modified",
+   "adds": 27,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case028/ReconciliationScenario028Test.java",
+   "status": "modified",
+   "adds": 28,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case029/ReconciliationScenario029Test.java",
+   "status": "modified",
+   "adds": 29,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case030/ReconciliationScenario030Test.java",
+   "status": "modified",
+   "adds": 30,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case031/ReconciliationScenario031Test.java",
+   "status": "modified",
+   "adds": 31,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case032/ReconciliationScenario032Test.java",
+   "status": "modified",
+   "adds": 32,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case033/ReconciliationScenario033Test.java",
+   "status": "modified",
+   "adds": 33,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case034/ReconciliationScenario034Test.java",
+   "status": "modified",
+   "adds": 34,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case035/ReconciliationScenario035Test.java",
+   "status": "modified",
+   "adds": 35,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case036/ReconciliationScenario036Test.java",
+   "status": "modified",
+   "adds": 36,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case037/ReconciliationScenario037Test.java",
+   "status": "modified",
+   "adds": 37,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case038/ReconciliationScenario038Test.java",
+   "status": "modified",
+   "adds": 38,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case039/ReconciliationScenario039Test.java",
+   "status": "modified",
+   "adds": 39,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case040/ReconciliationScenario040Test.java",
+   "status": "modified",
+   "adds": 40,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case041/ReconciliationScenario041Test.java",
+   "status": "modified",
+   "adds": 41,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case042/ReconciliationScenario042Test.java",
+   "status": "modified",
+   "adds": 42,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case043/ReconciliationScenario043Test.java",
+   "status": "modified",
+   "adds": 43,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case044/ReconciliationScenario044Test.java",
+   "status": "modified",
+   "adds": 44,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case045/ReconciliationScenario045Test.java",
+   "status": "modified",
+   "adds": 45,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case046/ReconciliationScenario046Test.java",
+   "status": "modified",
+   "adds": 46,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case047/ReconciliationScenario047Test.java",
+   "status": "modified",
+   "adds": 47,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case048/ReconciliationScenario048Test.java",
+   "status": "modified",
+   "adds": 48,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case049/ReconciliationScenario049Test.java",
+   "status": "modified",
+   "adds": 49,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case050/ReconciliationScenario050Test.java",
+   "status": "modified",
+   "adds": 50,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  },
+  {
+   "path": "services/payments-gateway/src/test/java/com/northwind/industries/holdings/payments/reconciliation/fixtures/case051/ReconciliationScenario051Test.java",
+   "status": "modified",
+   "adds": 51,
+   "dels": 1,
+   "rows": [
+    {
+     "kind": "hunk",
+     "oldStart": 1,
+     "oldCount": 3,
+     "newStart": 1,
+     "newCount": 3,
+     "label": "export class PaymentReconciliationLedgerEntryRepositoryAdapterImpl implements LedgerEntryRepository"
+    },
+    {
+     "kind": "ctx",
+     "text": "import { ledger } from \"./ledger\";",
+     "old": 1,
+     "new": 1
+    },
+    {
+     "kind": "add",
+     "text": "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);",
+     "new": 2
+    },
+    {
+     "kind": "del",
+     "text": "export const reconcile = (e) => ledger.apply(e);",
+     "old": 2
+    }
+   ],
+   "src": [
+    "import { ledger } from \"./ledger\";",
+    "export const reconcile = (entry: LedgerEntry) => ledger.apply(entry);"
+   ]
+  }
+ ]
+}

@@ -36,10 +36,30 @@ local function fileList(r: Review.Review, change: number): { Node }
  return list
 end
 
+-- A change with more steps than this lists only the few around the one you are on, so the pinned
+-- card stays within the screen with the current step on it: Tern gives plugins no way to scroll a
+-- nested scroller to a node without moving the page too.
+local MAX_LISTED = 7
+local AROUND = 2
+
+-- The first and last step listed for a change of `count` steps while on step `at`.
+local function listed(count: number, at: number): (number, number)
+ if count <= MAX_LISTED then return 1, count end
+ local first = math.clamp(at - AROUND, 1, count - 2 * AROUND)
+ return first, first + 2 * AROUND
+end
+
+local function more(count: number, word: string, key: string): Node
+ return el("div", { class = "gp-ol-more", key = key, text = count .. " " .. word .. " " .. (if count == 1 then "step" else "steps") })
+end
+
 -- The step you are on sits in a tinted box with its note, matching the outlined code block.
 local function stepList(r: Review.Review, change: Guide.Change, current: Guide.Step): { Node }
  local steps = {}
- for _, step in change.steps do
+ local first, last = listed(#change.steps, if current.change == change.steps[1].change then current.index else 1)
+ if first > 1 then table.insert(steps, more(first - 1, "earlier", "before")) end
+ for i = first, last do
+  local step = change.steps[i]
   local key = step.key
   local here = step == current
   local kids = { tick(r.reviewed[key] == true, "gp-ol-dot", "review-step=" .. key) }
@@ -56,8 +76,12 @@ local function stepList(r: Review.Review, change: Guide.Change, current: Guide.S
    table.insert(steps, row)
   end
  end
+ if last < #change.steps then table.insert(steps, more(#change.steps - last, "more", "after")) end
  return steps
 end
+
+-- About how many characters of the why fit on a line of the card.
+local WHY_CHARS = 40
 
 -- Indents deeper than this line up with it.
 local MAX_DEPTH = 8
@@ -116,9 +140,18 @@ local function fileTree(s: State.State): Node
   end
  end
  return el("div", { class = "gp-outline gp-ccard gp-tree", key = "outline" }, {
-  span("gp-band-label", #r.steps .. " " .. (if #r.steps == 1 then "file" else "files") .. " changed"),
+  el("div", { class = "gp-tree-head" }, {
+   span("gp-band-label", #r.steps .. " " .. (if #r.steps == 1 then "file" else "files") .. " changed"),
+   Ui.spacer(),
+   M.treeToggle(),
+  }),
   el("div", { class = "gp-tree-rows" }, rows),
  })
+end
+
+-- The button that hides the file view's tree, and shows it again from the rail left in its place.
+function M.treeToggle(): Node
+ return el("span", { class = "gp-tree-toggle", key = "toggle", actions = { click = "toggle-tree" } }, { Ui.icon("sidebar"), Ui.keys("b") })
 end
 
 function M.view(s: State.State, n: number): Node
@@ -133,10 +166,12 @@ function M.view(s: State.State, n: number): Node
  table.insert(meta, Ui.keys("⇧ ⏎"))
  return el("div", { class = "gp-outline gp-sticky gp-ccard", key = "outline" }, {
   span("gp-band-label", "Change " .. n .. " of " .. #r.guide.changes),
-  span("gp-band-title", change.title),
+  span("gp-band-title" .. (if #change.title > 60 then " gp-band-title-long" else ""), change.title),
   el("div", { class = "gp-band-meta" }, meta),
-  el("div", { class = "gp-band-why" }, { Ui.rich(change.why) }),
-  el("div", { class = "gp-cfiles" }, fileList(r, n)),
+  -- A long why and a long file list give way first when the card would pass the screen, then a long
+  -- title, each keeping a few lines and a scroll of its own.
+  el("div", { class = "gp-band-why" .. (if Text.wrappedLines(change.why, WHY_CHARS) > 3 then " gp-band-why-long" else "") }, { Ui.rich(change.why) }),
+  el("div", { class = "gp-cfiles" .. (if #Review.filesOfChange(r, n) > 3 then " gp-cfiles-long" else "") }, fileList(r, n)),
   span("gp-ccard-h", "Steps"),
   el("div", { class = "gp-ccard-steps" }, stepList(r, change, State.currentStep(s))),
  })

@@ -57,6 +57,23 @@ local function body(indent: string, count: number): { string }
 	return out
 end
 
+-- A one-line file at `path` whose line is added.
+local function fileAt(path: string, line: string): Pr.File
+	local rows: { Pr.Row } = { { kind = "hunk", oldStart = 1, newStart = 1 } :: Pr.Hunk, { kind = "add", text = line, new = 1 } :: Pr.Line }
+	return { path = path, status = "added", adds = 1, dels = 0, rows = rows, src = { line } }
+end
+
+-- The tokens of `line` in a file at `path` as "kind:text", skipping whitespace.
+local function colored(path: string, line: string): string
+	local fd = Diff.analyze(fileAt(path, line))
+	assert(fd.syntax, "no syntax for " .. path)
+	local parts = {}
+	for _, token in Diff.tokens(fd, 1) do
+		if string.match(token.text, "%S") then table.insert(parts, token.kind .. ":" .. token.text) end
+	end
+	return table.concat(parts, " ")
+end
+
 local function concat(...: { string }): { string }
 	local out = {}
 	for _, list in { ... } do
@@ -244,4 +261,16 @@ return function()
 	assert(shape(layout) == "gap 19-23", shape(layout))
 	layout = Diff.layout(fd, { spans = nil, whole = true, annotated = {}, hit = nil, reveals = {} })
 	assert(shape(layout) == "1-23", shape(layout))
+
+	-- Each language colors its own keywords, comments and strings; an unknown extension stays plain.
+	assert(colored("a.js", "const s = 'x' // y") == "kw:const plain:s punct:= str:'x' com:// y", colored("a.js", "const s = 'x' // y"))
+	assert(colored("a.tsx", "return <A/>") == "kw:return punct:< type:A punct:/ punct:>", colored("a.tsx", "return <A/>"))
+	assert(colored("a.py", "def f(): # note") == "kw:def fn:f punct:( punct:) punct:: com:# note", colored("a.py", "def f(): # note"))
+	assert(colored("a.go", "func f() { /* a */ }") == "kw:func fn:f punct:( punct:) punct:{ com:/* a */ punct:}", colored("a.go", "func f() { /* a */ }"))
+	assert(colored("a.rs", "fn f<'a>(x: &'a str)") == "kw:fn plain:f punct:< punct:' plain:a punct:> punct:( plain:x punct:: punct:& punct:' plain:a plain:str punct:)", colored("a.rs", "fn f<'a>(x: &'a str)"))
+	assert(colored("q.sql", "SELECT id -- all") == "kw:SELECT plain:id com:-- all", colored("q.sql", "SELECT id -- all"))
+	assert(colored("a.luau", "local x = 1 -- n") == "kw:local plain:x punct:= num:1 com:-- n", colored("a.luau", "local x = 1 -- n"))
+	assert(Diff.analyze(fileAt("a.luau", "x")).language == "lua")
+	local unknown = Diff.analyze(fileAt("a.zig", "const x = 1;"))
+	assert(unknown.syntax == nil and unknown.language == "zig")
 end

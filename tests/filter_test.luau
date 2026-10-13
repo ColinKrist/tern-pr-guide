@@ -9,6 +9,7 @@ local Fields = require("../src/text-field")
 local Github = require("../src/github")
 local Host: any = require("../src/host")
 local Keys = require("../src/keys")
+local Ops = require("../src/hub/ops")
 local Model = require("../src/hub/model")
 local State = require("../src/hub/state")
 local Sync = require("../src/hub/sync")
@@ -171,6 +172,20 @@ return function()
 		local sample: any = { fixture = "cases", s = s, filterViewer = "Sample" }
 		FilterStore.save(sample, cx)
 		assert(not records["hub.filters.sample"])
+		-- A linked PR overrides hiding rules durably, so reopening another pane keeps it visible.
+		local linked = State.new({ copy(automatic), copy(personal) }, Cases.asOf, {
+			titleRules = { { operator = "not_starts", value = "[Agent]", enabled = true } },
+			repositories = { "another/repo" },
+		})
+		local linkBlock: any = { s = linked, filterViewer = "WorkUser" }
+		FilterStore.save(linkBlock, cx)
+		State.openLink(linked)
+		linked.link = Fields.create("https://github.com/acme/api/pull/1")
+		Ops.addByLink(linkBlock, { render = function() end, toast = function() end, frame = function() end }, "")
+		assert(linked.selected == automatic.key and not linked.titleRules[1].enabled and linked.repositories == nil)
+		local linkedReopened: any = { s = State.new(copy(linked.prs), Cases.asOf, nil) }
+		FilterStore.load(linkedReopened, cx, "WorkUser")
+		assert(not linkedReopened.s.titleRules[1].enabled and linkedReopened.s.repositories == nil and State.card(linkedReopened.s, automatic.key))
 		-- Real block callbacks: F opens Filter, typing letters stays in the field, clicks and keys toggle the same rule.
 		local frames = {}
 		local blockCx: any = { cwd = "/sample", render = function() end, toast = function() end, frame = function(_self, ops) for _, op in ops do table.insert(frames, op) end end }

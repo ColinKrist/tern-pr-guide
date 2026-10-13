@@ -101,6 +101,7 @@ local function showAdded(b: Block, cx: BlockCx)
 	b.show = nil
 	local pr = State.find(b.s, ref.repo, ref.number)
 	if pr and State.show(b.s, pr.key) then
+		FilterStore.save(b, cx)
 		revealSelected(b, cx)
 		return
 	end

@@ -10,6 +10,7 @@ local Guide = require("./guide")
 local Host = require("./host")
 local Keys = require("./keys")
 local Links = require("./links")
+local ModelBox = require("./model-box")
 local Notice = require("./view/notice")
 local Page = require("./view/page")
 local Pr = require("./pr")
@@ -22,7 +23,7 @@ type Handler = (s: State, cx: BlockCx, value: string) -> ()
 
 -- How the block was opened: a PR and its checkout, a directory with no PR (the PR hub picks one), or
 -- neither for the bundled sample.
-type Options = { pr: string?, repo: string?, guide: string?, post: boolean, generate: boolean? }
+type Options = { pr: string?, repo: string?, guide: string?, post: boolean, generate: boolean?, worst: boolean? }
 
 -- The review page once its PR has loaded; before that, what loading is doing.
 type Block = {
@@ -203,6 +204,14 @@ local function stepSuggestion(s: State, cx: BlockCx, delta: number)
  gotoSuggestion(s, cx, order[math.clamp(at + delta, 1, #order)])
 end
 
+-- Runs a model menu action on the page's agent, saving what it changed.
+local function modelAction(s: State, act: string, value: string)
+ local agent = (s.ai :: Agent.Run).agent
+ local outcome = ModelBox.act(s.models :: ModelBox.ModelBox, agent, act, value) :: ModelBox.Outcome
+ if outcome.save then AgentHost.saveChoice(agent) end
+ s.models = if outcome.close then nil else outcome.box
+end
+
 -- Takes you to a search result: a step, a comment, a file's first block, or one changed line,
 -- opening whatever hides it and marking the line.
 local function searchGo(s: State, cx: BlockCx, n: number)
@@ -313,6 +322,7 @@ local ACTIONS: { [string]: Handler } = {
  end,
  ["open-all-supporting"] = function(s) State.toggleAllSupporting(s) end,
  ["toggle-help"] = toggleHelp,
+ ["toggle-tree"] = function(s) s.treeHidden = not s.treeHidden end,
  ["dismiss"] = function(s, cx)
   s.review.focus = nil
   if s.helpOpen then toggleHelp(s, cx) end
@@ -382,54 +392,21 @@ local ACTIONS: { [string]: Handler } = {
    return
   end
   if not run or Agent.busy(run) then return end
+  AgentHost.refreshChoice(run.agent)
   Fetch.refreshLenses(run.agent)
-  State.openModels(s, run.agent, "explain")
+  s.models = ModelBox.open(run.agent, "explain")
   frameLater(cx, { { "focus", Page.modelFieldPath } })
  end,
- -- The Explanation | Review switch: the other slot's list, from its top, with the filter cleared.
- ["models-slot"] = function(s, _, slot)
-  local box = s.models :: State.ModelBox
-  if slot == box.slot or (slot ~= "explain" and slot ~= "review") then return end
-  State.openModels(s, (s.ai :: Agent.Run).agent, slot :: Agent.Pass)
- end,
- ["models-filter"] = function(s)
-  local box = s.models :: State.ModelBox
-  if box.field.text == box.query then return end
-  box.query, box.selected, box.top = box.field.text, 1, 1
- end,
- ["models-move"] = function(s, _, delta) State.moveModel(s.models :: State.ModelBox, (s.ai :: Agent.Run).agent, tonumber(delta) :: number) end,
- ["models-top"] = function(s) (s.models :: State.ModelBox).top = 1 end,
- ["models-effort"] = function(s, _, delta) State.stepEffort(s.models :: State.ModelBox, (s.ai :: Agent.Run).agent, tonumber(delta) :: number) end,
- ["models-pick"] = function(s)
-  local agent = (s.ai :: Agent.Run).agent
-  if State.chooseModel(s.models :: State.ModelBox, agent) then
-   AgentHost.saveChoice(agent)
-   s.models = nil
-  end
- end,
- -- A click on a model or an effort applies it and leaves the dropdown open for the other.
- ["model-row"] = function(s, _, n)
-  local box, agent = s.models :: State.ModelBox, (s.ai :: Agent.Run).agent
-  box.selected = tonumber(n) :: number
-  if State.chooseModel(box, agent) then AgentHost.saveChoice(agent) end
- end,
- ["model-effort"] = function(s, _, effort)
-  local box, agent = s.models :: State.ModelBox, (s.ai :: Agent.Run).agent
-  box.effort = effort
-  if State.chooseModel(box, agent) then AgentHost.saveChoice(agent) end
- end,
- -- A lens applies at once and leaves the dropdown open, like an effort click.
- -- The lens shows only on the Review slot with the review on, and acts only there.
- ["models-lens"] = function(s, _, delta)
-  local agent = (s.ai :: Agent.Run).agent
-  if not State.showsLens(s.models :: State.ModelBox, agent) then return end
-  State.stepLens(agent, tonumber(delta) :: number)
-  AgentHost.saveChoice(agent)
- end,
- ["model-lens"] = function(s, _, n)
-  local agent = (s.ai :: Agent.Run).agent
-  if State.showsLens(s.models :: State.ModelBox, agent) and State.chooseLens(agent, tonumber(n) :: number) then AgentHost.saveChoice(agent) end
- end,
+ ["models-slot"] = function(s, _, slot) modelAction(s, "models-slot", slot) end,
+ ["models-filter"] = function(s) modelAction(s, "models-filter", "") end,
+ ["models-move"] = function(s, _, delta) modelAction(s, "models-move", delta) end,
+ ["models-top"] = function(s) modelAction(s, "models-top", "") end,
+ ["models-effort"] = function(s, _, delta) modelAction(s, "models-effort", delta) end,
+ ["models-pick"] = function(s) modelAction(s, "models-pick", "") end,
+ ["model-row"] = function(s, _, n) modelAction(s, "model-row", n) end,
+ ["model-effort"] = function(s, _, effort) modelAction(s, "model-effort", effort) end,
+ ["models-lens"] = function(s, _, delta) modelAction(s, "models-lens", delta) end,
+ ["model-lens"] = function(s, _, n) modelAction(s, "model-lens", n) end,
  ["edit-lenses"] = function(s, cx)
   local folder, err = Fetch.prepareLensFolder()
   s.models = nil
@@ -469,6 +446,10 @@ local function options(args: { string }): (Options?, string?)
  local given: { [string]: string } = {}
  for _, arg in args do
   local name, value = string.match(arg, "^(%a+)=(.*)$")
+  -- sample=worst opens the worst-case sample (fixtures/*-worst.json) with its guide, and
+  -- sample=worst-plain without one, offering the agent: they stress-test the page's layout.
+  if name == "sample" and value == "worst" and #args == 1 then return { guide = "fixtures/guide-worst.json", post = false, worst = true }, nil end
+  if name == "sample" and value == "worst-plain" and #args == 1 then return { post = false, worst = true }, nil end
   if name ~= "pr" and name ~= "repo" and name ~= "guide" and name ~= "post" and name ~= "generate" then
    return nil, "Unknown argument \"" .. arg .. "\". The block takes " .. ARGS .. "."
   end
@@ -683,8 +664,14 @@ local block: BlockDef<Block> = {
   if not opts then return { opts = { post = false }, dir = "", name = "", notice = Notice.failed("", problem :: string), guided = false } end
   local pr, dir = opts.pr, opts.repo
   local b: Block = { opts = opts, dir = dir or "", name = nameOf(pr), notice = if pr then Notice.loading(nameOf(pr), "") else Notice.findingRepo(), guided = false }
+  if opts.worst then
+   showPr(b, Pr.sample("worst"))
+   if not opts.guide then b.ai = Agent.idle(Host.json.decode(Host.fs.read("fixtures/agent-worst.json"))) end
+   offerAgent(b)
+   return b
+  end
   if not dir then
-   showPr(b, Pr.sample())
+   showPr(b, Pr.sample("350"))
    return b
   end
   if not pr then
@@ -732,6 +719,7 @@ local block: BlockDef<Block> = {
   if not s then
    return { main = Notice.view(b.notice) }
   end
+  s.now = Host.time()
   local motion = { born = s.born, next = {}, booted = s.booted, animate = not s.keyed }
   local main = Page.view(s, motion)
   s.born, s.booted = motion.next, true

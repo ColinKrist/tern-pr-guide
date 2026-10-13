@@ -37,7 +37,7 @@ Two Tern tabs, one board each. `T` switches between them.
   - Agent work: purple.
   - Running checks: amber.
 - **Header:**
-  - Title, search, then "Updated 40s ago" and the Settings button (`⇧S`, also `⇧M`): the agent's models with the highlighted one's effort levels, then an "Open links in" toggle, Tern or Default browser (`L`; kv key `links`, read by the guide too).
+  - Title, search, then "Updated 40s ago" and the Settings button (`⇧S`, also `⇧M`): the review page's model and lens menu (`src/view/model-panel.luau` over `src/model-box.luau`: Explanation | Review, search, models, effort, lens), saving the same kv key `model`, then an "Open links in" toggle, Tern or Default browser (`L` while the search field is empty; kv key `links`, read by the guide too).
   - The tab row holds the tabs, then **Filter ▾** (`F`, repository selection, title conditions and ignored checks) and **Sort ▾** (`S`).
   - Sort options: Repository (the default, with Priority order inside each repo), Priority, Newest first, Oldest first, Smallest first.
 - **Kept out on purpose:** counts in the header, inline keycaps on the tab-row controls (the hint bar lists the keys), and filler notes such as "Nothing needed from you".
@@ -134,7 +134,7 @@ This opens the PR at what needs fixing, in the guided review layout.
 
 ### Agent fixes (v2)
 
-- **The agent:** your own `omp`, with the model and effort from Settings (`⇧S`), which guided reviews already use (`src/agent.luau`, kv key `model`).
+- **The agent:** your own `omp`, with the review model and effort from Settings (`⇧S`) or the review page's model menu (`src/agent.luau`, kv key `model`).
 - **One PR at a time.** There is no "Fix all".
 - **Failed worktree ownership:** the block reconciles failure paths against `Engine.held()` during callbacks and after assigning the engine. A returned worktree has no Open worktree action. A failed lease return keeps the same engine handle; Try again retries its release before another run starts. Closing stops a running engine or retries a settled failed lease return, retaining the handle if return still fails. Fix ready worktrees are preserved.
 - **Where it works:** in a treehouse worktree, never in your checkout. It commits there and never pushes. The card goes running → **Fix ready** → **Review fix** (`review-fix.html`) → **Push to branch**.
@@ -212,14 +212,14 @@ To review has its own field: "Paste a pull request link to review" (`N`, from ei
 | A | Show or hide Approved (Review requests; no Review requests card uses A) |
 | R | Show or hide Recently merged (Your pull requests) or Recently opened (Review requests) |
 | F / S | Filter / Sort menu (menus: j/k, ⏎ or Space, Esc) |
-| ⇧S, ⇧M | Settings (↑↓ model, ←→ effort, L where links open) |
+| ⇧S, ⇧M | Settings: typing searches, ↑↓ model, ←→ effort, ⇧←→ lens, Tab Explanation or Review, ⏎ choose and close, ⌃E edit lenses, L where links open (empty search only) |
 | N | Add a PR by link |
 | / | Search |
 | A, ⇧A, P, D, O, C, M, `,`, X | Card actions (see the table above) |
 | ⌘⏎ / Esc | Confirm / cancel inline questions |
 | ⌘R | Refresh |
 
-- **Every control has a key.** The hint bar shows only what applies right now: Next up, Move, Open, the selected card's main action (plus Select when it applies), and **? All shortcuts**. `?` opens a grouped panel of every key (Move, The selected card, The board), and Esc or a click outside closes it. Board-wide keys appear in that panel and in the controls' tooltips, not in the bar. The search field and the add-by-link field show their keys inside them. This matches the plugin's review page, which ends its hint bar with "? all shortcuts".
+- **Every control has a key.** The hint bar shows only what applies right now: Next up, Move, Open, the selected card's main action (plus Select when it applies), and **? Shortcuts**. `?` opens a grouped panel for the current page: the board shows Move, actions for the selected card, and board shortcuts for the current tab and selection; the fixes page and Review fix show only their own keys. Esc, `?` or a click outside closes it. Board-wide keys appear in the board panel and in the controls' tooltips, not in the bar. The search field and the add-by-link field show their keys inside them.
 - **A click and its key run the same action.**
 - **Keyboard-driven changes never animate.**
 
@@ -770,10 +770,6 @@ export type BoardData = {
 	empty: boolean,
 }
 
--- The agent's model and effort, and the models Settings offers. nil until the block has found the agent.
-export type AgentModel = { selector: string, name: string, efforts: { string } }
-export type AgentChoice = { models: { AgentModel }, model: string, effort: string? }
-
 export type State = {
 	prs: { HubPR }, now: number,
 	board: BoardData,                 -- rebuilt by State.project after any input below changes
@@ -796,7 +792,8 @@ export type State = {
 	acted: { [string]: boolean },     -- cards the viewer just merged or updated: the block hands these to `Sync.diff` as `suppressed`
 	busy: { [string]: string },       -- by card key: the action in flight
 	refreshedAt: string?, loading: boolean, error: Error?,
-	agent: AgentChoice?,
+	agent: Agent.Agent?,              -- what Settings picks for: the reader's agent once found, or a sample board's
+	models: ModelBox.ModelBox?,       -- Settings' model and lens menu (src/model-box.luau), while menu is "settings"
 	keyed: boolean,                   -- as src/state.luau:108
 	born: { [string]: string }, booted: boolean,   -- arrival motion, as src/state.luau:113
 }

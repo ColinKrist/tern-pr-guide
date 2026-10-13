@@ -1,0 +1,80 @@
+{
+ "model": "bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+ "effort": "xhigh",
+ "explain": {
+  "model": "openrouter/meta-llama/llama-3.3-70b-instruct:free",
+  "effort": null
+ },
+ "review": true,
+ "lens": "Security, privacy and data handling",
+ "lenses": [
+  {
+   "name": "Balanced",
+   "description": "The comments worth making on the whole PR.",
+   "instructions": ""
+  },
+  {
+   "name": "Quick skim",
+   "description": "Only what would block a merge.",
+   "instructions": ""
+  },
+  {
+   "name": "Architecture",
+   "description": "Boundaries, ownership and where code lives.",
+   "instructions": ""
+  },
+  {
+   "name": "Security, privacy and data handling",
+   "description": "Injection, secrets in logs, PII leaving the service boundary, authorization checks on every path that reads or writes a customer's payment records, and retention rules for backfilled rows.",
+   "instructions": ""
+  },
+  {
+   "name": "Payments reconciliation domain rules (ledger invariants)",
+   "description": "Ledger invariants.",
+   "instructions": ""
+  }
+ ],
+ "models": [
+  {
+   "selector": "bedrock/us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+   "name": "Claude Sonnet 4.5 (Amazon Bedrock, US cross-region inference profile)",
+   "efforts": [
+    "off",
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+    "auto"
+   ]
+  },
+  {
+   "selector": "openrouter/meta-llama/llama-3.3-70b-instruct:free",
+   "name": "Meta: Llama 3.3 70B Instruct (free)",
+   "efforts": []
+  },
+  {
+   "selector": "anthropic/claude-3-5-sonnet-20241022",
+   "name": "Claude Sonnet 3.5 v2",
+   "efforts": []
+  },
+  {
+   "selector": "openai-codex/gpt-5.6-luna",
+   "name": "GPT-5.6 Luna",
+   "efforts": [
+    "low",
+    "medium",
+    "high",
+    "xhigh"
+   ]
+  },
+  {
+   "selector": "a/o",
+   "name": "o",
+   "efforts": [
+    "high"
+   ]
+  }
+ ]
+}

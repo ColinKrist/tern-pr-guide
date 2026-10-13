@@ -2,6 +2,7 @@
 -- What each key does in each mode, as the same actions the page's clicks send.
 local Fields = require("./text-field")
 local HubState = require("./hub/state")
+local ModelBox = require("./model-box")
 local Review = require("./review")
 local State = require("./state")
 
@@ -28,10 +29,11 @@ local function searchKey(key: Key): Action?
  return nil
 end
 
--- Arrows: up and down pick the model, left and right its effort (the filter's cursor gives them up;
--- model names are short). Tab flips between the Explanation and Review slots. Shift with left and
--- right steps the review lens, and ctrl-E opens the folder of the reader's own lenses.
-local function modelsKey(s: State.State, key: Key): Action?
+-- The model and lens menu, on the review page and in the hub's Settings. Arrows: up and down pick
+-- the model, left and right its effort (the filter's cursor gives them up; model names are short).
+-- Tab flips between the Explanation and Review slots. Shift with left and right steps the review
+-- lens, and ctrl-E opens the folder of the reader's own lenses. Esc is each surface's own close.
+local function modelsKey(box: ModelBox.ModelBox, key: Key): Action?
  local name = key.name
  local plain = not (key.shift or key.ctrl or key.meta or key.alt)
  if name == "down" then return act("models-move", 1) end
@@ -42,9 +44,8 @@ local function modelsKey(s: State.State, key: Key): Action?
  if key.ctrl and name == "e" then return act("edit-lenses") end
  if plain and name == "right" then return act("models-effort", 1) end
  if plain and name == "left" then return act("models-effort", -1) end
- if name == "tab" then return act("models-slot", if (s.models :: State.ModelBox).slot == "explain" then "review" else "explain") end
+ if name == "tab" then return act("models-slot", if box.slot == "explain" then "review" else "explain") end
  if name == "enter" then return act("models-pick") end
- if name == "escape" then return act("toggle-models") end
  return nil
 end
 
@@ -87,6 +88,7 @@ local function readingKey(s: State.State, key: Key): Action?
  if name == "s" then return act("toggle-group") end
  if name == "o" then return act("open-all-supporting") end
  if name == "t" and State.switchable(s) then return act("toggle-view") end
+ if name == "b" and not s.review.guide.guided then return act("toggle-tree") end
  if name == "h" or isQuestionMark(key) then return act("toggle-help") end
  if name == "escape" and (s.helpOpen or s.review.focus ~= nil) then return act("dismiss") end
  local scroll = SCROLLS[key.name]
@@ -98,7 +100,9 @@ end
 function M.action(s: State.State, key: Key): Action?
  local mode = State.mode(s)
  if mode == "search" then return searchKey(key) end
- if mode == "models" then return modelsKey(s, key) end
+ if mode == "models" then
+  return if key.name == "escape" then act("toggle-models") else modelsKey(s.models :: ModelBox.ModelBox, key)
+ end
  if mode == "composer" or mode == "summary" then return nil end
  if mode == "review" and not isQuestionMark(key) then return reviewKey(s, key) end
  return readingKey(s, key)
@@ -135,14 +139,18 @@ local function hubMenuKey(s: HubState.State, key: Key): Action?
 		if name == "escape" then return act("hub-method-cancel") end
 		return nil
 	end
+	if name == "escape" then return act("hub-menu-close") end
+	-- Settings is the model and lens menu, its search field taking the letters; L switches where links
+	-- open while the field is empty.
+	if s.menu == "settings" then
+		local box = s.models
+		if name == "l" and (not box or box.field.text == "") and not (key.ctrl or key.meta or key.alt) then return act("hub-links") end
+		return if box then modelsKey(box, key) else nil
+	end
 	if name == "down" or name == "j" then return act("hub-menu-move", 1) end
 	if name == "up" or name == "k" then return act("hub-menu-move", -1) end
 	if name == "enter" then return act("hub-menu-enter") end
 	if name == "space" then return act("hub-menu-select") end
-	if name == "escape" then return act("hub-menu-close") end
-	if s.menu == "settings" and name == "left" then return act("hub-menu-effort", -1) end
-	if s.menu == "settings" and name == "right" then return act("hub-menu-effort", 1) end
-	if s.menu == "settings" and name == "l" and not (key.ctrl or key.meta or key.alt) then return act("hub-links") end
 	return nil
 end
 
@@ -151,6 +159,7 @@ end
 local function fixesKey(s: HubState.State, key: Key): Action?
 	local name = key.name
 	if key.ctrl or key.meta or key.alt then return nil end
+	if isQuestionMark(key) then return act("hub-help") end
 	if name == "escape" then return act("fixes-close") end
 	if string.match(name, "^%a$") and (s.search.text ~= "" or s.link.text ~= "") then return nil end
 	local label = cardKeyLabel(key)
@@ -227,6 +236,7 @@ function M.hubAction(s: HubState.State, key: Key): Action?
 	if mode == "review-fix" then
 		local page = HubState.reviewPage(s)
 		if not page then return if key.name == "escape" then act("review-fix-close") else nil end
+		if isQuestionMark(key) then return act("hub-help") end
 		if page.busy then return nil end
 		if page.ask then
 			if key.name == "enter" and (key.meta or key.ctrl) and not key.alt then return act("review-fix-discard-confirm") end

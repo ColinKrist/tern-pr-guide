@@ -1,0 +1,223 @@
+{
+ "schema": 1,
+ "head": "0000000000000000000000000000000000000000",
+ "author": "northwind-industries-holdings-review-bot[bot]",
+ "lens": "Payments reconciliation domain rules (ledger invariants)",
+ "overview": "This PR swaps PaymentReconciliationLedgerEntryRepositoryAdapterImpl for a streaming adapter so a reconciliation window of 18,446,744 backfilled rows no longer has to fit in memory, then deletes LegacyLedgerEntryMapper. This PR swaps PaymentReconciliationLedgerEntryRepositoryAdapterImpl for a streaming adapter so a reconciliation window of 18,446,744 backfilled rows no longer has to fit in memory, then deletes LegacyLedgerEntryMapper. ",
+ "flow": {
+  "title": "Before / after: one reconciliation window, from the scheduler firing to the ledger being balanced and the backfill marked complete",
+  "stages": [
+   {
+    "label": "Reconciliation window opened for settlement batch",
+    "before": "ReconciliationWindowScheduler.fireNextWindow()",
+    "beforeNote": "loads the whole window in one query",
+    "after": "ReconciliationWindowScheduler.fireNextWindow()",
+    "note": "pages through the window instead",
+    "change": 1
+   },
+   {
+    "label": "Read",
+    "after": "PaymentReconciliationLedgerEntryRepositoryAdapterImpl.streamBackfilledLedgerEntriesForReconciliationWindow()",
+    "note": "cursor",
+    "change": 1
+   },
+   {
+    "label": "Map",
+    "before": [
+     "LegacyLedgerEntryMapper.mapAll()",
+     "LegacyLedgerEntryMapper.mapCurrency()"
+    ],
+    "change": 3
+   },
+   {
+    "label": "x",
+    "after": "a()"
+   },
+   {
+    "label": "Balance",
+    "after": "LedgerBalancer.assertDebitsEqualCreditsAcrossAllCurrencies()"
+   },
+   {
+    "label": "Report",
+    "after": [
+     "report accepted and backfill marked complete",
+     "UnmatchedLedgerEntryEscalationQueue.enqueueForManualReview()"
+    ]
+   }
+  ],
+  "check": {
+   "text": "A window whose cursor fails halfway leaves the backfill marked incomplete and every entry it already balanced is reconciled again on the next run, which the ledger invariants must tolerate.",
+   "stage": 5
+  }
+ },
+ "changes": [
+  {
+   "title": "Stream ledger entries through PaymentReconciliationLedgerEntryRepositoryAdapterImpl instead of loading the whole reconciliation window into memory",
+   "why": "A reconciliation window holds up to 18.4M backfilled rows. Loading them with `findAll()` ran the payments-reconciliation-ledger-entry-repository pods out of memory every night at 23:59 UTC, so the adapter now streams them through a cursor and the balancer consumes them as they arrive. A reconciliation window holds up to 18.4M backfilled rows. Loading them with `findAll()` ran the payments-reconciliation-ledger-entry-repository pods out of memory every night at 23:59 UTC, so the adapter now streams them through a cursor and the balancer consumes them as they arrive. ",
+   "steps": [
+    {
+     "file": "services/payments-gateway/src/main/java/com/northwind/industries/holdings/payments/reconciliation/internal/adapters/persistence/PaymentReconciliationLedgerEntryRepositoryAdapterImpl.java",
+     "from": 2,
+     "to": 5,
+     "title": "Stream the reconciliation window through the ledger adapter instead of loading every backfilled ledger entry",
+     "note": "Reads the window with `PaymentReconciliationLedgerEntryRepositoryAdapterImpl.streamBackfilledLedgerEntriesForReconciliationWindow()` instead of `findAll()`; see https://northwind-industries-holdings.example.com/engineering/rfcs/2026/payments/reconciliation/RFC-0412-ledger-entry-repository-adapter-replacement-and-backfill-plan for the backfill order."
+    },
+    {
+     "file": "services/payments-gateway/src/main/java/com/northwind/industries/holdings/payments/reconciliation/internal/adapters/persistence/PaymentReconciliationLedgerEntryRepositoryAdapterImpl.java",
+     "from": 8,
+     "to": 11,
+     "title": "x",
+     "note": ""
+    },
+    {
+     "file": "services/payments-gateway/src/main/java/com/northwind/industries/holdings/payments/reconciliation/internal/adapters/persistence/PaymentReconciliationLedgerEntryRepositoryAdapterImpl.java",
+     "from": 14,
+     "to": 17,
+     "title": "Column 02 reads from the streaming cursor",
+     "note": "Reads the window with `PaymentReconciliationLedgerEntryRepositoryAdapterImpl.streamBackfilledLedgerEntriesForReconciliationWindow()` instead of `findAll()`; see https://northwind-industries-holdings.example.com/engineering/rfcs/2026/payments/reconciliation/RFC-0412-ledger-entry-repository-adapter-replacement-and-backfill-plan for the backfill order."
+    },
+    {
+     "file": "services/payments-gateway/src/main/java/com/northwind/industries/holdings/payments/reconciliation/internal/adapters/persistence/PaymentReconciliationLedgerEntryRepositoryAdapterImpl.java",
+     "from": 20,
+     "to": 23,
+     "title": "Column 03 reads from the streaming cursor",
+     "note": "Same column, new source."
+    },
+    {
+     "file": "services/payments-gateway/src/main/java/com/northwind/industries/holdings/payments/reconciliation/internal/adapters/persistence/PaymentReconciliationLedgerEntryRepositoryAdapterImpl.java",
+     "from": 26,
+     "to": 29,
+     "title": "Column 04 reads from the streaming cursor",
+     "note": "Same column, new source."
+    },
+    {
+     "file": "services/payments-gateway/src/main/java/com/northwind/industries/holdings/payments/reconciliation/internal/adapters/persistence/PaymentReconciliationLedgerEntryRepositoryAdapterImpl.java",
+     "from": 32,
+     "to": 35,
+     "title": "Column 05 reads from the streaming cursor",
+     "note": "Same column, new source."
+    },
+    {
+     "file": "services/payments-gateway/src/main/java/com/northwind/industries/holdings/payments/reconciliation/internal/adapters/persistence/PaymentReconciliationLedgerEntryRepositoryAdapterImpl.java",
+     "from": 38,
+     "to": 41,
+     "title": "Column 06 reads from the streaming cursor",
+     "note": "Same column, new source."
+    },
+    {
+     "file": "services/payments-gateway/src/main/java/com/northwind/industries/holdings/payments/reconciliation/internal/adapters/persistence/PaymentReconciliationLedgerEntryRepositoryAdapterImpl.java",
+     "from": 44,
+     "to": 47,
+     "title": "Column 07 reads from the streaming cursor",
+     "note": "Same column, new source."
+    },
+    {
+     "file": "services/payments-gateway/src/main/java/com/northwind/industries/holdings/payments/reconciliation/internal/adapters/persistence/PaymentReconciliationLedgerEntryRepositoryAdapterImpl.java",
+     "from": 50,
+     "to": 53,
+     "title": "Column 08 reads from the streaming cursor",
+     "note": "Same column, new source."
+    },
+    {
+     "file": "services/payments-gateway/src/main/java/com/northwind/industries/holdings/payments/reconciliation/internal/adapters/persistence/PaymentReconciliationLedgerEntryRepositoryAdapterImpl.java",
+     "from": 56,
+     "to": 59,
+     "title": "Column 09 reads from the streaming cursor",
+     "note": "Same column, new source."
+    },
+    {
+     "file": "services/payments-gateway/src/main/java/com/northwind/industries/holdings/payments/reconciliation/internal/adapters/persistence/PaymentReconciliationLedgerEntryRepositoryAdapterImpl.java",
+     "from": 62,
+     "to": 65,
+     "title": "Column 10 reads from the streaming cursor",
+     "note": "Same column, new source."
+    },
+    {
+     "file": "services/payments-gateway/src/main/java/com/northwind/industries/holdings/payments/reconciliation/internal/adapters/persistence/PaymentReconciliationLedgerEntryRepositoryAdapterImpl.java",
+     "from": 68,
+     "to": 71,
+     "title": "Column 11 reads from the streaming cursor",
+     "note": "Same column, new source."
+    }
+   ]
+  },
+  {
+   "title": "Fix",
+   "why": "x",
+   "steps": [
+    {
+     "file": "a.c",
+     "from": 1,
+     "to": 1,
+     "title": "Return zero",
+     "note": ""
+    }
+   ]
+  },
+  {
+   "title": "Docs, CI and the rollback plan",
+   "why": "The migration notes, the design doc and CI change together.",
+   "steps": [
+    {
+     "file": "CHANGELOG-2026-q3-payments-reconciliation-service-migration-notes-and-rollback-plan.md",
+     "from": 1,
+     "to": 2,
+     "title": "Migration notes and rollback plan",
+     "note": "One step per file."
+    },
+    {
+     "file": "docs/design/Payment flow (v2) — final, reviewed by Aleksandra Wiśniewska-Kowalczyk.md",
+     "from": 1,
+     "to": 2,
+     "title": "Design doc reviewed",
+     "note": ""
+    },
+    {
+     "file": "docs/i18n/日本語/支払い照合サービスの移行ガイド.md",
+     "from": 1,
+     "to": 2,
+     "title": "Japanese migration guide",
+     "note": "日本語の移行ガイドを更新しました。照合ウィンドウはストリーミングで読み込まれます。"
+    },
+    {
+     "file": ".github/workflows/ci.yml",
+     "from": 1,
+     "to": 2,
+     "title": "CI runs the backfill dry run",
+     "note": ""
+    },
+    {
+     "file": "web/dist/assets/payments-reconciliation-dashboard.chunk.4f9a2c1e8b7d6053.min.js",
+     "from": 1,
+     "to": 1,
+     "title": "Rebuilt dashboard chunk",
+     "note": ""
+    }
+   ]
+  }
+ ],
+ "comments": [
+  {
+   "id": "w1",
+   "file": "services/payments-gateway/src/main/java/com/northwind/industries/holdings/payments/reconciliation/internal/adapters/persistence/PaymentReconciliationLedgerEntryRepositoryAdapterImpl.java",
+   "line": 4,
+   "kind": "question",
+   "body": "Does `streamBackfilledLedgerEntriesForReconciliationWindow()` hold the cursor open across the whole window? If the balancer throws halfway, nothing here closes it:\n\n```java\ntry (Stream<LedgerEntry> entries = adapter.streamBackfilledLedgerEntriesForReconciliationWindow(windowId, settlementBatchId, currencyCode, toleranceInMinorUnits)) { balancer.consume(entries); }\n```\n\nSee https://northwind-industries-holdings.example.com/engineering/rfcs/2026/payments/reconciliation/RFC-0412-ledger-entry-repository-adapter-replacement-and-backfill-plan#cursor-lifetime"
+  },
+  {
+   "id": "w2",
+   "file": "services/payments-gateway/src/main/java/com/northwind/industries/holdings/payments/reconciliation/internal/adapters/persistence/PaymentReconciliationLedgerEntryRepositoryAdapterImpl.java",
+   "line": 10,
+   "kind": "suggestion",
+   "body": "Nit."
+  },
+  {
+   "id": "w3",
+   "file": "a.c",
+   "line": 1,
+   "kind": "suggestion",
+   "body": "bartholomew.fitzgerald@northwind-industries-holdings.example.com asked for a test here."
+  }
+ ],
+ "summary": "Streams the reconciliation window instead of loading it. Streams the reconciliation window instead of loading it. Streams the reconciliation window instead of loading it. Streams the reconciliation window instead of loading it. Streams the reconciliation window instead of loading it. Streams the reconciliation window instead of loading it. "
+}

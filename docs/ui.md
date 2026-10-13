@@ -37,7 +37,7 @@ These rules are condensed from the `emil-design-eng` skill. The motion tokens ar
 
 - Layout is flex only. Pinned elements use `position: sticky` with Tern glass (`background: var(--panel)` plus `backdrop-filter`); plugins get no scroll events.
 - Colors are Tern's theme variables, or a pinned `--gp-*` review color from the top of `guide.css` (see `DESIGN.md`). A new pinned color is a `light-dark()` pair.
-- Tern draws the parts it has: keycaps are the native `kbd` node, icons the native `icon` node (Tern's named set), the view switch is `tabs`, and popovers are an `overlay` in the view's `layer`. No SVG of the plugin's own. Mockups follow the same limits, and take Tern's variable values from `docs/tern-tokens.css`.
+- Tern draws the parts it has: keycaps are the native `kbd` node, icons the native `icon` node (Tern's named set), the view switch is `tabs`, and popovers are an `overlay` in the view's `layer`. No inline SVG element. An SVG can be shown as a picture through `cx:blob(svg, "image/svg+xml")` and an `image` node (Tern 0.8.3): style with attributes on each element, not `<style>`; draw arrowheads as `path`, not `polygon`; use `currentColor` for anything that must follow light and dark; and expect no clicks or hover inside it. Mockups follow the same limits, and take Tern's variable values from `docs/tern-tokens.css`.
 - An action shows its `kbd` where it applies (see Keycaps in `DESIGN.md`).
 - Check `tern.d.luau`, written by `tern plugin types .`, before assuming the host offers something.
 

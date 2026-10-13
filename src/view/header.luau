@@ -3,6 +3,7 @@
 local Agent = require("../agent")
 local Guide = require("../guide")
 local Help = require("./help")
+local Model = require("../hub/model")
 local Review = require("../review")
 local ReviewPanel = require("./review-panel")
 local SearchPanel = require("./search-panel")
@@ -143,33 +144,36 @@ local function status(s: State.State, counts: Review.Counts): Node
  local total = #r.pr.files
  local cells, filled = {}, math.floor(METER_CELLS * counts.filesReviewed / math.max(total, 1) + 0.5)
  for i = 1, METER_CELLS do table.insert(cells, span(if i <= filled then "gp-cell gp-cell-on" else "gp-cell", "")) end
- local kids = {
-  el("div", { class = "gp-meter" }, cells),
-  span("gp-status-text", counts.filesReviewed .. " of " .. total .. " files reviewed"),
- }
+ local kids = {}
+ -- Each optional item travels with its separator, so the guided page's one-line header cuts both
+ -- together when the row runs out of room.
+ local function item(node: Node)
+  table.insert(kids, el("span", { class = "gp-status-item" }, { span("gp-status-sep", "·"), node }))
+ end
+ -- Who opened the PR and when, as GitHub's PR header says it.
+ local pr = r.pr
+ if pr.author ~= "" or pr.createdAt ~= "" then
+  local opened = if pr.author ~= "" then pr.author .. " opened" else "Opened"
+  if pr.createdAt ~= "" then opened ..= " " .. Model.ago(pr.createdAt, s.now) end
+  table.insert(kids, el("span", { class = "gp-status-item" }, { span("gp-status-text", opened), span("gp-status-sep", "·") }))
+ end
+ table.insert(kids, el("div", { class = "gp-meter" }, cells))
+ table.insert(kids, span("gp-status-text", counts.filesReviewed .. " of " .. total .. " files reviewed"))
  -- The review still going over a guide: said where its suggestions will show, so the header keeps
  -- its height when it lands.
  local run = s.ai
  if run and r.guide.guided and run.reviewing then
-  table.insert(kids, span("gp-status-sep", "·"))
-  table.insert(kids, span("gp-status-text gp-status-lens", "Reviewing for issues… " .. clock(run)))
+  item(span("gp-status-text gp-status-lens", "Reviewing for issues… " .. clock(run)))
  end
- if r.guide.lens then
-  table.insert(kids, span("gp-status-sep", "·"))
-  table.insert(kids, span("gp-status-text gp-status-lens", r.guide.lens .. " lens"))
- end
+ if r.guide.lens then item(span("gp-status-text gp-status-lens", r.guide.lens .. " lens")) end
  if counts.waiting > 0 then
-  table.insert(kids, span("gp-status-sep", "·"))
-  table.insert(kids, el("span", {
+  item(el("span", {
    class = "gp-status-link",
    text = counts.waiting .. " " .. r.guide.author .. " " .. (if counts.waiting == 1 then "suggestion" else "suggestions") .. " waiting for you",
    actions = { click = "toggle-review" },
   }))
  end
- if Guide.isStale(r.guide, r.pr) then
-  table.insert(kids, span("gp-status-sep", "·"))
-  table.insert(kids, span("gp-status-text", "Review written for an older version of this PR"))
- end
+ if Guide.isStale(r.guide, r.pr) then item(span("gp-status-text", "Review written for an older version of this PR")) end
  table.insert(kids, Ui.spacer())
  table.insert(kids, headerAction(if counts.filesReviewed == total then "Unmark all reviewed" else "Mark all reviewed", "m", "mark-all"))
  table.insert(kids, headerAction("Search", "/", "open-search"))

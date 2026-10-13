@@ -180,7 +180,7 @@ return function()
 	assert(State.move(s, "down") == false, "Inactive is folded")
 	State.toggleFold(s, "inactive")
 	assert(foldOpen(s, "inactive") and s.folded.inactive == false)
-	assert(State.move(s, "down") and s.selected == "acme/api#122")
+	assert(s.selected == "acme/api#122", "opening a fold selects its first row")
 	assert(State.move(s, "down") and s.selected == "acme/mono#216")
 	assert(State.move(s, "up") and State.move(s, "up") and s.selected == "acme/web#104", "up from Inactive returns to the board")
 	-- Right from a short row clamps to the last card of the next column.
@@ -214,28 +214,8 @@ return function()
 	assert(#State.menuRows(s) == 0, "no agent found: no rows")
 	State.closeMenu(s)
 
-	-- Settings: model rows, efforts of the highlighted model, and picking.
-	s.agent = {
-		models = {
-			{ selector = "anthropic/claude-opus", name = "claude-opus", efforts = { "low", "high" } },
-			{ selector = "openai/gpt", name = "gpt", efforts = {} },
-		},
-		model = "anthropic/claude-opus", effort = "high",
-	}
-	assert(State.agentLabel(s) == "claude-opus · high")
 	State.openMenu(s, "settings")
-	assert(s.menuCursor == 1 and #State.menuRows(s) == 2 and State.menuRows(s)[1].sub == "anthropic")
-	State.stepEffort(s, -1)
-	assert((s.agent :: State.AgentChoice).effort == "low")
-	State.stepEffort(s, -5)
-	assert((s.agent :: State.AgentChoice).effort == "low")
-	State.menuMove(s, 1)
-	assert(select("#", State.agentEfforts(s)) == 2 and #(State.agentEfforts(s)) == 0)
-	assert(State.menuPick(s, 2) and (s.agent :: State.AgentChoice).model == "openai/gpt" and (s.agent :: State.AgentChoice).effort == nil)
-	assert(State.agentLabel(s) == "gpt")
-
-	State.openMenu(s, "settings")
-	assert(s.menuCursor == 2, "Settings opens on the chosen model")
+	assert(s.models == nil, "no agent found: no model menu")
 	-- Where links open: L flips it, a click sets one side.
 	assert(s.links == "tern")
 	State.setLinks(s)
@@ -248,9 +228,17 @@ return function()
 
 	-- Help.
 	State.openHelp(s)
-	assert(s.mode == "help" and s.menu == nil)
+	assert(s.mode == "help" and s.menu == nil and s.helpPage == "board")
 	State.closeHelp(s)
-	assert(s.mode == "board")
+	assert(s.mode == "board" and s.helpPage == nil)
+	s.mode = "fixes"
+	local fixesHelp = Keys.hubAction(s, { name = "?", text = "?" } :: any)
+	assert(fixesHelp and fixesHelp.act == "hub-help")
+	State.openHelp(s)
+	assert(s.mode == "help" and s.helpPage == "fixes")
+	State.closeHelp(s)
+	assert(s.mode == "fixes" and s.helpPage == nil)
+	s.mode = "board"
 
 	-- What is saved comes back, and a bad save is ignored.
 	State.setSort(s, "oldest")
@@ -336,6 +324,7 @@ return function()
 	assert(State.move(rs, "down") and rs.selected ~= nil and State.recentRow(rs, rs.selected) == nil)
 	State.toggleFold(rs, "recent")
 	assert(rs.board.open.recent and State.recentKey(recent[1]) == "rc:acme/api#9")
+	assert(rs.selected == "rc:acme/api#9", "opening the row fold selects its first row")
 	State.select(rs, "rc:acme/web#4")
 	local picked = State.selectedRecent(rs)
 	assert(picked and picked.number == 4 and State.selectedCard(rs) == nil)

@@ -239,7 +239,7 @@ A wash of a meaning color on a control that doesn't carry that meaning (for exam
 
 ## Layout
 
-Flex only; Tern has no grid or floats. The guided page is two columns under a pinned header. On the left is the sticky change card (380px), holding the change title, why, files and steps. On the right, the code column flexes and stacks excerpts 36px apart. The columns sit 28px apart. The Files view reuses that split with a pinned file tree, which scrolls on its own.
+Flex only; Tern has no grid or floats. The guided page is two columns under a pinned header. On the left is the sticky change card (30% of the row, 240–380px, so it narrows before the code does), holding the change title, why, files and steps. It never runs past the hint bar: a long why or file list, then a long title, keeps three lines with a scroll of its own. On the right, the code column flexes and stacks excerpts 36px apart. The columns sit 28px apart. The Files view reuses that split with a pinned file tree, which scrolls on its own.
 
 Spacing steps are 2, 4, 8, 12, 16, 24, 28 and 36px. Gaps inside a group are 2–8px, and gaps between groups are 16–36px. Rows that repeat (files, steps, search results, comments) are one line each, with counts in fixed right-aligned tabular columns. The page draws about 600 lines of code at most. Steps further away show just their file header.
 
@@ -256,7 +256,7 @@ Flat by default. Depth comes from two places only, both Tern's. Pinned surfaces 
 
 ## Shapes
 
-Gently rounded and consistent with Tern: `--r-chip` (6px) for chips, keycaps and small hover targets; `--r-ctl` (8px) for buttons, rows and fields; `--r-card` (12px) for panels, cards and the diagram. Smaller literal radii are reserved for marks: 2px for word highlights and meter cells, 4px for checkboxes and diagram counters. Avatars and step markers are full circles. Borders are 1px hairlines; the only thicker line is the current step's 3px inset bar, which is a state mark, not decoration.
+Gently rounded and consistent with Tern: `--r-chip` (6px) for chips, keycaps and small hover targets; `--r-ctl` (8px) for buttons, rows and fields; `--r-card` (12px) for panels, cards and the diagram. Smaller literal radii are reserved for marks: 2px for word highlights and meter cells, 4px for checkboxes. Avatars and step markers are full circles. Borders are 1px hairlines; the only thicker line is the current step's 3px inset bar, which is a state mark, not decoration.
 
 ## Components
 
@@ -284,10 +284,10 @@ Tern's native `tabs` node, with the `t` keycap beside it. Its underline is Tern'
 A file block: a glass sticky header (caret, dimmed directory plus bold file name, line range, `+n −n` counts, "Show whole file", and a Reviewed check), then diff rows. Rows are a 40px gutter of old and new numbers, a sign, and code in the terminal font. Added and removed rows take the translucent diff tints, and word-level changes take a stronger tint with a 2px radius. Hidden runs collapse into a dashed shade bar ("26 unchanged lines"). A step's block starts at the line that opens its enclosing function; when that opener is more than 30 lines up, the bar above shows its text as a muted label instead. Code the PR only moved is neutral: `--l1` rows with a 2px `--l4` hairline on the left, never red or green, under a muted "Moved from src/a.ts:12" or "Moved to line 40" label set in the code columns. The current step's blue still wins over the gray. The current excerpt takes a Review Blue border and a blue-washed header. The current step's rows get a 3px Review Blue inset bar.
 
 ### Step outline (signature)
-The left column's list of steps: a circle tick, the number, and the title. The current step sits in a Review Blue wash box with its note under it. Steps in a shared block also show a 15px numbered marker in the code gutter, filled Review Blue for the current one.
+The left column's list of steps: a circle tick, the number, and the title. The current step sits in a Review Blue wash box with its note under it. A change of more than 7 steps lists the 5 around the current one, with muted "N earlier steps" and "N more steps" lines. Steps in a shared block also show a 15px numbered marker in the code gutter, filled Review Blue for the current one.
 
 ### Before / after diagram
-A card of boxes joined by labeled arrows, in the terminal font. A box's state is its wash and line color: Added Green, Changed Amber, or Removed Red with strike-through text. Unchanged boxes are card-colored. A two-digit counter links each box to its change.
+A full-width card under the overview: one run through the code, a column per stage, with a Before row above an After row. Stage headings and row names use the Label style. Each box holds a name in the terminal font and a short note in the sans. Unchanged stages are one plain box across both rows. Changed and added boxes take their wash and line color (Changed Amber, Added Green); a removed box has a Removed Red sign and a dashed Removed Red line on a plain fill, without strike-through. A side that didn't exist shows a muted word instead of a box. The marked box ends its note with "Change N ›", which opens that change. Below the stages, a "Check" line in full-contrast sans names the consequence to confirm, and that stage is the diagram's one focal point: its heading carries Tern's `warn` icon and its marked box a full-contrast line. Text in the diagram clears 4.5:1 and its lines 3:1 against the surface they sit on, washes included. A wide diagram scrolls sideways.
 
 ### Review panel
 A two-column card. On the left, comments grouped under file names: one row per comment with a tick, avatar, kind label, line link and text, and unticked rows at 50% opacity. On the right, a shade side card with the summary field, three verdict rows (Comment, Approve, Request changes, each with a colored circle icon and a keycap), and the Submit button. Chosen verdicts take their meaning color as a wash plus hairline.
@@ -296,7 +296,9 @@ A two-column card. On the left, comments grouped under file names: one row per c
 One-line rows at `--r-ctl`, hover `--l1`, selected Review Blue wash. Search rows lead with a fixed 70px kind column. Recently opened rows in the hub keep fixed repository, title and time columns.
 
 ### Model and lens menu
-Tern's native `overlay`, anchored under the model button. At the top, an Explanation | Review segment switch with its `tab` keycap, and one muted line saying what the slot shown is for. Below, a search field, grouped model rows (on Review, an Off row first with its hint at the right), and a footer with effort segments, plus the lens segments on Review while the review is on. Segments are chip fills, and the chosen one is a card fill with a 1px lift. The model button reads left to right as the menu does: lens, explanation model, review model, each effort in `--t4`.
+Tern's native `overlay`, anchored under the model button. At the top, an Explanation | Review segment switch with its `tab` keycap, and one muted line saying what the slot shown is for. Below, a search field, grouped model rows (on Review, an Off row first with its hint at the right), and a footer with effort segments, plus the lens segments on Review while the review is on. Segments are chip fills, and the chosen one is a card fill with a 1px lift. The model button reads explanation model, review model, each effort in `--t4`, then the lens.
+
+The PR hub's Settings is the same menu in its own overlay under the settings button, followed by the "Open links in" toggle with its `L` keycap. It opens on Explanation with the search field focused, and saves the same choice as the review page.
 
 ### AI run rows
 Under the status row. While the explanation runs and the page has nothing new to read, a busy row: the turning spark, "Explaining the changes…" written in once, an estimated progress bar in `--live`, and the clock. Once the guide shows and the review still runs, the row goes and the status row says "Reviewing for issues… 0:42" in `--t3`, where the lens and the waiting suggestions appear when it lands, so the header keeps its height. When the explanation failed and the review still runs, a quiet row instead: a still 12px spark in `--t3`, "Reviewing for issues…" at 13px in `--t2`, a 120px `--t4` bar, and the clock. The quiet row never animates beyond its bar's fill. The model button names each pass in `--t3` before its model ("Explain", "Review"), then the lens.
@@ -327,7 +329,7 @@ The board's two tabs look like Tern's `tabs` node (13px sans, muted until active
 A 14px square with a 4px radius for a choice that can be several. Empty it is a 1.5px `--t4` outline; chosen it is Review Blue filled with a white check. Used by the repository menu, and by selecting several cards later. A single choice shows only a Review Blue check.
 
 ### Menu rows
-Rows in an overlay menu are `--r-ctl` rows, hover and keyboard cursor in `--l1` and Review Blue wash, a box or check first, then the label, then a muted count or hint at the right. Menus opened by a key draw without animation. The key panel (`?`) is an overlay with three columns of key rows: Move, The selected card, The board.
+Rows in an overlay menu are `--r-ctl` rows, hover and keyboard cursor in `--l1` and Review Blue wash, a box or check first, then the label, then a muted count or hint at the right. Menus opened by a key draw without animation. On the hub board, the key panel (`?`) shows Move, the selected card's available actions, and board shortcuts for the current tab and selection. On the fixes and Review fix pages, it shows only that page's keys.
 
 ### Banner
 One quiet line above a board for an item that spans the board (for example Next up): shade fill, `--l2` hairline, sized to its content and left-aligned, read left to right, ending in its action. Never a meaning-color wash.

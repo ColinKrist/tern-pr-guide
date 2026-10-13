@@ -24,14 +24,14 @@ export type Target = { pr: string, repo: string, cache: string? }
 export type Destination = { repo: string?, dryRunPath: string? }
 
 type Job = Fetch.Job
-type Meta = { number: number, title: string, body: string?, url: string, author: { login: string }?, baseRefName: string, headRefOid: string, mergeCommit: { oid: string }? }
+type Meta = { number: number, title: string, body: string?, url: string, author: { login: string }?, createdAt: string?, baseRefName: string, headRefOid: string, mergeCommit: { oid: string }? }
 
 local GH_MS = 30_000
 
 local run, named, git = Fetch.run, Fetch.named, Fetch.git
 
 local function readMeta(job: Job, pr: string, ok: (meta: Meta) -> ())
- local argv = { "gh", "pr", "view", pr, "--json", "number,title,body,url,author,baseRefName,headRefOid,mergeCommit" }
+ local argv = { "gh", "pr", "view", pr, "--json", "number,title,body,url,author,createdAt,baseRefName,headRefOid,mergeCommit" }
  run(argv, { cwd = job.repo, timeout_ms = GH_MS }, named("gh pr view", job.fail), function(stdout)
   ok(Host.json.decode(stdout))
  end)
@@ -149,6 +149,7 @@ local function prOf(meta: Meta, head: string, files: { Pr.File }): Pr.PR
   body = meta.body or "",
   url = meta.url,
   author = if meta.author then meta.author.login else "",
+  createdAt = meta.createdAt or "",
   baseRef = meta.baseRefName,
   head = head,
   files = files,
@@ -319,7 +320,7 @@ function M.readFixes(repo: Fetch.Repo, pr: Model.HubPR, paths: { string }, done:
    partial = repo.cache ~= nil,
   }
   local meta: Meta = {
-   number = pr.number, title = pr.title, body = nil, url = pr.url, author = nil,
+   number = pr.number, title = pr.title, body = nil, url = pr.url, author = nil, createdAt = nil,
    baseRefName = pr.baseBranch, headRefOid = pr.headOid, mergeCommit = nil,
   }
   local read: FixRead = { mergeTree = nil, shown = {}, logs = {}, files = {} }

@@ -11,6 +11,8 @@ M.searchField = M.ROOT .. ".header.top.search.field"
 M.body = M.ROOT .. ".body"
 M.titleLabel = M.ROOT .. ".header.top.title"
 M.settingsButton = M.ROOT .. ".header.top.fresh.settings"
+-- Settings' model search field, in the layer over the board.
+M.settingsField = "layer.menu.body.box.field"
 M.repositoriesButton = M.ROOT .. ".header.tabs.ctls.repos"
 M.filterField = "layer.menu.body.edit.box.field"
 M.sortButton = M.ROOT .. ".header.tabs.ctls.sort"
@@ -62,6 +64,8 @@ end
 
 -- The fixes page and the reply field inside the thread card on show. They follow the keys in fixes.luau.
 M.FIXES = "main.fixes"
+M.fixesTitle = M.FIXES .. ".header.title"
+M.reviewFixTitle = "main.review-fix.header.title"
 M.replyField = M.FIXES .. ".cols.code.ex.body.composer.body.field"
 
 -- The ▾ beside a selected card's split button, which the card's menu anchors to.

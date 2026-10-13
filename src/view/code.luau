@@ -49,9 +49,14 @@ function M.head(s: State.State, file: Pr.File, head: Head): Node
   }),
   span("gp-frange", head.label or ""),
   Ui.spacer(),
-  span("gp-adds", "+" .. file.adds),
-  span("gp-dels", "−" .. file.dels),
  }
+ -- No diff rows: a binary file, or one renamed without changes, as GitHub says instead of "+0 −0".
+ if #file.rows == 0 then
+  table.insert(kids, span("gp-frange", if file.status == "renamed" then "Renamed without changes" elseif file.status == "added" then "Empty file" else "Binary file not shown"))
+ else
+  table.insert(kids, span("gp-adds", "+" .. file.adds))
+  table.insert(kids, span("gp-dels", "−" .. file.dels))
+ end
  if head.expanded and file.src then
   table.insert(kids, el("span", {
    class = "gp-wholefile",
@@ -64,9 +69,9 @@ function M.head(s: State.State, file: Pr.File, head: Head): Node
 end
 
 -- The line's code: colored pieces, or its text alone when the block draws `plain` or the file
--- isn't highlighted.
+-- has no syntax.
 local function codeSpan(fd: Diff.FileDiff, i: number, plain: boolean): Node
- if plain or not fd.highlighted then return el("span", { class = "gp-code", text = fd.entries[i].row.text }) end
+ if plain or not fd.syntax then return el("span", { class = "gp-code", text = fd.entries[i].row.text }) end
  local nodes = {}
  for _, token in Diff.tokens(fd, i) do
   table.insert(nodes, span("gp-tk-" .. token.kind .. (if token.changed then " gp-chg" else ""), token.text))
