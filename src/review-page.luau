@@ -540,7 +540,7 @@ local function reviewFile(b: ReviewPage, pr: Pr.PR): (Guide.Draft?, string?)
  if b.opts.guide or not repo then return nil, nil end
  local path = Fetch.reviewPath(repo, pr.number)
  if not Host.fs.exists(path) then return nil, nil end
- local draft, problem = Guide.readDraft(path, pr)
+ local draft, problem = Fetch.readDraft(path, pr)
  if draft then return draft, nil end
  return nil, "Couldn't use the review comments in " .. path .. ": " .. (problem :: string)
 end
@@ -555,7 +555,7 @@ local function showPr(b: ReviewPage, pr: Pr.PR): string?
  local path = b.opts.guide
  if not path and b.repo and Host.fs.exists(Fetch.guidePath(b.repo, pr.number)) then path = Fetch.guidePath(b.repo, pr.number) end
  local guide, problem = Guide.defaultGuide(pr), nil
- if path then guide, problem = Guide.read(path, pr) end
+ if path then guide, problem = Fetch.readGuide(path, pr) end
  if not guide then
   b.notice = Notice.failed(b.name, "Couldn't use the guide " .. (path :: string) .. ": " .. (problem :: string))
   return nil

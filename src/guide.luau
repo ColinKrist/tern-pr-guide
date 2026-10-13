@@ -1,6 +1,5 @@
 --!strict
 local FileTree = require("./file-tree")
-local Host = require("./host")
 local Pr = require("./pr")
 local Text = require("./text")
 
@@ -384,13 +383,9 @@ function M.filesOf(guide: Guide, pr: Pr.PR): Guide
  return files
 end
 
--- The guide file at `path` for `pr`, or why it can't be used. The one place guide data enters
--- the plugin.
-function M.read(path: string, pr: Pr.PR): (Guide?, string?)
- local decoded, raw = pcall(function(): any
-  return Host.json.decode(Host.fs.read(path))
- end)
- if not decoded then return nil, Text.errorLine(raw) end
+-- The decoded guide file `raw` for `pr`, or why it can't be used. The one place guide data enters the
+-- plugin; `Fetch.readGuide` reads the file.
+function M.load(raw: any, pr: Pr.PR): (Guide?, string?)
  local guide = M.parse(raw, pr)
  if not guide then return nil, "not a guided review (expected \"schema\": " .. SCHEMA .. ")" end
  return guide, nil
@@ -408,13 +403,9 @@ function M.parseDraft(raw: any, pr: Pr.PR): Draft?
  }
 end
 
--- The review file at `path` for `pr`, or why it can't be used. The one place review data enters
--- the plugin.
-function M.readDraft(path: string, pr: Pr.PR): (Draft?, string?)
- local decoded, raw = pcall(function(): any
-  return Host.json.decode(Host.fs.read(path))
- end)
- if not decoded then return nil, Text.errorLine(raw) end
+-- The decoded review file `raw` for `pr`, or why it can't be used. The one place review data enters the
+-- plugin; `Fetch.readDraft` reads the file.
+function M.loadDraft(raw: any, pr: Pr.PR): (Draft?, string?)
  local draft = M.parseDraft(raw, pr)
  if not draft then return nil, "not a review file (expected \"schema\": " .. SCHEMA .. ")" end
  return draft, nil

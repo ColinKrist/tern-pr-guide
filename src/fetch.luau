@@ -5,6 +5,7 @@
 -- (recent PRs, run durations, where links open, background guides), and opening a link in the system browser.
 local Agent = require("./agent")
 local Github = require("./github")
+local Guide = require("./guide")
 local Host = require("./host")
 local Lens = require("./lens")
 local Links = require("./links")
@@ -161,6 +162,29 @@ end
 -- Where the review pass's comments and summary for PR `number` are kept, beside its guide.
 function M.reviewPath(repo: Repo, number: number): string
  return repo.guides .. "/" .. number .. ".review.json"
+end
+
+-- The JSON file at `path`, decoded, or the first line of why it can't be read.
+local function readJson(path: string): (any, string?)
+ local ok, raw = pcall(function(): any
+  return Host.json.decode(Host.fs.read(path))
+ end)
+ if not ok then return nil, Text.errorLine(raw) end
+ return raw, nil
+end
+
+-- The guide file at `path` for `pr`, or why it can't be used.
+function M.readGuide(path: string, pr: Pr.PR): (Guide.Guide?, string?)
+ local raw, problem = readJson(path)
+ if problem then return nil, problem end
+ return Guide.load(raw, pr)
+end
+
+-- The review file at `path` for `pr`, or why it can't be used.
+function M.readDraft(path: string, pr: Pr.PR): (Guide.Draft?, string?)
+ local raw, problem = readJson(path)
+ if problem then return nil, problem end
+ return Guide.loadDraft(raw, pr)
 end
 
 -- Finds the checkout `dir` is in. Calls `done` once, with it or with what failed.
