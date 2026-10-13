@@ -243,14 +243,6 @@ local function hubBoardKey(s: HubState.State, key: Key): Action?
 		if label == "M" then return act("hub-batch-merge") end
 		if label == "X" then return act("hub-batch-close") end
 	end
-	-- ⇧L is the card's auto-land, never a move right.
-	if label == "⇧L" then
-		local card = HubState.selectedCard(s)
-		for _, more in if card then card.more else {} do
-			if more.act == "card-autoland" then return act(more.act, (card :: HubState.Card).pr.key) end
-		end
-		return nil
-	end
 	if name == "left" or name == "h" then return act("hub-move", "left") end
 	if name == "right" or name == "l" then return act("hub-move", "right") end
 	if name == "down" or name == "j" then return act("hub-move", "down") end

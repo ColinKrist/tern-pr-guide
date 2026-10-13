@@ -399,7 +399,7 @@ local function testCards()
 	State.setPending(s, "acme/api#109", { method = "comment", at = Fixture.pendingAt })
 	local waiting = State.card(s, "acme/api#109") :: State.Card
 	assert(waiting.note == "Queued in Aviator" and waiting.main.act == "card-cancel" and waiting.main.label == "Cancel merge" and waiting.main.key == "M")
-	assert(#waiting.more == 1 and waiting.more[1].act == "card-autoland" and waiting.more[1].label == "Turn on auto-land" and waiting.more[1].key == "⇧L", "a repo that merges by comment offers auto-land")
+	assert(#waiting.more == 1 and waiting.more[1].act == "card-autoland" and waiting.more[1].label == "Turn on auto-land" and waiting.more[1].key == "⇧Q", "a repo that merges by comment offers auto-land")
 	resolve({ user = { kind = "comment", command = "/merge", cancel = nil } })
 	waiting = State.card(s, "acme/api#109") :: State.Card
 	assert(waiting.note == "Commented /merge · waiting for the merge" and waiting.main == nil)

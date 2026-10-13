@@ -100,19 +100,15 @@ local function guides(s: State.State): Node
 	})
 end
 
--- Auto-land's try cap, as a − n + stepper.
+-- Auto-land's try cap, with the - and + keycaps that change it.
 local function landTries(s: State.State): Node
-	local tries = s.landSettings.tries
 	return el("div", { class = "gp-hs-row", key = "land-tries" }, {
 		el("div", { class = "gp-hs-top", key = "top" }, {
 			span("gp-md-label", "Auto-land tries"),
 			Ui.spacer(),
-			el("div", { class = "gp-md-segs", key = "segs" }, {
-				el("span", { class = "gp-md-seg", key = "less", text = "−", aria = "Fewer tries", actions = { click = "hub-land-tries=-1" } }),
-				el("span", { class = "gp-md-seg gp-md-seg-on", key = "n", text = tostring(tries) }),
-				el("span", { class = "gp-md-seg", key = "more", text = "+", aria = "More tries", actions = { click = "hub-land-tries=+1" } }),
-			}),
-			Ui.keys("- +"),
+			el("span", { class = "gp-hc-chip gp-hc-chip-wait", key = "n", text = tostring(s.landSettings.tries) }),
+			el("span", { key = "less", aria = "Fewer tries", actions = { click = "hub-land-tries=-1" } }, { Ui.keys("-") }),
+			el("span", { key = "more", aria = "More tries", actions = { click = "hub-land-tries=+1" } }, { Ui.keys("+") }),
 		}),
 	})
 end

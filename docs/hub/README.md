@@ -192,7 +192,7 @@ Each repo has one merge setting, stored in kv. It's one of six kinds:
 
 Auto-land keeps one of your PRs moving until it merges: it asks for the merge with the repo's method, and when checks fail before the merge or the repo's tool dequeues the PR, it recovers the branch and asks again.
 
-- **Per PR, by key:** `⇧L` (or "Turn on auto-land" behind the ▾) on your own cards in Needs fixes, In review and Ready, when the repo's merge setting is one auto-land knows and the setting is confirmed (a learned suggestion nobody answered is not). Turning it on is the consent: nothing inside auto-land asks again. `⇧L` again turns it off, and so does Cancel merge. Merge (`M`) by hand overrides it: auto-land turns off ("Auto-land off for #N: merging by hand") and the merge goes out once. A PR Tandem watches can't have it (`TANDEM_OWNS`).
+- **Per PR, by key:** `⇧Q` (or "Turn on auto-land" behind the ▾) on your own cards in Needs fixes, In review and Ready, when the repo's merge setting is one auto-land knows and the setting is confirmed (a learned suggestion nobody answered is not). Turning it on is the consent: nothing inside auto-land asks again. `⇧Q` again turns it off, and so does Cancel merge. Merge (`M`) by hand overrides it: auto-land turns off ("Auto-land off for #N: merging by hand") and the merge goes out once. A PR Tandem watches can't have it (`TANDEM_OWNS`).
 - **Hub-only:** it runs only while a hub block is open, after each refresh and each checks update. No daemon, and not Tandem.
 - **Recovery, in this order:** a branch behind its base is rebased on GitHub's side (`gh pr update-branch <n> --repo <r> --rebase`); an up-to-date one gets an empty commit through Push empty commit's three calls. Auto-land never re-runs CI jobs. It then queues again. Each recovery is one try.
 - **Settings (`⇧S`):** "Auto-land tries" (`-` and `+`, 1 to 20, default 5) and "Auto-land dequeue label" (`⇧D`, default `blocked`, used by the label kind). kv `hub.autoland.settings`.
@@ -257,7 +257,7 @@ To review has its own field: "Paste a pull request link to review" (`N`, from ei
 | N | Add a PR by link |
 | / | Search |
 | A, ⇧A, P, D, O, C, M, `,`, X | Card actions (see the table above) |
-| ⇧L | Turn auto-land on or off for the selected card (see Auto-land) |
+| ⇧Q | Turn auto-land on or off for the selected card (see Auto-land) |
 | ⌘⏎ / Esc | Confirm / cancel inline questions |
 | ⌘R | Refresh |
 
@@ -759,7 +759,7 @@ function M.settings(): AutoLand.Settings
 function M.saveSettings(settings: AutoLand.Settings): string?
 function M.marks(): { [string]: LandMark }   -- Sync.Local.landing
 function M.toggle(b: Block, cx: BlockCx, key: string, refetchSoon: (Block, BlockCx) -> ())   -- card-autoland
-function M.off(b: Block, cx: BlockCx, key: string)   -- Cancel merge, and ⇧L's off
+function M.off(b: Block, cx: BlockCx, key: string)   -- Cancel merge, and ⇧Q's off
 function M.run(b: Block, cx: BlockCx, read: boolean, refetchSoon: (Block, BlockCx) -> ())   -- after a refresh (read) and a checks update
 ```
 

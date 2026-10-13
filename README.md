@@ -99,7 +99,7 @@ comment command such as `/aviator merge`, or a label. PR Guide reads it from the
 config, or learns it from how recent PRs were merged and asks you once to confirm. Merge one PR,
 select several and merge them together, or set an In review PR to merge as soon as it's ready.
 
-**Auto-land.** Press `⇧L` on one of your PRs to keep it moving until it merges. Auto-land asks for
+**Auto-land.** Press `⇧Q` on one of your PRs to keep it moving until it merges. Auto-land asks for
 the merge with the repository's setting. When checks fail first, or the queue drops the PR, it
 rebases the branch on its base (or pushes an empty commit when it is up to date) and asks again.
 It works with a merge queue, a comment command or a label, once the setting is confirmed. It runs
@@ -329,7 +329,7 @@ Press `?` for shortcuts that apply to the current page. In the hub, the panel fo
 | `N` | Add a PR by link |
 | `⇧S` | Settings: the explanation and review models, their effort and the lens, in the same menu as the review page, and whether GitHub links open in Tern or the default browser (`L` switches while the search field is empty), whether AI guides are prepared in the background (`⇧G`), and auto-land's tries (`-` `+`) and dequeue label (`⇧D`, then `⏎` saves), while the search field is empty. `⇧M` opens it too |
 | `A` | Run the selected card's main action, on your PRs |
-| `⇧L` | Turn auto-land on or off |
+| `⇧Q` | Turn auto-land on or off |
 | `⇧A` | Summarize feedback or return a retained worktree |
 | `C` | Copy the PR title and link |
 | `M` | Merge, merge when ready or cancel a pending merge |

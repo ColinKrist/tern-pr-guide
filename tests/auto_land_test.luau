@@ -355,7 +355,7 @@ local function testBoard()
 	assert(trying.column == "in_review" and #trying.chips == 1, "an on mark is the card's one chip")
 	assert(trying.chips[1].text == "Auto-land · try 2 of 5" and trying.chips[1].kind == "agent")
 	local off = find(trying.more, "card-autoland") :: State.CardAction
-	assert(off.label == "Turn off auto-land" and off.key == "⇧L" and find(trying.more, "card-auto") == nil, "no Merge when ready while it is on")
+	assert(off.label == "Turn off auto-land" and off.key == "⇧Q" and find(trying.more, "card-auto") == nil, "no Merge when ready while it is on")
 
 	local queued = State.card(s, "acme/api#110") :: State.Card
 	assert(queued.column == "ready" and queued.chips[1].text == "Auto-land" and queued.chips[1].kind == "agent")
@@ -379,19 +379,19 @@ local function testBoard()
 	State.setAutoLand(s, "acme/api#105", nil)
 	assert(#(State.card(s, "acme/api#105") :: State.Card).chips == 1)
 
-	-- ⇧L reaches the selected card's toggle; l still moves.
+	-- ⇧Q reaches the selected card's toggle.
 	local function key(name: string, shift: boolean?, text: string?): any
 		return { name = name, text = text, shift = shift == true, meta = false, ctrl = false, alt = false }
 	end
 	State.select(s, "acme/api#120")
-	local toggle = Keys.hubAction(s, key("l", true)) :: Keys.Action
-	assert(toggle.act == "card-autoland" and toggle.value == "acme/api#120", "⇧L toggles auto-land")
+	local toggle = Keys.hubAction(s, key("q", true)) :: Keys.Action
+	assert(toggle.act == "card-autoland" and toggle.value == "acme/api#120", "⇧Q toggles auto-land")
 	assert((Keys.hubAction(s, key("l")) :: Keys.Action).act == "hub-move", "l moves right")
 	State.select(s, "acme/web#104")
-	assert(Keys.hubAction(s, key("l", true)) == nil, "⇧L does nothing on a card without auto-land")
+	assert(Keys.hubAction(s, key("q", true)) == nil, "⇧Q does nothing on a card without auto-land")
 	s.search.text = "x"
 	State.select(s, "acme/api#120")
-	assert(Keys.hubAction(s, key("l", true)) == nil, "letters act only while search is empty")
+	assert(Keys.hubAction(s, key("q", true)) == nil, "letters act only while search is empty")
 	s.search.text = ""
 
 	-- Settings: - and + change the cap, ⇧D edits the label; while it is edited, ⏎ saves, Esc cancels, the rest is typed.

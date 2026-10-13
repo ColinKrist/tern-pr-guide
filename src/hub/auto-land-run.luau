@@ -2,7 +2,7 @@
 -- Runs auto-land on the hub's board while a hub block is open. It owns the records (kv `hub.autoland`) and the settings
 -- (kv `hub.autoland.settings`), steps every record after a refresh and after a checks update (hub/auto-land decides), and
 -- carries out what a step asks: queue the merge with the repo's method, rebase or push an empty commit, read the auto-land
--- facts, stop or turn off. ⇧L's ACTIONS entry calls `toggle`; Cancel merge calls `off`. A sample board never reaches GitHub.
+-- facts, stop or turn off. ⇧Q's ACTIONS entry calls `toggle`; Cancel merge calls `off`. A sample board never reaches GitHub.
 local AutoLand = require("./auto-land")
 local Github = require("../github")
 local Host = require("../host")
@@ -336,7 +336,7 @@ end
 
 local KIND_NAMES = "a merge queue, a merge comment or a merge label"
 
--- ⇧L on a card: turns auto-land on (a fresh record, so a stopped one starts over) or off.
+-- ⇧Q on a card: turns auto-land on (a fresh record, so a stopped one starts over) or off.
 function M.toggle(b: Block, cx: BlockCx, key: string, refetchSoon: Refetch)
 	local s = b.s
 	local card = State.card(s, key)
@@ -386,7 +386,7 @@ function M.toggle(b: Block, cx: BlockCx, key: string, refetchSoon: Refetch)
 	M.run(b, cx, true, refetchSoon)
 end
 
--- Turns auto-land off for `key` without a toast (Cancel merge, and ⇧L's off).
+-- Turns auto-land off for `key` without a toast (Cancel merge, and ⇧Q's off).
 function M.off(b: Block, cx: BlockCx, key: string)
 	if b.fixture then return end
 	local records, readable = readRecords()

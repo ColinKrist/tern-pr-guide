@@ -1,5 +1,5 @@
 --!strict
--- Auto-land in the hub block: ⇧L writes the record and shows the chip, a passing PR queues once, a dequeue recovers by a
+-- Auto-land in the hub block: ⇧Q writes the record and shows the chip, a passing PR queues once, a dequeue recovers by a
 -- rebase when behind and an empty commit when up to date, the cap stops it, a closed block sends nothing, Tandem refuses,
 -- the sample board stays local, and Settings' keys save the cap and the label. GitHub is a recording client whose
 -- callbacks the test settles by hand.
@@ -112,10 +112,10 @@ return function()
 		local client, calls = recorder()
 		b.github = client
 
-		-- ⇧L turns it on: the record is written, the chip shows, and the first step reads the facts.
+		-- ⇧Q turns it on: the record is written, the chip shows, and the first step reads the facts.
 		State.select(b.s, KEY)
 		assert(card(b).column == "ready")
-		press(b, "l", true)
+		press(b, "q", true)
 		local r = record()
 		assert(r and r.phase == "waiting" and r.tries == 0 and r.head == "head109", "the record is written")
 		assert(card(b).chips[1].text == "Auto-land" and card(b).chips[1].kind == "agent", "the chip shows")
@@ -192,8 +192,8 @@ return function()
 		assert(card(b).column == "needs_fixes" and card(b).chips[1].text == "Auto-land stopped" and card(b).detail == "Tried 2 times")
 		assert(lastToast()[1] == "error" and lastToast()[2] == "Auto-land stopped on #109: tried 2 times" and lastToast()[3] == card(b).pr.title)
 
-		-- ⇧L on the stopped card starts over; a closed block then sends nothing when the read answers.
-		press(b, "l", true)
+		-- ⇧Q on the stopped card starts over; a closed block then sends nothing when the read answers.
+		press(b, "q", true)
 		assert(record().phase == "waiting" and record().tries == 0)
 		sent = #calls
 		assert(calls[sent].kind == "landFacts")
@@ -231,7 +231,7 @@ return function()
 			return stored and stored.prs[OTHER]
 		end
 
-		-- A repo whose merge setting isn't known yet: ⇧L asks GitHub how it merges and writes nothing.
+		-- A repo whose merge setting isn't known yet: ⇧Q asks GitHub how it merges and writes nothing.
 		local resolved = b.s.merges["acme/api"]
 		b.s.merges["acme/api"] = nil
 		State.project(b.s)
@@ -296,7 +296,7 @@ return function()
 		sample.github = sampleClient
 		local stored = kv["hub.autoland"]
 		State.select(sample.s, KEY)
-		press(sample, "l", true)
+		press(sample, "q", true)
 		assert((State.card(sample.s, KEY) :: State.Card).chips[1].text == "Auto-land", "the sample's chip changes")
 		assert(lastToast()[1] == "info" and lastToast()[2] == "The sample board doesn't auto-land" and lastToast()[3] == KEY)
 		assert(kv["hub.autoland"] == stored and #sampleCalls == 0, "no kv write, no GitHub call")

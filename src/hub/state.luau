@@ -864,7 +864,7 @@ local function toCard(pr: HubPR, placement: Model.Placement, s: State): Card
 	local offered = pr.autoLand ~= nil or AutoLand.supports(s.merges[pr.repo])
 	if pr.role == "mine" and not pr.tandem and offered and (column == "needs_fixes" or column == "in_review" or column == "ready") then
 		more = table.clone(more)
-		table.insert(more, action("card-autoland", if landing(pr) then "Turn off auto-land" else "Turn on auto-land", "⇧L"))
+		table.insert(more, action("card-autoland", if landing(pr) then "Turn off auto-land" else "Turn on auto-land", "⇧Q"))
 	end
 	return {
 		flake = if flake and flake.flaky and flake.reason then "Likely flaky: " .. flake.reason else nil,
