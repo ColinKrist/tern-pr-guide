@@ -732,6 +732,7 @@ local block: BlockDef<Block> = {
   if not s then
    return { main = Notice.view(b.notice) }
   end
+  s.now = Host.time()
   local motion = { born = s.born, next = {}, booted = s.booted, animate = not s.keyed }
   local main = Page.view(s, motion)
   s.born, s.booted = motion.next, true

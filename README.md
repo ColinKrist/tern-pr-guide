@@ -122,7 +122,8 @@ failed checks from the same page.
 ## Read a PR
 
 Open any card to see the whole PR in Tern, with two ways to read it. Press `t` to switch between
-them. Comments, reviewed marks and the summary carry over.
+them. Comments, reviewed marks and the summary carry over. Under the title, the header shows who opened the PR
+and how long ago, as in "jubbydev opened 3h ago".
 
 **Files** works like GitHub's PR page: the description, the changed files as a folder tree,
 search across the changed code, and comments on any line. The diff comes from local git, so
