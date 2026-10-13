@@ -1,5 +1,6 @@
 --!strict
 -- Every shortcut, grouped in the order a review goes: read, react, finish.
+local State = require("../state")
 local Ui = require("./ui")
 
 local el, span = Ui.el, Ui.span
@@ -8,7 +9,7 @@ type Group = { title: string, keys: { { string } } }
 
 -- What the page shows: a guided walkthrough or the plain file list, and whether the reader can
 -- switch between the two (a PR with a guide).
-export type Kind = { guided: boolean, switch: boolean }
+export type Kind = { guided: boolean, switch: boolean, hosted: State.Hosted? }
 
 local GUIDED: { Group } = {
  { title = "1  Read", keys = { { "j  k", "next / previous step" }, { "n  p", "next / previous suggestion" }, { "/", "search the PR" }, { "i", "PR description" }, { "s", "supporting changes" }, { "o", "open supporting files, not generated ones" }, { "⇧ S", "mark supporting files reviewed" }, { "g", "open on GitHub" } } },
@@ -30,12 +31,15 @@ local function groups(kind: Kind): { Group }
  for _, group in source do
   local keys = table.clone(group.keys)
   if group.title == "1  Read" then
-   if kind.switch then
+   if kind.hosted and kind.hosted.fixes then
+    table.insert(keys, 1, { "t", "next view: fixes, guided, files" })
+    if kind.switch and not kind.guided then table.insert(keys, 2, { "n  p", "next / previous suggestion" }) end
+   elseif kind.switch then
     table.insert(keys, 1, { "t", if kind.guided then "switch to the file view" else "switch to the guided view" })
     if not kind.guided then table.insert(keys, 2, { "n  p", "next / previous suggestion" }) end
-   else
-    table.insert(keys, { "⇧ G", "generate guide" })
    end
+   if not kind.switch then table.insert(keys, { "⇧ G", "generate guide" }) end
+   if kind.hosted then table.insert(keys, { "esc", "back to the board" }) end
    table.insert(keys, { "⇧ R", "draft review comments" })
    table.insert(keys, { "⇧ M", "AI models, effort and lens" })
    table.insert(keys, { "tab", "in that menu: explanation / review model" })

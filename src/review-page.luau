@@ -27,6 +27,7 @@ type Handler = (s: State, cx: BlockCx, value: string) -> ()
 type Options = { pr: string?, repo: string?, guide: string?, post: boolean, generate: boolean?, worst: boolean? }
 
 -- The review page once its PR has loaded; before that, what loading is doing.
+export type Hosted = State.Hosted
 export type ReviewPage = {
  opts: Options,
  -- The node path the page's nodes sit under in its host's view: every frame op and path starts there.
@@ -48,6 +49,8 @@ export type ReviewPage = {
  noAgent: string?,
  -- `generate=true` has been settled: a run started, or a reason not to.
  autoDone: boolean?,
+ -- Set when a host (the PR hub) shows the page; the page's state keeps it (see State.Hosted).
+ hosted: State.Hosted?,
 }
 
 local M = {}
@@ -509,6 +512,7 @@ local function showGuide(b: ReviewPage, pr: Pr.PR, guide: Guide.Guide, guided: b
  local repo = if b.repo then b.repo.root else nil
  local dryRunPath = if b.opts.post and repo then nil else Prdata.dryRunPath(pr.number)
  b.page, b.guided = State.new(pr, guide, { repo = repo, dryRunPath = dryRunPath, root = b.root }), guided
+ b.page.hosted = b.hosted
  if b.view == "files" and b.page and State.switchable(b.page) then State.switchView(b.page, "files") end
  offerAgent(b)
 end
@@ -686,11 +690,12 @@ local function actionOf(b: ReviewPage, ev: UiEvent): Keys.Action?
  return nil
 end
 
-function M.init(cx: BlockCx, args: { string }, root: string): ReviewPage
+-- `hosted` is set by a host that shows the page among other views (the PR hub); the guide block passes none.
+function M.init(cx: BlockCx, args: { string }, root: string, hosted: State.Hosted?): ReviewPage
  local opts, problem = options(args)
- if not opts then return { opts = { post = false }, root = root, dir = "", name = "", notice = Notice.failed("", problem :: string), guided = false } end
+ if not opts then return { opts = { post = false }, root = root, dir = "", name = "", notice = Notice.failed("", problem :: string), guided = false, hosted = hosted } end
  local pr, dir = opts.pr, opts.repo
- local b: ReviewPage = { opts = opts, root = root, dir = dir or "", name = nameOf(pr), notice = if pr then Notice.loading(nameOf(pr), "") else Notice.findingRepo(), guided = false }
+ local b: ReviewPage = { opts = opts, root = root, dir = dir or "", name = nameOf(pr), notice = if pr then Notice.loading(nameOf(pr), "") else Notice.findingRepo(), guided = false, hosted = hosted }
  if opts.worst then
   showPr(b, Pr.sample("worst"))
   if not opts.guide then b.ai = Agent.idle(Host.json.decode(Host.fs.read("fixtures/agent-worst.json"))) end
@@ -737,6 +742,73 @@ function M.init(cx: BlockCx, args: { string }, root: string): ReviewPage
  end)
  return b
 end
+
+-- What a host asks of the page ----------------------------------------------------------------------------------
+
+-- Whether the page has nothing of its own to close, so Esc is the host's: loading or failed, or reading with no
+-- panel, search, composer, help or focused suggestion open.
+function M.atRest(b: ReviewPage): boolean
+ local s = b.page
+ return s == nil or (State.mode(s) == "reading" and not s.helpOpen and s.review.focus == nil)
+end
+
+-- The id the view tabs' select events carry.
+function M.tabsPath(b: ReviewPage): string
+ return Page.viewTabsPath(b.root)
+end
+
+-- Whether the page takes plain letter keys (it is loaded and no field or panel has them).
+function M.reading(b: ReviewPage): boolean
+ return b.page == nil or State.mode(b.page) == "reading"
+end
+
+-- The views the page has, in tab order, or nil before it has loaded: a PR with a guide has both, one without
+-- has only the file view.
+function M.views(b: ReviewPage): { State.ViewId }?
+ local s = b.page
+ if not s then return nil end
+ return if State.switchable(s) then { "guided", "files" } else { "files" }
+end
+
+-- The view on show, or nil before the page has loaded.
+function M.current(b: ReviewPage): State.ViewId?
+ local s = b.page
+ if not s then return nil end
+ return if State.switchable(s) then s.view else "files"
+end
+
+-- Shows view `to` when the page has it; a host's tab or key.
+function M.setView(b: ReviewPage, cx: BlockCx, to: State.ViewId)
+ if b.page then
+  b.page.keyed = true
+  switchView(b.page, cx, to)
+  remember(b, b.page)
+ end
+end
+
+-- Whether closing the page would lose work that no file holds: text in the composer or the summary, the
+-- reader's own comments (kept in memory until the review is sent), or an agent run in flight.
+function M.unsaved(b: ReviewPage): boolean
+ local s = b.page
+ if b.ai and Agent.busy(b.ai) then return true end
+ if not s then return false end
+ local c = s.composer
+ if c and c.field.text ~= "" then return true end
+ local r = s.review
+ return #r.own > 0 or r.summary.text ~= r.guide.summary
+end
+
+-- Starts the AI guide on a page the reader opens again with ⇧⏎: now when the page and agent are ready, else once they are.
+function M.startGuide(b: ReviewPage, cx: BlockCx)
+ b.opts.generate, b.autoDone = true, nil
+ autoGenerate(b, cx)
+end
+
+-- Shown again by its host: the body starts at the top, so the reader's place comes back into view.
+function M.resume(b: ReviewPage, cx: BlockCx)
+ if b.page then follow(b.page, cx, false) end
+end
+
 function M.title(b: ReviewPage): string?
  if b.page then return "Review · #" .. b.page.review.pr.number end
  return if b.name ~= "" then "PR " .. b.name else "PR Guide"

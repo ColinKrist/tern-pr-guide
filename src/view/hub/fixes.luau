@@ -52,7 +52,7 @@ end
 
 -- Header ---------------------------------------------------------------------------------------------------
 
-local function header(s: State.State, pr: Model.HubPR, steps: { Step }): Node
+local function header(s: State.State, pr: Model.HubPR, steps: { Step }, tabs: { Ui.ViewTab }?): Node
 	local route = s.route :: State.Route
 	local actions: { Node } = {}
 	local main = State.fixMain(s)
@@ -77,8 +77,9 @@ local function header(s: State.State, pr: Model.HubPR, steps: { Step }): Node
 		span("gp-title-num", "#" .. pr.number),
 		span("gp-title-text", pr.title),
 		Ui.spacer(),
-		el("div", { class = "gp-fx-hdr", key = "actions" }, actions),
 	}
+	if tabs and #tabs > 1 then table.insert(title, Ui.viewTabs(tabs, "fixes")) end
+	table.insert(title, el("div", { class = "gp-fx-hdr", key = "actions" }, actions))
 	local status: { Node } = {}
 	-- The card's own chips, so the page and the board never disagree; a card off the board falls back to the steps'.
 	local chips: { string } = {}
@@ -641,6 +642,7 @@ local function hints(s: State.State, steps: { Step }): Node
 		local main = State.fixMain(s)
 		table.insert(kids, item("h j k l", "move", true))
 		table.insert(kids, item("esc", "back", true))
+		table.insert(kids, item("t", "next view"))
 		if main and main.key then table.insert(kids, item(main.key, string.lower(main.label), true)) end
 		table.insert(kids, item("⏎", if route.focus == "steps" then "go to code" else "choose"))
 		if step and step.thread then
@@ -671,7 +673,8 @@ local function hints(s: State.State, steps: { Step }): Node
 	return el("div", { class = "gp-hintbar", key = "hints" }, kids)
 end
 
-function M.view(s: State.State, motion: Ui.Motion): Node
+-- `tabs` are the PR's views, the fixes page the first (Pages.fixesTabs).
+function M.view(s: State.State, motion: Ui.Motion, tabs: { Ui.ViewTab }?): Node
 	local route = s.route :: State.Route
 	local pr = State.prOf(s, route.key)
 	local details = State.fixDetails(s)
@@ -681,7 +684,7 @@ function M.view(s: State.State, motion: Ui.Motion): Node
 	local steps = Fixes.steps(details, pr)
 	local step = steps[route.cur]
 	return el("div", {}, { el("div", { class = rootClass(s), key = "fixes" }, {
-		header(s, pr, steps),
+		header(s, pr, steps, tabs),
 		el("div", { class = "gp-guide gp-fx-cols" .. (if route.focus == "panel" then " gp-fx-pf" else ""), key = "cols" }, {
 			outline(s, pr, steps, Fixes.bots(details)),
 			panel(s, motion, pr, details, step),

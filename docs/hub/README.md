@@ -119,7 +119,7 @@ Each PR appears exactly once.
 
 ### ⏎ on a Needs fixes card (`pr-fixes.html`)
 
-This opens the PR at what needs fixing, in the guided review layout.
+This opens the PR at what needs fixing, in the guided review layout, inside the hub's own pane. The PR is one container with up to three views: **Fixes** (this page, only for a card in Needs fixes with no agent fix to review), **Guided** (only when the PR has a guide) and **Files**. `t` cycles the views that exist, and the tab strip in each page's header (Fixes · Guided · Files, or Fixes · Files) switches by click; both send `pages-cycle` or `pages-view`. Before the PR's review page has loaded, the fixes page's strip shows Fixes · Review, since it can't yet say whether the PR has a guide. ⇧⏎ on a Needs fixes card opens the review page with the guide started and Fixes a tab away. See "Opening a card's PR".
 
 - **Left column:** the problems as steps, grouped Requested changes, Comments, Failing checks, Merge conflicts.
 - **Right side:** the code for the selected step.
@@ -219,8 +219,11 @@ To review has its own field: "Paste a pull request link to review" (`N`, from ei
 | Key | Action |
 |---|---|
 | h j k l / arrows | Move: up and down within a column, left and right to the nearest card in the next column |
-| ⏎ / click | Open (Needs fixes cards open at the fixes) |
+| ⏎ / click | Open the PR in the hub, replacing the board (Needs fixes cards open at the fixes) |
 | ⇧⏎ | Open with the AI guide started |
+| ⌘⏎ | Open the PR in a Tern pane of its own (board only; ⌘⏎ confirms an inline question elsewhere) |
+| Esc (on a review page) | Back to the board with the card still selected, when nothing on the page is open |
+| T (on a PR's pages) | Next view: Fixes, Guided, Files |
 | T | Switch tab |
 | I | Show or hide Inactive (either tab) |
 | ⇧T | Show or hide Team requests (Review requests) |
@@ -941,6 +944,7 @@ export type Block = {
 	flights: { refresh: boolean, checks: boolean, probe: boolean },   -- one call of each kind at a time
 	fixture: string?,                 -- `fixture=cases`: no network, no timers
 	generate: boolean,                -- ⏎ opens the PR with the AI guide started
+	pages: Pages,                     -- hub/pages: the opened review pages (up to 3, least recent first), the one on show and the checkouts being found; never in State, never saved
 	sched: { probedAt: number?, probeChanged: boolean, focusedAt: number?, checksAt: number?, refreshTried: number?, lastModified: string? },   -- what `Sync.schedule` reads; `refreshTried` keeps a failed refresh from retrying at once
 	closed: boolean,
 	refetch: boolean,                 -- a refresh was asked for while one ran (an add, remove, merge or update): run another when it ends
@@ -992,10 +996,18 @@ No read, route entry or agent completion pushes automatically.
 
 ### Opening a card's PR
 
+The hub is the PR's container: ⏎, a click and ⇧⏎ open the PR's review page in the hub's own pane, and ⌘⏎ opens it in a pane of its own (the steps below).
+
+**In the hub (`src/hub/pages.luau`).** `Pages.plan` runs steps 1 and 2 below up to the link; `Links.openRoute` and `Links.routeArgs` (what `window.luau` does in step 3) turn it into the guide's arguments, and `ReviewPage.init(cx, args, "main", hosted)` builds the page under the hub's own `main` root instead of a new block. A sample board (`fixture=`) has no network: it opens the bundled sample (arguments `{}`). While a page shows, the hub's `view` returns the page's `{ main, layer }` verbatim and its `title` is "Review · #N"; `key` and `event` go to the page, except the hub's own `hub-focused` and `set-generate`, Esc at the page's rest (`pages-back`: back to the board, closing the fixes page under it, with the card still selected), `t` when Fixes is one of the views (`pages-cycle`) and a click on the Fixes tab (`pages-view=fixes`).
+
+- **The host hook.** `ReviewPage.init`'s optional fourth argument is `State.Hosted = { fixes: boolean }`, kept on the page's state: it adds the Fixes tab, hands `t` to the host and shows "esc board" in the hint bar and `?` panel. The guide block passes nothing and is unchanged. The page also exposes `atRest` (loaded and reading with no search, composer, panel, help or focused suggestion, or not loaded), `reading`, `views`, `current`, `setView`, `unsaved`, `startGuide` and `tabsPath`.
+- **Views.** `src/hub/page-views.luau` (pure) holds `views(fixes, pageViews)`, `next` (what `t` does), `tabs` and `victims`. A PR's views are Fixes (a card in Needs fixes with no agent fix to review, or the fixes page already open on it), then Guided and Files, or Files alone for a PR with no guide, or "review" for a page not loaded yet.
+- **Kept pages.** `Block.pages` keeps the last 3 pages opened, least recent first, each with the PR, the card it came from and its page: reopening the PR shows it at once with its marks, comments and any guide in flight (scroll resets). Never in `State`, never saved. A page beyond the limit is dropped, oldest first, unless it holds work no file has (`ReviewPage.unsaved`: text in the composer, the reader's own comments, an edited summary, or an agent run in flight; the page's review comments from the agent live in the checkout's review file, and the reader's own live only in memory), so more than 3 can stay. ⇧⏎ on a kept page starts its guide (`ReviewPage.startGuide`).
+
 `BlockCx` has no `new_block`; `WindowCx` does (`tern.d.luau:1141-1160`, `:1596`). The block therefore asks the window half to open it:
 
 1. The block resolves the card's `owner/repo` with the existing resolver: `Fetch.checkoutFor(near, dir, slug, done)` (`src/fetch.luau:388`), then `Fetch.savedCopy(host, slug)` (`:445`) when it finds none. `dir` is `cx.cwd` (`tern.d.luau:1145`), else `HOME`. When neither gives a repo, the block shows a toast with the reason and opens nothing.
-2. It calls `cx:open(url)` (`tern.d.luau:1134-1135`, which goes through the window's `route.link`) with `https://github.com/<owner>/<repo>/pull/<n>#prguide-open=<url-encoded root>`, plus `&generate=true` for ⇧⏎ or ⌥⇧⌘R. When no checkout exists but PR Guide can make its own copy, `root` is the folder searched and the link ends `&search=true`: the route then answers `pr=<link>` so the guide resolves it as it does a pasted link. The resolver is `openPr` in `src/hub/block.luau`, shared by every open.
+2. It calls `cx:open(url)` (`tern.d.luau:1134-1135`, which goes through the window's `route.link`) with `https://github.com/<owner>/<repo>/pull/<n>#prguide-open=<url-encoded root>`, plus `&generate=true` for ⇧⏎ or ⌥⇧⌘R. When no checkout exists but PR Guide can make its own copy, `root` is the folder searched and the link ends `&search=true`: the route then answers `pr=<link>` so the guide resolves it as it does a pasted link. The resolver is `Pages.plan` in `src/hub/pages.luau`; `openPr` in `src/hub/block.luau` calls it for ⌘⏎ and the add-by-link field's ⇧⏎, which open a pane of their own.
 3. `window.luau` registers `tern.route.link` (`:1928`) and claims only links carrying `#prguide-open=`, answering `{ block = "prguide.guide", args = { "pr=<n>", "repo=<root>", "generate=true"? } }` (`RouteDecision`, `:1011-1025`). The guide requires `repo=` with `pr=` (`src/block.luau:469`).
 4. A link the route doesn't claim opens GitHub's own page, so a missing route degrades to the browser.
 

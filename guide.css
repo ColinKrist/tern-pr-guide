@@ -30,11 +30,11 @@
 .gp-status-text { color: var(--t2); white-space: nowrap; }
 .gp-status-sep { color: var(--t4); }
 .gp-status-item { display: flex; gap: 10px; align-items: center; min-width: 0; }
-/* the guided page's header keeps one height (92px), so the page body's height is known (see .gp-page-fit):
-   the title ends in an ellipsis, as on GitHub, and the status row stays one line: its optional items give way
+/* the title ends in an ellipsis in both views, as on GitHub, so switching views never moves the tabs. The guided
+   page's header keeps one height (92px), so the page body's height is known (see .gp-page-fit): and the status row stays one line: its optional items give way
    first, then the progress text (the meter still shows it); the actions never do */
 .gp-page:not(.gp-split) > .gp-header { min-height: 92px; box-sizing: border-box; }
-.gp-page:not(.gp-split) .gp-title-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; }
+.gp-page .gp-title-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; }
 .gp-page:not(.gp-split) .gp-status { flex-wrap: nowrap; overflow: hidden; }
 .gp-page:not(.gp-split) .gp-status > * { flex-shrink: 0; }
 .gp-page:not(.gp-split) .gp-status > .gp-status-item { flex-shrink: 1000; overflow: hidden; }

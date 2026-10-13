@@ -65,6 +65,8 @@ end
 -- The fixes page and the reply field inside the thread card on show. They follow the keys in fixes.luau.
 M.FIXES = "main.fixes"
 M.fixesTitle = M.FIXES .. ".header.title"
+-- The view tabs in the fixes page's title row; their select events carry this id.
+M.fixesTabs = M.FIXES .. ".header.title.views.tabs"
 M.reviewFixTitle = "main.review-fix.header.title"
 M.replyField = M.FIXES .. ".cols.code.ex.body.composer.body.field"
 

@@ -62,6 +62,8 @@ export type Place = {
 -- Code blocks are keyed by block id: the key of the first step of a run of steps on one file (see
 -- Guide.Step.block), or "f:<path>" for a supporting file. What
 -- `Place` lists belongs to the view shown; the other view's is parked in `other`.
+export type Hosted = { fixes: boolean }
+
 export type State = {
  -- The node path the page sits under in its host's view; every frame op and path starts there.
  root: string,
@@ -119,6 +121,9 @@ export type State = {
  -- walkthrough ("guide"). The page's blocks arrive with a matching motion. After the reader
  -- switches view nothing arrives ("still"): a switch is instant.
  arrival: "load" | "guide" | "still",
+ -- Set when a host (the PR hub) shows the page: `fixes` is whether a Fixes view sits beside it. The page then
+ -- shows a Fixes tab, and its `t` is the host's, and an Esc hint.
+ hosted: Hosted?,
 }
 
 local SUPPORTING_PREFIX = "f:"
@@ -166,7 +171,7 @@ function M.new(pr: Pr.PR, guide: Guide.Guide, to: { repo: string?, dryRunPath: s
   composer = nil, search = nil, hit = nil,
   helpOpen = false, treeHidden = false, models = nil, reviewOpen = false, reviewCursor = 1, editingSummary = false,
   keyed = false, submit = { repo = to.repo, dryRunPath = to.dryRunPath, confirming = false, sending = false, error = nil }, ai = nil,
-  born = {}, booted = false, now = 0, arrival = "load",
+  born = {}, booted = false, now = 0, arrival = "load", hosted = nil,
  }
 end
 

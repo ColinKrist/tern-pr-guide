@@ -83,6 +83,14 @@ function M.keys(hint: string, key: string?): Node
  return { k = "kbd", p = { keys = names, key = key } } :: any
 end
 
+-- A PR's views as Tern's tabs, with the key that cycles them. A click arrives as a select event whose item is
+-- the tab's id.
+export type ViewTab = { id: string, label: string }
+function M.viewTabs(items: { ViewTab }, active: string): Node
+ local tabs = { k = "tabs", p = { key = "tabs", active = active, items = items } }
+ return el("span", { class = "gp-vs", key = "views" }, { tabs :: any, M.keys("t") })
+end
+
 -- Keys each followed by what they do, as one muted line: "a add · d dismiss".
 function M.keyLine(class: string, hints: { { string } }): Node
  local parts: { Node } = {}
