@@ -99,6 +99,20 @@ local function drawn()
 		assert(string.find(offered, "@Settings|[shift+M]", 1, true) and string.find(offered, "Generate LLM review|[shift+R]", 1, true) and not string.find(offered, "Generate AI guide", 1, true), "a guided page offers Settings and Generate LLM review: " .. offered)
 		s.review.guide.guided = false
 
+		-- Tern draws an overlay only when its anchor names a node on the page.
+		local Page = require("../src/view/page")
+		local paths: { [string]: boolean } = {}
+		local function walk(node: any, at: string)
+			if type(node) ~= "table" then return end
+			local here = if node.p and node.p.key then at .. "." .. node.p.key else at
+			paths[here] = true
+			for _, child in node.c or {} do walk(child, here) end
+		end
+		walk(Page.view(s, motion), "main")
+		s.models = ModelBox.open(a, "explain")
+		local anchor = ((Page.layer(s) :: any).c[2]).p.anchor.node
+		assert(paths[anchor], "the model menu hangs under a drawn Settings button: " .. anchor)
+
 		s.models = ModelBox.open(a, "review")
 		local box = s.models :: ModelBox.ModelBox
 		box.top = 2

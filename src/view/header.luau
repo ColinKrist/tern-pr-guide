@@ -28,9 +28,10 @@ local function reviewButton(s: State.State): Node
  return el("span", { class = "gp-rv-button" .. (if s.reviewOpen then " gp-rv-button-open" else ""), actions = { click = "toggle-review" } }, kids)
 end
 
--- A quiet action in the status row: its icon and key, with its name for screen readers (Tern has no tooltip).
-local function headerAction(name: string, icon: string, keyHint: string, action: string, class: string?): Node
- return el("span", { class = "gp-hdr-act gp-hdr-act-ico" .. (if class then " " .. class else ""), key = action, aria = name, actions = { click = action } }, {
+-- A quiet action in the status row: its icon and key, with its name for screen readers (Tern has no tooltip). `id` is
+-- its node key when a menu hangs under it.
+local function headerAction(name: string, icon: string, keyHint: string, action: string, class: string?, id: string?): Node
+ return el("span", { class = "gp-hdr-act gp-hdr-act-ico" .. (if class then " " .. class else ""), key = id or action, aria = name, actions = { click = action } }, {
   Ui.icon(icon), Ui.keys(keyHint),
  })
 end
@@ -39,7 +40,7 @@ end
 -- run is going, which reads them when it finishes.
 local function settingsAction(run: Agent.Run?, open: boolean): Node?
  if not run or Agent.busy(run) then return nil end
- return headerAction("Settings", "settings", "⇧M", "toggle-models", if open then "gp-hdr-act-open" else nil)
+ return headerAction("Settings", "settings", "⇧M", "toggle-models", if open then "gp-hdr-act-open" else nil, "settings")
 end
 
 -- Pull request: the host's menu of merge, close and the rest, which it hangs under this button. Only on a page the PR
