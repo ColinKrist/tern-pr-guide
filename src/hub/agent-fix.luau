@@ -15,10 +15,13 @@ export type ConflictHunk = {
  resolved: { by: "rule" | "agent", lines: { ResolvedLine } }?,
 }
 export type Stage = "worktree" | "merge" | "rules" | "agent" | "commit"
-export type Run = { key: string, stage: Stage, since: number, worktree: string?, hunks: { ConflictHunk }, left: number }
+-- `session`: the folder the agent's conversation is saved in, once the agent has started (conflict fixes only).
+export type Run = { key: string, stage: Stage, since: number, worktree: string?, hunks: { ConflictHunk }, left: number, session: string? }
 export type Fix = {
  worktree: string, branch: string, base: string, headOid: string,
  commit: string, hunks: { ConflictHunk }, summary: string, usedAgent: boolean,
+ session: string?, -- the agent's saved conversation, which Open agent chat resumes
+ origin: string?, -- the agent's own commit, once a chat has moved the fix past it
 }
 export type Event =
  { kind: "stage", stage: Stage } | { kind: "worktree", path: string }
@@ -28,7 +31,7 @@ export type Event =
  | { kind: "failed", reason: string } | { kind: "stopped" }
 export type Outcome =
  { kind: "running", run: Run } | { kind: "ready", fix: Fix }
- | { kind: "failed", reason: string, worktree: string? } | { kind: "stopped" }
+ | { kind: "failed", reason: string, worktree: string?, session: string? } | { kind: "stopped" }
 
 -- Binding supplies the metadata omitted from Run and Event in the shared contract.
 export type Spec = {
@@ -38,6 +41,7 @@ export type Spec = {
  regenerate: { [string]: { string } }?,
  input: Input?, -- absent preserves the conflict workflow
  sandbox: Sandbox?, -- required when `input` is set: a bot worker never runs unconfined
+ sessionDir: string?, -- where the conflict agent saves its conversation; a bot worker saves none
 }
 type BoundRun = Run & { spec: Spec?, usedAgent: boolean? }
 export type Out = { status: number, stdout: string, stderr: string, timed_out: boolean }
@@ -102,13 +106,17 @@ function M.bind(run: Run, spec: Spec): Run
 end
 
 function M.step(run: Run, event: Event): Outcome
- if event.kind == "failed" then return { kind = "failed", reason = event.reason, worktree = run.worktree } end
+ if event.kind == "failed" then return { kind = "failed", reason = event.reason, worktree = run.worktree, session = run.session } end
  if event.kind == "stopped" then return { kind = "stopped" } end
  local next: BoundRun = table.clone(run) :: BoundRun
  next.hunks = table.clone(run.hunks)
  if event.kind == "stage" then
   next.stage = event.stage
-  if event.stage == "agent" then next.usedAgent = true end
+  if event.stage == "agent" then
+   next.usedAgent = true
+   local spec = next.spec
+   if spec and spec.sessionDir and not spec.input then next.session = spec.sessionDir end
+  end
  elseif event.kind == "worktree" then
   next.worktree, next.stage = event.path, "merge"
  elseif event.kind == "hunks" then
@@ -139,6 +147,7 @@ function M.step(run: Run, event: Event): Outcome
   return { kind = "ready", fix = {
    worktree = next.worktree, branch = spec.branch, base = spec.base, headOid = spec.headOid,
    commit = event.commit, hunks = next.hunks, summary = event.summary, usedAgent = next.usedAgent == true,
+   session = next.session,
   } }
  end
  return { kind = "running", run = next }
@@ -313,6 +322,102 @@ function M.botHunks(diff: string): { ConflictHunk }?
  end
  if string.sub(diff, -1) ~= "\n" or not finish() or sectionHunks == 0 or #hunks == 0 then return nil end
  return hunks
+end
+
+-- Edits made in Open agent chat, reviewed as a bot fix's are: every text edit from the agent's own commit to the
+-- chat's, a hunk each. Nil when the chat made a change Review fix can't show (a binary, deleted, renamed or
+-- mode-changed file).
+function M.chatHunks(diff: string): { ConflictHunk }?
+ if diff == "" then return {} end
+ local hunks = M.botHunks(diff)
+ if not hunks then return nil end
+ for i, hunk in hunks do hunk.id = "chat:" .. i end
+ return hunks
+end
+
+function M.isChat(hunk: ConflictHunk): boolean
+ return string.sub(hunk.id, 1, 5) == "chat:"
+end
+
+local function fileLines(text: string): { string }
+ local lines: { string } = {}
+ for line in string.gmatch(text .. "\n", "([^\n]*)\n") do table.insert(lines, line) end
+ if string.sub(text, -1) == "\n" or text == "" then table.remove(lines) end
+ return lines
+end
+
+-- tools/conflicts bounds each context preview to this many characters, so such a line matches by its start.
+local CONTEXT_WIDTH = 240
+
+local function runAt(lines: { string }, at: number, run: { string }): boolean
+ for i, expected in run do
+  local actual = lines[at + i - 1]
+  if actual == nil then return false end
+  if (if utf8.len(expected) == CONTEXT_WIDTH then string.sub(actual, 1, #expected) ~= expected else actual ~= expected) then return false end
+ end
+ return true
+end
+
+-- A resolved conflict in `text`, its file at a commit made after the agent's: whatever now sits between its recorded
+-- context lines is its resolution. The hunk itself when that is still the agent's; nil when the context no longer marks
+-- exactly one place.
+function M.reanchor(hunk: ConflictHunk, text: string): ConflictHunk?
+ local resolution = hunk.resolved
+ if not resolution then return nil end
+ local lines = fileLines(text)
+ local before, after = hunk.context.before, hunk.context.after
+ local found: { number }? = nil
+ -- With no context before, the conflict opens the file; with none after, it runs to the end.
+ for start = 1, if #before == 0 then 1 else #lines - #before + 1 do
+  if not runAt(lines, start, before) then continue end
+  local from = start + #before
+  local to: number? = if #after == 0 then #lines + 1 else nil
+  if #after > 0 then
+   for at = from, #lines - #after + 1 do
+    if runAt(lines, at, after) then to = at; break end
+   end
+  end
+  if to then
+   if found then return nil end
+   found = { from, to }
+  end
+ end
+ if not found then return nil end
+ local from, to = found[1], found[2]
+ local same = to - from == #resolution.lines
+ local resolved: { ResolvedLine } = {}
+ for i = from, to - 1 do
+  local old = resolution.lines[i - from + 1]
+  if not old or old.text ~= lines[i] then same = false end
+  table.insert(resolved, { tag = "agent", text = lines[i] })
+ end
+ if same then return hunk end
+ -- Decoded sides are shared as they are: Tern tags decoded arrays with a metatable table.clone refuses.
+ return {
+  id = hunk.id, path = hunk.path, start = hunk.start, base = hunk.base, ours = hunk.ours, theirs = hunk.theirs,
+  context = hunk.context, subjects = hunk.subjects, resolved = { by = "agent", lines = resolved },
+ }
+end
+
+-- The fix once Open agent chat moved its worktree to `commit`: each conflict read again from `files` (its file at
+-- `commit`, by path), then the chat's own edits from `diff` (the agent's commit to `commit`). The caller resets what
+-- was reviewed: nothing carries over.
+function M.fromChat(fix: Fix, commit: string, files: { [string]: string }, diff: string): (Fix?, string?)
+ local hunks: { ConflictHunk } = {}
+ for _, hunk in fix.hunks do
+  if M.isChat(hunk) then continue end
+  local text = files[hunk.path]
+  local moved = if text then M.reanchor(hunk, text) else nil
+  if not moved then return nil, "the chat changed the lines around a resolved conflict in " .. hunk.path end
+  table.insert(hunks, moved)
+ end
+ local chat = M.chatHunks(diff)
+ if not chat then return nil, "the chat made a change Review fix can't show (a binary, deleted or renamed file)" end
+ for _, hunk in chat do table.insert(hunks, hunk) end
+ return {
+  worktree = fix.worktree, branch = fix.branch, base = fix.base, headOid = fix.headOid, commit = commit, hunks = hunks,
+  summary = fix.summary, usedAgent = fix.usedAgent, session = fix.session, origin = fix.origin or fix.commit,
+ }, nil
 end
 
 -- A caller supplies all effects. Stop waits for the current process to finish before returning
@@ -496,6 +601,8 @@ function M.engine(spec: Spec, deps: Dependencies, now: number, changed: (Outcome
    if #list.hunks == 0 then return commit() end
    emit({ kind = "stage", stage = "agent" })
    local argv = { spec.omp, "-p", "--model", spec.model }
+   -- A fresh folder per run, so `omp --session-dir <folder> --continue` resumes exactly this conversation.
+   if spec.sessionDir then table.insert(argv, "--session-dir"); table.insert(argv, spec.sessionDir) end
    if spec.effort then table.insert(argv, "--thinking"); table.insert(argv, spec.effort) end
    table.insert(argv, M.prompt(spec.tool))
    command(argv, state.worktree :: string, false, function(out)

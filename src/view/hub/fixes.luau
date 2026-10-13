@@ -9,6 +9,7 @@ local ChecksView = require("./checks")
 local Log = require("../../ci/log")
 local Fixes = require("../../hub/fixes")
 local Model = require("../../hub/model")
+local Progress = require("../progress")
 local State = require("../../hub/state")
 local Text = require("../../text")
 local Ui = require("../ui")
@@ -56,13 +57,22 @@ local function header(s: State.State, pr: Model.HubPR, steps: { Step }, tabs: { 
 	local route = s.route :: State.Route
 	local actions: { Node } = {}
 	local main = State.fixMain(s)
+	local card = State.card(s, pr.key)
+	-- A failed fix's worktree and saved conversation, ahead of Try again.
+	local alternatives: { State.CardAction } = if card then card.more else {}
+	for _, more in alternatives do
+		if more.act == "card-agent-chat" or more.act == "card-agent-worktree" then
+			table.insert(actions, if more.act == "card-agent-chat" then 1 else #actions + 1, el("button", { class = "gp-btn gp-btn-keyed", key = more.act, actions = { click = more.act .. "=" .. pr.key } }, {
+				span("gp-fx-btn-label", more.label), Ui.keys(more.key or ""),
+			}))
+		end
+	end
 	if main then
 		-- The card's own wording ("Fix with agent", "Hand off to Tandem", "Summarize"); the button itself arrives with the agent.
 		table.insert(actions, el("button", { class = "gp-btn gp-btn-keyed" .. (if main.act == "card-rerun" then "" else " gp-fx-agent-btn"), key = "agent", actions = { click = main.act .. "=" .. pr.key } }, {
 			span("gp-fx-btn-label", main.label), Ui.keys(main.key or "A"),
 		}))
 	end
-	local card = State.card(s, pr.key)
 	if card then
 		for _, more in card.more do
 			if more.act == "card-summarize" then
@@ -88,7 +98,11 @@ local function header(s: State.State, pr: Model.HubPR, steps: { Step }, tabs: { 
 	else
 		chips = Fixes.chips(steps)
 	end
-	if card and card.busy then
+	local work = if card then card.work else nil
+	if work then
+		-- The agent at work takes the status line's place, in the same 28px row.
+		table.insert(status, Progress.row("div", "gp-ai gp-ai-busy gp-ai-agent gp-fx-ai", "ai", work.phrase, (s.clock or s.now) - work.since, work.expected))
+	elseif card and card.busy then
 		table.insert(status, span("gp-status-text", card.busy))
 	elseif route.error then
 		table.insert(status, span("gp-fx-error", route.error))
@@ -102,7 +116,7 @@ local function header(s: State.State, pr: Model.HubPR, steps: { Step }, tabs: { 
 	table.insert(status, span("gp-status-sep", "·"))
 	table.insert(status, span("gp-fx-repo", pr.repo))
 	local left = State.fixLeft(s)
-	if left > 0 and #chips > 0 then
+	if left > 0 and #chips > 0 and not work then
 		table.insert(status, span("gp-status-sep", "·"))
 		table.insert(status, span("gp-status-text", left .. " left"))
 	end

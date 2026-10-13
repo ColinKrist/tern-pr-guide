@@ -962,6 +962,8 @@
 .gp-ai-fill { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border-radius: 2px; background: var(--live); transform-origin: left center; transition: transform 1000ms linear; }
 .gp-ai-shine { position: absolute; top: 0; left: 0; width: 25%; height: 100%; background: linear-gradient(90deg, transparent, light-dark(rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0.35)), transparent); animation: gp-shine 1800ms linear infinite; }
 .gp-ai-meta { font-size: 12px; color: var(--t3); }
+/* agent work in the PR hub reads in Agent Purple, the "Agent running" chip's hue; the review page keeps --live */
+.gp-ai-agent { --live: var(--gp-suggestion); }
 .gp-pg0 { transform: scaleX(0.00); }
 .gp-pg1 { transform: scaleX(0.02); }
 .gp-pg2 { transform: scaleX(0.04); }
@@ -1246,6 +1248,13 @@
 .gp-hc-agent-note { display: flex; flex-direction: column; gap: 2px; height: 40px; min-width: 0; overflow: hidden; }
 .gp-hc-agent-message { height: 19px; line-height: 19px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gp-hc-agent-path { height: 19px; line-height: 19px; font-size: 12px; color: var(--t3); white-space: nowrap; overflow-x: auto; overflow-y: hidden; }
+/* a card's running agent or summary: the loading row in its first 19px note row, the only card row that moves */
+.gp-hc-ai { display: flex; gap: 8px; align-items: center; height: 19px; min-width: 0; overflow: hidden; }
+.gp-hc-ai .gp-ai-spark { flex-shrink: 0; }
+.gp-hc-ai .gp-ai-spark .sf-icon, .gp-hc-ai .gp-ai-spark .ico { width: 12px; height: 12px; }
+.gp-hc-ai .gp-ai-phrase { flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; font-size: 13px; font-weight: 500; color: var(--t2); }
+.gp-hc-ai .gp-ai-bar { flex-shrink: 0; width: 72px; height: 3px; }
+.gp-hc-ai .gp-ai-meta { flex-shrink: 0; font-variant-numeric: tabular-nums; }
 .gp-hc-agent .gp-hc-title { font-size: 15px; font-weight: 600; line-height: 1.35; }
 .gp-hc-meta { display: flex; gap: 10px; align-items: center; min-width: 0; min-height: 22px; }
 .gp-hc-lead { flex: 1 1 auto; min-width: 0; display: flex; gap: 8px; align-items: baseline; overflow: hidden; white-space: nowrap; font-size: 12px; color: var(--t3); }
@@ -1417,6 +1426,10 @@
 .gp-fx .gp-title-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gp-fx-hdr { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
 .gp-fx-status { min-height: 28px; }
+/* the fixes page's busy row, in the status line's 28px */
+.gp-fx-ai { flex-wrap: nowrap; min-width: 0; }
+.gp-fx-ai .gp-ai-bar { width: 200px; }
+.gp-fx-ai .gp-ai-meta { font-variant-numeric: tabular-nums; }
 .gp-fx-chip { flex-shrink: 0; padding: 0 7px; border-radius: var(--r-chip); font-family: var(--sans); font-size: 12px; font-weight: 650; line-height: 19px; white-space: nowrap; color: #fff; background: var(--gp-danger-fill); }
 .gp-fx-clear { font-weight: 600; color: var(--gp-added); }
 .gp-fx-repo { font-family: var(--sans); color: var(--t3); }

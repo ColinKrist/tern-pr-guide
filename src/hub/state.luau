@@ -35,10 +35,13 @@ export type AgentFixState =
 	| { kind: "running", run: AgentFix.Run }
 	| { kind: "ready", fix: AgentFix.Fix, reviewed: { [string]: boolean }, review: ReviewFix.Review?, completion: ("push" | "discard")? }
 	| { kind: "pushing", fix: AgentFix.Fix }
-	| { kind: "failed", reason: string, worktree: string?, held: boolean? } -- `held`: the engine still holds the worktree's lease, so its return can be retried
+	| { kind: "failed", reason: string, worktree: string?, held: boolean?, session: string? } -- `session`: the agent's saved conversation. `held`: the engine still holds the worktree's lease, so its return can be retried
 
 -- A pill on a card's chip line. `kind` picks its look.
 export type Chip = { text: string, kind: "bad" | "bad-soft" | "info" | "wait" | "done" | "agent" }
+
+-- What an agent is doing on a card, for its loading row. `since` and `expected` are seconds; the view counts from `since` to `State.clock`.
+export type Work = { phrase: string, since: number, expected: number }
 
 export type Card = {
 	pr: HubPR,
@@ -53,6 +56,7 @@ export type Card = {
 	agent: AgentFixState?,
 	agentSlot: boolean, -- a reserved two-line note region, including before a fix starts
 	agentMessage: string?, agentPath: string?, agentCommit: string?,
+	work: Work?, -- an agent fix or summary under way: its row's phrase, start and expected length
 	summary: Summary?,
 	merge: Model.MergeResolution?,
 	note: string?, -- a merge in flight ("Commented /merge · waiting for the merge") or new commits on an approval; shown under the title
@@ -146,6 +150,8 @@ export type State = {
 	autoMerge: { [string]: boolean }, -- by repo: its "Allow auto-merge" setting, once detection has read it
 	acted: { [string]: boolean }, -- cards the viewer just acted on (merged, updated): their arrival is not toasted
 	busy: { [string]: string }, -- by card key: the action in flight
+	timing: { [string]: { since: number, expected: number } }, -- by card key: when its agent fix or summary began, and how long one usually takes
+	clock: number?, -- seconds: what loading rows count to, ticked each second while one shows; `now` until then
 	refreshedAt: string?,
 	loading: boolean,
 	error: Model.Error?,
@@ -163,6 +169,8 @@ export type MenuRow = { label: string, sub: string?, count: number?, on: boolean
 
 local M = {}
 M.SUMMARIZING = "Summarizing feedback…"
+-- A ready fix's worktree has edits from Open agent chat, which become a commit to review.
+M.COMMITTING = "Committing changes…"
 
 -- Lifecycle data only. The block owns the engine, cancellation and lease effects.
 function M.agentRunning(s: State): string?
@@ -191,7 +199,7 @@ function M.agentOutcome(s: State, key: string, outcome: AgentFix.Outcome): boole
 	elseif outcome.kind == "ready" then
 		s.agents[key] = { kind = "ready", fix = outcome.fix, reviewed = {} }
 	elseif outcome.kind == "failed" then
-		s.agents[key] = { kind = "failed", reason = outcome.reason, worktree = outcome.worktree or current.run.worktree }
+		s.agents[key] = { kind = "failed", reason = outcome.reason, worktree = outcome.worktree or current.run.worktree, session = outcome.session or current.run.session }
 	else
 		s.agents[key] = nil
 	end
@@ -210,9 +218,36 @@ function M.noAgentClone(s: State, key: string, slug: string)
 	M.project(s)
 end
 
-function M.agentFailed(s: State, key: string, reason: string, worktree: string?, held: boolean?)
-	s.agents[key] = { kind = "failed", reason = reason, worktree = worktree, held = held }
+function M.agentFailed(s: State, key: string, reason: string, worktree: string?, held: boolean?, session: string?)
+	local previous = s.agents[key]
+	-- A later failure (a lease return) keeps the conversation the agent already saved.
+	if not session and previous and previous.kind == "failed" then session = previous.session end
+	s.agents[key] = { kind = "failed", reason = reason, worktree = worktree, held = held, session = session }
 	M.project(s)
+end
+
+-- Marks when card `key`'s agent fix or summary began (seconds) and how long one usually takes, for its loading row.
+function M.startTiming(s: State, key: string, since: number, expected: number)
+	s.timing[key] = { since = since, expected = expected }
+end
+
+-- Whether a loading row is on show: an agent fix running, or feedback being summarized. The block ticks each second only then.
+function M.working(s: State): boolean
+	if M.agentRunning(s) then return true end
+	for _, text in s.busy do
+		if text == M.SUMMARIZING then return true end
+	end
+	return false
+end
+
+-- What a chat changed, as the fix to review again. Only the same retained worktree, never one already pushing or
+-- returning its lease, and nothing reviewed before carries over: Push waits for this commit to be reviewed.
+function M.chatUpdated(s: State, key: string, fix: AgentFix.Fix): boolean
+	local current = s.agents[key]
+	if not current or current.kind ~= "ready" or current.completion or current.fix.worktree ~= fix.worktree or fix.commit == current.fix.commit then return false end
+	s.agents[key] = { kind = "ready", fix = fix, reviewed = {} }
+	M.project(s)
+	return true
 end
 
 -- An ephemeral snapshot from Block, never stored in State. A terminal event's path
@@ -259,7 +294,18 @@ function M.agentMessage(agent: AgentFixState): (string, string?, string?)
 		return "Couldn't fix pull request: " .. Fixes.firstLine(reason), agent.worktree, nil
 	end
 	local fix = agent.fix
-	return string.sub(fix.commit, 1, 7) .. " · " .. Fixes.firstLine(fix.summary), fix.worktree, string.sub(fix.commit, 1, 7)
+	local short = string.sub(fix.commit, 1, 7)
+	if fix.origin then return "Fix updated from chat · " .. short, fix.worktree, short end
+	return short .. " · " .. Fixes.firstLine(fix.summary), fix.worktree, short
+end
+
+-- Whether Open agent chat has a conversation to resume, and where: the fix's worktree while the hub holds it. A failed
+-- fix whose worktree went back to the pool has none, since another run may lease it: the caller picks a folder of its own.
+function M.chatOf(agent: AgentFixState?): (string?, string?)
+	if not agent then return nil, nil end
+	if agent.kind == "ready" then return agent.fix.session, agent.fix.worktree end
+	if agent.kind == "failed" then return agent.session, agent.worktree end
+	return nil, nil
 end
 
 local askingOf: (s: State, pr: HubPR) -> string?
@@ -374,7 +420,7 @@ function M.new(prs: { HubPR }, now: number, saved: any): State
 		repositories = repositories, repositoriesEnabled = not (type(saved) == "table" and saved.repositoriesEnabled == false),
 		titleRules = {}, ignoredChecks = {}, filterEdit = nil, sort = sort, search = Fields.create(""), link = Fields.create(""),
 		mode = "board", helpPage = nil, route = nil, checks = nil, checkLists = {}, menu = nil, menuCursor = 1, confirm = nil, methodEdit = nil, folded = folded, recent = {}, merged = {}, walking = false,
-		ringed = {}, agents = {}, details = {}, flakes = {}, summaries = {}, merges = {}, autoMerge = {}, acted = {}, busy = {},
+		ringed = {}, agents = {}, details = {}, flakes = {}, summaries = {}, merges = {}, autoMerge = {}, acted = {}, busy = {}, timing = {}, clock = nil,
 		refreshedAt = nil, loading = false, error = nil, agent = nil, models = nil, links = "tern", prepareGuides = false,
 		keyed = false, born = {}, booted = false,
 	}
@@ -777,18 +823,34 @@ local function toCard(pr: HubPR, placement: Model.Placement, s: State): Card
 				main, more, chips = action("card-agent-retry", "Try again", "A"), {}, { chip("Fix failed", "bad-soft") }
 			end
 			if agent.worktree then table.insert(more, action("card-agent-worktree", "Open worktree", "O")) end
+			if agent.session and not pr.tandem then table.insert(more, action("card-agent-chat", "Open agent chat", "⇧O")) end
+		elseif agent.kind == "ready" then
+			-- ⏎ and a click open Review fix, as hub-open does for a ready card. A fix a chat moved is neutral until reviewed.
+			local again = agent.fix.origin ~= nil
+			main, more = action("open", if again then "Review again" else "Review", "⏎"), {}
+			chips = { if again then chip("Review again", "wait") else chip("Fix ready", "done") }
+			if agent.fix.session then table.insert(more, action("card-agent-chat", "Open agent chat", "⇧O")) end
+			table.insert(more, action("card-agent-worktree", "Open worktree", "O"))
 		else
-			-- Enter and a click use hub-open for Review fix; keep the lifecycle card's stable action slot.
-			main, more, chips = nil, {}, { chip(if agent.kind == "ready" then "Fix ready" else "Pushing fix…", "done") }
+			main, more, chips = nil, {}, { chip("Pushing fix…", "done") }
 		end
+	end
+	local busy = s.busy[pr.key]
+	if busy == M.COMMITTING then message = "Committing changes from chat…" end
+	local work: Work? = nil
+	local timing = s.timing[pr.key]
+	if agent and agent.kind == "running" then
+		work = { phrase = message or "", since = agent.run.since, expected = if timing then timing.expected else 120 }
+	elseif busy == M.SUMMARIZING and timing then
+		work = { phrase = M.SUMMARIZING, since = timing.since, expected = timing.expected }
 	end
 	return {
 		flake = if flake and flake.flaky and flake.reason then "Likely flaky: " .. flake.reason else nil,
 		pr = pr, chips = chips, detail = detail, detailKind = detailKind, column = placement.column, reasons = placement.reasons, main = main, more = more,
 		agent = agent, agentSlot = agent ~= nil or placement.column == "needs_fixes" or (placement.column == "in_review" and not pr.tandem and M.botActionable(pr)),
-		agentMessage = message, agentPath = path, agentCommit = commit,
+		agentMessage = message, agentPath = path, agentCommit = commit, work = work,
 		summary = if agent then nil else summary, merge = s.merges[pr.repo], note = noteFor(s, pr, placement.column),
-		asking = askingOf(s, pr), busy = s.busy[pr.key],
+		asking = askingOf(s, pr), busy = busy,
 		ring = s.ringed[pr.key], selected = s.selected == pr.key, marked = s.marked[pr.key] == true,
 	}
 end

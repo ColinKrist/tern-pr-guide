@@ -1,7 +1,8 @@
 --!strict
 -- Pure helpers for the PR hub's way in. Link and number parsing (the PR a pasted "354", "#354" or
 -- link names, the repo and host of a link, a git remote's repo); the `#prguide-open=` link that opens
--- a PR in the guide; which pane ⌥⌘R opens or focuses; and the status segment's text and redraw timing.
+-- a PR in the guide; the link that opens an agent fix's saved conversation, and the pane that resumes it; which pane
+-- ⌥⌘R opens or focuses; and the status segment's text and redraw timing.
 -- Requires nothing and reads no clock: callers pass `now` in seconds.
 local M = {}
 
@@ -94,6 +95,38 @@ function M.routeArgs(route: OpenRoute): { string }
  local args = { "pr=" .. (if route.search then route.link else tostring(route.number)), "repo=" .. route.root }
  if route.generate then table.insert(args, "generate=true") end
  return args
+end
+
+-- Open agent chat ----------------------------------------------------------------------------------
+
+-- The link the hub opens an agent fix's saved conversation with, which the window's link route claims. It names only
+-- the conversation's folder: where the chat runs and with which `omp` is the `hub.chats` record the hub wrote, so a
+-- link from anywhere else can neither pick a folder nor a command.
+function M.chatLink(id: string): string
+ return "https://github.com/#prguide-chat=" .. id
+end
+
+function M.chatRoute(url: string): string?
+ return string.match(url, "^https://github%.com/#prguide%-chat=([%w%-]+)$")
+end
+
+local function quote(text: string): string
+ return "'" .. (string.gsub(text, "'", "'\\''")) .. "'"
+end
+
+local function plainPath(value: any): boolean
+ return type(value) == "string" and string.sub(value, 1, 1) == "/" and not string.find(value, "%c")
+  and not string.find(value, "/%.%./") and string.sub(value, -3) ~= "/.."
+end
+
+-- The pane that resumes conversation `id` from its record `raw`: `omp --session-dir <folder> --continue` in the
+-- record's folder. Nil unless the record is one the hub writes: the conversation in `sessions` (the plugin's folder
+-- of them), an absolute folder, and an `omp` executable.
+function M.chatLaunch(raw: any, id: string, sessions: string): { cwd: string, command: string }?
+ if type(raw) ~= "table" or not string.match(id, "^[%w%-]+$") then return nil end
+ local dir, cwd, omp = raw.dir, raw.cwd, raw.command
+ if dir ~= sessions .. "/" .. id or not plainPath(cwd) or not plainPath(omp) or not string.match(omp, "/omp$") then return nil end
+ return { cwd = cwd, command = quote(omp) .. " --session-dir " .. quote(dir) .. " --continue" }
 end
 
 -- ⌥⌘R: the hub pane to open ------------------------------------------------------------------------

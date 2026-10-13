@@ -6,9 +6,11 @@
 local Agent = require("../agent")
 local AgentHost = require("../agent-host")
 local Details = require("./details")
+local Fetch = require("../fetch")
 local FilterStore = require("./filter-store")
 local Fixes = require("./fixes")
 local Github = require("../github")
+local Host = require("../host")
 local Log = require("../ci/log")
 local Lookups = require("./lookups")
 local Model = require("./model")
@@ -34,6 +36,8 @@ local function summarize(b: Block, cx: BlockCx, key: string)
 	if b.closed or not pr or s.busy[pr.key] or s.agents[pr.key] then return end
 	if not b.fixture and not b.agent then return cx:toast("error", "Couldn't summarize feedback: no agent is available") end
 	local signature = State.feedbackSignature(pr)
+	local since = Host.time() - b.skew
+	State.startTiming(s, pr.key, since, Fetch.expectedHubSeconds("summary"))
 	State.setBusy(s, pr.key, State.SUMMARIZING)
 	draw(b, cx)
 	readFeedback(b, pr, function(details, problem)
@@ -50,6 +54,8 @@ local function summarize(b: Block, cx: BlockCx, key: string)
 				if not text or not details or not fresh or not current or Summary.prompt(fresh) ~= Summary.prompt(details)
 					or not State.installSummary(s, fresh, text) then
 					cx:toast("error", "Couldn't summarize feedback: " .. reasonOf(err or why or "The answer is incomplete or feedback changed"))
+				elseif not b.fixture then
+					Fetch.saveHubSeconds("summary", Host.time() - b.skew - since)
 				end
 				draw(b, cx)
 			end
@@ -568,6 +574,8 @@ local function reviewEffect(b: Block, cx: BlockCx, action: "push" | "discard")
 	local verb = if action == "push" then "push" else "discard"
 	if not request then return cx:toast("error", "Couldn't " .. verb .. " the fix: wait for the fix to load") end
 	if action == "push" and page.ask then return end
+	-- A chat sync still reading the worktree may be about to change the fix.
+	if action == "push" and b.chats[request.key] == Runtime.CHAT_SYNCING then return cx:toast("error", "Couldn't push the fix: the agent chat's changes are still being read") end
 	local plan, problem = ReviewFix.plan(action, request, page.ask)
 	if not plan then return cx:toast("error", "Couldn't " .. verb .. " the fix: " .. (problem or "no action is available")) end
 	local agent = b.s.agents[request.key]

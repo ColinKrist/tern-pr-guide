@@ -56,10 +56,12 @@ local function settleAgent(b: Block, cx: BlockCx, flight: AgentFlight, outcome: 
 	if outcome.kind == "failed" then flight.failure = outcome.reason end
 	-- A ready callback is preserved even if closure was detected just before it arrived.
 	if outcome.kind == "ready" then
+		local timing = b.s.timing[flight.key]
+		if timing and not b.fixture then Fetch.saveHubSeconds(if flight.bot then "bot" else "fix", Host.time() - timing.since) end
 		b.s.agents[flight.key] = { kind = "ready", fix = outcome.fix, reviewed = {} }
 		State.project(b.s)
 	elseif outcome.kind == "failed" and b.closed then
-		State.agentFailed(b.s, flight.key, outcome.reason, outcome.worktree)
+		State.agentFailed(b.s, flight.key, outcome.reason, outcome.worktree, nil, outcome.session)
 	elseif not b.closed then
 		State.agentOutcome(b.s, flight.key, outcome)
 	end
@@ -169,6 +171,7 @@ local function beginAgent(b: Block, cx: BlockCx, key: string, mode: "fix" | "clo
 	b.s.now = if b.fixture then b.s.now else Host.time()
 	if not State.beginAgent(b.s, pr.key, b.s.now) then return cx:toast("info", "One fix at a time") end
 	local flight: AgentFlight = { key = pr.key, settled = false, stopping = false, releasing = false, bot = b.botKeys[pr.key] == true }
+	State.startTiming(b.s, pr.key, b.s.now, Fetch.expectedHubSeconds(if flight.bot then "bot" else "fix"))
 	b.agentFlight = flight
 	draw(b, cx)
 	if not carryOn(b, cx, flight) then return end
@@ -307,8 +310,9 @@ local function retryAgent(b: Block, cx: BlockCx, key: string)
 end
 local function openWorktree(b: Block, cx: BlockCx, key: string)
 	local agent = b.s.agents[key]
-	if not agent or agent.kind ~= "failed" or not agent.worktree then return end
-	if b.fixture then return cx:toast("info", "Sample worktree", agent.worktree) end
+	local worktree = if not agent then nil elseif agent.kind == "failed" then agent.worktree elseif agent.kind == "ready" then agent.fix.worktree else nil
+	if not worktree then return end
+	if b.fixture then return cx:toast("info", "Sample worktree", worktree) end
 	-- Finder is the available folder-opening surface; the path stays a single argv.
 	local replied = false
 	local function opened(out: Github.Out)
@@ -317,8 +321,62 @@ local function openWorktree(b: Block, cx: BlockCx, key: string)
 		if b.closed then return end
 		if out.status ~= 0 or out.timed_out then cx:toast("error", "Couldn't open worktree: " .. reasonOf(out.stderr ~= "" and out.stderr or "Opening the folder failed")) end
 	end
-	local ok, err = pcall(Fetch.runner, { "open", agent.worktree }, { timeout_ms = 15_000 }, opened)
+	local ok, err = pcall(Fetch.runner, { "open", worktree }, { timeout_ms = 15_000 }, opened)
 	if not ok then opened({ status = -1, stdout = "", stderr = tostring(err), timed_out = false }) end
+end
+
+-- ⇧O: the fix's saved conversation in an interactive `omp` pane, in the fix worktree. A failed fix whose worktree went
+-- back to the pool resumes in the conversation's own folder, since another run may lease that worktree. The block
+-- can't open panes: it opens a `#prguide-chat=` link (GitHub's home page should no route claim it), which the window's link route claims, and a second ⇧O while that
+-- pane is open focuses it.
+local function openChat(b: Block, cx: BlockCx, key: string)
+	local agent, pr = b.s.agents[key], State.prOf(b.s, key)
+	local session, worktree = State.chatOf(agent)
+	if not agent or not session or not pr or (agent.kind == "failed" and pr.tandem) then return end
+	if b.fixture then return cx:toast("info", "Sample agent chat", worktree or session) end
+	if not b.agent then return cx:toast("error", "Couldn't open the agent chat: no agent is available") end
+	local link, err = AgentHost.offerChat(session, worktree or session, (b.agent :: Agent.Agent).command)
+	if not link then return cx:toast("error", "Couldn't open the agent chat: " .. (err or "no link")) end
+	-- What the chat changes in a ready fix's worktree is read when the reader comes back to the hub (syncChats).
+	if agent.kind == "ready" and b.chats[key] == nil then b.chats[key] = "" end
+	cx:open(link)
+end
+
+-- Reads what Open agent chat changed in each ready fix it was opened on: edits are committed ("Committing changes…"),
+-- and a new commit becomes the fix to review again, with nothing reviewed and Push locked until it is. A head that
+-- couldn't be taken is reported once.
+local function syncChats(b: Block, cx: BlockCx)
+	if b.fixture or b.closed then return end
+	for key, seen in b.chats do
+		local agent = b.s.agents[key]
+		if not agent or agent.kind ~= "ready" or agent.completion then
+			b.chats[key] = nil
+			continue
+		end
+		if seen == Runtime.CHAT_SYNCING then continue end
+		b.chats[key] = Runtime.CHAT_SYNCING
+		local ok, problem = pcall(AgentHost.syncAgentFixChat, agent.fix, function()
+			if b.closed then return end
+			State.setBusy(b.s, key, State.COMMITTING)
+			draw(b, cx)
+		end, function(updated, err, head)
+			if b.s.busy[key] == State.COMMITTING then State.setBusy(b.s, key, nil) end
+			b.chats[key] = head or seen
+			if b.closed then return end
+			if b.s.agents[key] == agent and updated and State.chatUpdated(b.s, key, updated) then
+				local route = b.s.route
+				if route and route.kind == "review-fix" and route.key == key then Details.openReviewFix(b, cx, key) end
+				cx:toast("info", "Fix updated from chat · " .. string.sub(updated.commit, 1, 7), "Review it again before pushing")
+			elseif err and head ~= seen then
+				cx:toast("error", "Couldn't update the fix from chat: " .. err)
+			end
+			draw(b, cx)
+		end)
+		if not ok then
+			b.chats[key] = seen
+			cx:toast("error", "Couldn't update the fix from chat: " .. tostring(problem))
+		end
+	end
 end
 
 return {
@@ -327,4 +385,6 @@ return {
 	stopAgent = stopAgent,
 	retryAgent = retryAgent,
 	openWorktree = openWorktree,
+	openChat = openChat,
+	syncChats = syncChats,
 }

@@ -362,6 +362,20 @@ function M.saveSeconds(pass: Agent.Pass, seconds: number)
  pcall(Host.kv.set, SECONDS_KEYS[pass], seconds)
 end
 
+-- The same for the hub's agent work: a merge-conflict fix, a bot-comment fix, a feedback summary.
+export type HubWork = "fix" | "bot" | "summary"
+local HUB_SECONDS_KEYS: { [HubWork]: string } = { fix = "hub.fixSeconds", bot = "hub.botFixSeconds", summary = "hub.summarySeconds" }
+local HUB_DEFAULT_SECONDS: { [HubWork]: number } = { fix = 240, bot = 180, summary = 45 }
+
+function M.expectedHubSeconds(work: HubWork): number
+ local ok, seconds = pcall(function() return Host.kv.get(HUB_SECONDS_KEYS[work]) end)
+ return if ok and type(seconds) == "number" and seconds > 0 then seconds else HUB_DEFAULT_SECONDS[work]
+end
+
+function M.saveHubSeconds(work: HubWork, seconds: number)
+ if seconds > 0 then pcall(function() Host.kv.set(HUB_SECONDS_KEYS[work], seconds) end) end
+end
+
 -- The PRs the reader opened lately, newest first, which the hub lists under Review requests. They
 -- live in `hub.recent`; the picker kept them in `recent`, which is read until the hub moves them.
 local RECENT_KEY, LEGACY_RECENT_KEY = "hub.recent", "recent"

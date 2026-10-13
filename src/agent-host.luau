@@ -201,6 +201,53 @@ function M.findAgentClone(near: Fetch.Repo?, dir: string, slug: string, ask: (st
  }, done)
 end
 
+-- Open agent chat ------------------------------------------------------------------------------------
+
+-- The plugin's folder of saved agent conversations, one folder per conflict fix run.
+local function sessionsRoot(): string
+ return Host.plugin.data .. "/agent-sessions"
+end
+
+-- A new, empty folder for one run's conversation; nil when it can't be made, and the run then saves none.
+function M.sessionFolder(key: string, now: number): string?
+ local id = (string.gsub(string.lower(key), "[^%w]+", "-")) .. "-" .. math.floor(now) .. "-" .. math.floor(Host.now() % 1e6)
+ local dir = sessionsRoot() .. "/" .. id
+ local ok = pcall(function()
+  if not Host.fs.exists(sessionsRoot()) then Host.fs.mkdir(sessionsRoot()) end
+  if not Host.fs.exists(dir) then Host.fs.mkdir(dir) end
+ end)
+ return if ok then dir else nil
+end
+
+-- Where each conversation the hub offered resumes, by folder name, which the window's link route reads (Links.chatLaunch).
+local CHATS_KEY, CHATS_CAP = "hub.chats", 20
+
+-- Records how conversation `session` resumes, in `cwd` with `omp` at `command`, and returns the link that opens it.
+function M.offerChat(session: string, cwd: string, command: string): (string?, string?)
+ local id = string.match(session, "^" .. (string.gsub(sessionsRoot(), "%p", "%%%0")) .. "/([%w%-]+)$")
+ if not id then return nil, "the conversation isn't in PR Guide's folder" end
+ local ok, err = pcall(function()
+  local saved = Host.kv.get(CHATS_KEY)
+  -- Rebuilt as plain tables: Tern tags decoded kv tables with a metatable table.clone refuses.
+  local chats: { [string]: any } = {}
+  local order: { { id: string, at: number } } = {}
+  if type(saved) == "table" then
+   for name, record in saved do
+    if type(name) == "string" and type(record) == "table" and name ~= id then
+     chats[name] = { dir = record.dir, cwd = record.cwd, command = record.command, at = record.at }
+     table.insert(order, { id = name, at = if type(record.at) == "number" then record.at else 0 })
+    end
+   end
+  end
+  table.sort(order, function(a, b) return a.at > b.at end)
+  for i = CHATS_CAP, #order do chats[order[i].id] = nil end
+  chats[id] = { dir = session, cwd = cwd, command = command, at = Host.time() }
+  Host.kv.set(CHATS_KEY, chats)
+ end)
+ if not ok then return nil, Text.errorLine(err) end
+ return Links.chatLink(id), nil
+end
+
 local activeAgentFix: AgentFix.Engine? = nil
 local activeBotFix: AgentFix.Fix? = nil
 
@@ -219,7 +266,10 @@ function M.startAgentFix(request: AgentFixRequest, agent: Agent.Agent, now: numb
  if request.number < 1 or request.number % 1 ~= 0 or not string.match(request.headOid, "^%x+$") or string.sub(request.base, 1, 1) == "-" or request.base == "" then
   done(nil, "Invalid PR refs"); return nil
  end
+ -- The conflict agent saves its conversation in a folder of its own, for Open agent chat; a bot worker saves none.
+ local sessionDir = if request.input then nil else M.sessionFolder(request.key, now)
  local spec: AgentFix.Spec = {
+  sessionDir = sessionDir,
   key = request.key, clone = request.clone, checkout = request.checkout,
   pool = Host.getenv("TANDEM_POOL_ROOT") or (home .. "/.tandem/pool"),
   branch = request.branch, base = request.base, headOid = request.headOid, number = request.number,
@@ -348,6 +398,74 @@ function M.readAgentFix(fix: AgentFix.Fix, done: (AgentFixRead?, string?) -> ())
  nextCommand()
 end
 
+-- What Open agent chat did to a ready fix's worktree, read when the reader comes back to the hub. Edits the chat left
+-- uncommitted are committed first, after `committing` is called. `done` gets the fix to review again (nil when the
+-- worktree is still at the fix), why the chat's work can't be reviewed here, and the head that was read.
+function M.syncAgentFixChat(fix: AgentFix.Fix, committing: () -> (), done: (AgentFix.Fix?, string?, string?) -> ())
+ if not ownsAgentFix(fix) then return done(nil, nil, nil) end
+ local finished = false
+ local function finish(updated: AgentFix.Fix?, err: string?, head: string?)
+  if finished then return end
+  finished = true
+  done(updated, err, head)
+ end
+ local function git(args: { string }, ok: (Github.Out) -> (), accept: number?)
+  local argv = { "git", "--literal-pathspecs", "-C", fix.worktree }
+  table.move(args, 1, #args, #argv + 1, argv)
+  local called = false
+  local function reply(out: Github.Out)
+   if called then return end
+   called = true
+   if not ownsAgentFix(fix) then return finish(nil, "the worktree lease changed", nil) end
+   if out.timed_out or (out.status ~= 0 and out.status ~= accept) then
+    return finish(nil, if out.timed_out then "Git timed out" else Text.errorLine(if out.stderr ~= "" then out.stderr else "Git failed"), nil)
+   end
+   ok(out)
+  end
+  local ran, err = pcall(Fetch.runner, argv, { cwd = fix.worktree, timeout_ms = Fetch.GIT_MS }, reply)
+  if not ran then reply({ status = -1, stdout = "", stderr = tostring(err), timed_out = false }) end
+ end
+ local function read(head: string)
+  if head == fix.commit then return finish(nil, nil, head) end
+  git({ "merge-base", "--is-ancestor", fix.commit, head }, function(ancestor)
+   if ancestor.status ~= 0 then return finish(nil, "the chat moved the worktree off the fix commit", head) end
+   git({ "diff", "--no-color", "--no-ext-diff", "--no-textconv", "--no-renames", "--unified=3", "--src-prefix=a/", "--dst-prefix=b/", fix.origin or fix.commit, head, "--" }, function(diff)
+    local paths: { string } = {}
+    for _, hunk in fix.hunks do
+     if not AgentFix.isChat(hunk) and not table.find(paths, hunk.path) then table.insert(paths, hunk.path) end
+    end
+    local files: { [string]: string } = {}
+    local index = 0
+    local function nextFile()
+     index += 1
+     local path = paths[index]
+     if not path then
+      local updated, why = AgentFix.fromChat(fix, head, files, diff.stdout)
+      return finish(updated, why, head)
+     end
+     git({ "show", "--no-ext-diff", "--no-textconv", head .. ":" .. path }, function(out)
+      files[path] = out.stdout
+      nextFile()
+     end)
+    end
+    nextFile()
+   end)
+  end, 1)
+ end
+ local function readHead()
+  git({ "rev-parse", "HEAD" }, function(out) read(Text.trimEnd(out.stdout)) end)
+ end
+ git({ "status", "--porcelain" }, function(status)
+  if not string.find(status.stdout, "%S") then return readHead() end
+  committing()
+  git({ "add", "--all" }, function()
+   git({ "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", "commit", "--no-verify", "-m", "Apply changes from the agent chat" }, function() readHead() end)
+  end)
+ end)
+end
+
+local CHAT_EDITS = "the worktree has changes from the agent chat; go back to the board to review them"
+
 -- P is the only caller. Validate the pure plan again, read the PR's actual head repo
 -- (including forks), and preserve Git's ordinary non-fast-forward protection.
 function M.pushAgentFix(plan: ReviewFix.Plan, canPush: () -> boolean, done: (boolean?, string?) -> ())
@@ -374,26 +492,38 @@ function M.pushAgentFix(plan: ReviewFix.Plan, canPush: () -> boolean, done: (boo
   local ok, err = pcall(Fetch.runner, argv, { cwd = fix.worktree, timeout_ms = 60_000 }, reply)
   if not ok then reply({ status = -1, stdout = "", stderr = tostring(err), timed_out = false }) end
  end
- run({ "gh", "pr", "view", tostring(request.number), "--repo", request.repo, "--json", "headRefName,headRefOid,headRepository,headRepositoryOwner" }, function(out)
-  local ok, meta = pcall(Host.json.decode, out.stdout)
-  if not ok or type(meta) ~= "table" or meta.headRefName ~= fix.branch or type(meta.headRepository) ~= "table" then
-   return finish(nil, "The pull request branch changed or is missing")
-  end
-  local remoteRepo = meta.headRepository.nameWithOwner
-  if not remoteRepo and type(meta.headRepositoryOwner) == "table" and type(meta.headRepositoryOwner.login) == "string" and type(meta.headRepository.name) == "string" then
-   remoteRepo = meta.headRepositoryOwner.login .. "/" .. meta.headRepository.name
-  end
-  if type(remoteRepo) ~= "string" then return finish(nil, "The pull request head repository is missing") end
-  local remotePlan, err = ReviewFix.plan("push", request, nil, remoteRepo)
-  if not remotePlan or not remotePlan.command then return finish(nil, err) end
-  local command = remotePlan.command
-  -- Reconcile an earlier push whose response was lost. Never send it twice on a cleanup retry.
-  if meta.headRefOid ~= fix.headOid and meta.headRefOid ~= fix.commit then return finish(nil, "The pull request head changed; refresh the board") end
-  run({ "git", "-C", fix.worktree, "ls-remote", "--heads", command.argv[5], "refs/heads/" .. fix.branch }, function(remote)
-   local head = string.match(remote.stdout, "^(%x+)%s+refs/heads/")
-   if head == fix.commit then return finish(true, nil) end
-   if head ~= fix.headOid then return finish(nil, "The remote branch changed; refresh the board") end
-   run(command.argv, function() finish(true, nil) end)
+ local function pushReviewed()
+  run({ "gh", "pr", "view", tostring(request.number), "--repo", request.repo, "--json", "headRefName,headRefOid,headRepository,headRepositoryOwner" }, function(out)
+   local ok, meta = pcall(Host.json.decode, out.stdout)
+   if not ok or type(meta) ~= "table" or meta.headRefName ~= fix.branch or type(meta.headRepository) ~= "table" then
+    return finish(nil, "The pull request branch changed or is missing")
+   end
+   local remoteRepo = meta.headRepository.nameWithOwner
+   if not remoteRepo and type(meta.headRepositoryOwner) == "table" and type(meta.headRepositoryOwner.login) == "string" and type(meta.headRepository.name) == "string" then
+    remoteRepo = meta.headRepositoryOwner.login .. "/" .. meta.headRepository.name
+   end
+   if type(remoteRepo) ~= "string" then return finish(nil, "The pull request head repository is missing") end
+   local remotePlan, err = ReviewFix.plan("push", request, nil, remoteRepo)
+   if not remotePlan or not remotePlan.command then return finish(nil, err) end
+   local command = remotePlan.command
+   -- Reconcile an earlier push whose response was lost. Never send it twice on a cleanup retry.
+   if meta.headRefOid ~= fix.headOid and meta.headRefOid ~= fix.commit then return finish(nil, "The pull request head changed; refresh the board") end
+   run({ "git", "-C", fix.worktree, "ls-remote", "--heads", command.argv[5], "refs/heads/" .. fix.branch }, function(remote)
+    local head = string.match(remote.stdout, "^(%x+)%s+refs/heads/")
+    if head == fix.commit then return finish(true, nil) end
+    if head ~= fix.headOid then return finish(nil, "The remote branch changed; refresh the board") end
+    run(command.argv, function() finish(true, nil) end)
+   end)
+  end)
+ end
+ -- A fix with a saved conversation may have been changed in Open agent chat: never push while its worktree holds
+ -- edits or a commit the reader hasn't reviewed. Only `fix.commit` is ever pushed.
+ if not fix.session then return pushReviewed() end
+ run({ "git", "-C", fix.worktree, "status", "--porcelain", "--untracked-files=no" }, function(status)
+  if string.find(status.stdout, "%S") then return finish(nil, CHAT_EDITS) end
+  run({ "git", "-C", fix.worktree, "rev-parse", "HEAD" }, function(head)
+   if Text.trimEnd(head.stdout) ~= fix.commit then return finish(nil, CHAT_EDITS) end
+   pushReviewed()
   end)
  end)
 end

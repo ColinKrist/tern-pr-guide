@@ -99,7 +99,9 @@ function M.build(fix: AgentFix.Fix, files: { [string]: string }, details: Fixes.
 	local positions: { [string]: { [number]: boolean } } = {}
 	for _, hunk in fix.hunks do
 		local snapshot = if originals then originals[hunk.id] else nil
-		if originals and (not snapshot or snapshot.path ~= hunk.path or snapshot.start ~= hunk.start) then return fail("the original conflict is missing or changed") end
+		-- A chat edit has no journal entry: its sides are the hunk's own, read from the commit like any other.
+		local chat = AgentFix.isChat(hunk)
+		if originals and not chat and (not snapshot or snapshot.path ~= hunk.path or snapshot.start ~= hunk.start) then return fail("the original conflict is missing or changed") end
 		local resolution = hunk.resolved
 		local text = files[hunk.path]
 		if not resolution or text == nil then return fail("a conflict resolution is missing") end
@@ -130,8 +132,8 @@ function M.build(fix: AgentFix.Fix, files: { [string]: string }, details: Fixes.
 		if not found then return fail("the commit differs from the recorded resolution") end
 		local location = (found :: number) + #hunk.context.before
 		local used = positions[hunk.path] or {}
-		if used[location] then return fail("conflicts share a resolution") end
-		used[location], positions[hunk.path] = true, used
+		if used[location] and not chat then return fail("conflicts share a resolution") end
+		if not chat then used[location], positions[hunk.path] = true, used end
 		local lines: { Line } = {}
 		local function add(tag: AgentFix.LineTag, value: string)
 			table.insert(lines, { tag = tag, text = value, label = LABELS[tag], number = (found :: number) + #lines })

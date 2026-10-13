@@ -4,6 +4,7 @@ local Agent = require("../agent")
 local Guide = require("../guide")
 local Help = require("./help")
 local Model = require("../hub/model")
+local Progress = require("./progress")
 local Review = require("../review")
 local ReviewPanel = require("./review-panel")
 local SearchPanel = require("./search-panel")
@@ -56,42 +57,10 @@ end
 -- What each pass's row says it is doing.
 local EXPLAINING, REVIEWING = "Explaining the changes…", "Reviewing for issues…"
 
--- Steps the bar fill is drawn in; Tern nodes take no inline style, so each step is a class.
-local BAR_STEPS = 50
--- Letters past this many write in together with the last one.
-local STAGGERED_LETTERS = 30
-
--- `text` one letter per node, each writing in a little after the one before.
-local function writing(text: string): { Node }
- local letters = {}
- for i, code in utf8.codes(text) do
-  local letter = if code == 32 then "\u{00A0}" else utf8.char(code)
-  table.insert(letters, el("span", { class = "gp-ai-ch gp-ai-cd" .. math.min(#letters + 1, STAGGERED_LETTERS), key = "c" .. i, text = letter }))
- end
- return letters
-end
-
-local function clock(run: Agent.Run, pass: Agent.Pass): string
- local seconds = run.seconds[pass]
- return string.format("%d:%02d", math.floor(seconds / 60), seconds % 60)
-end
-
-local function bar(run: Agent.Run, pass: Agent.Pass, shine: boolean): Node
- local step = math.floor(Agent.progress(run.seconds[pass], run.expected[pass]) * BAR_STEPS + 0.5)
- local kids = { el("span", { class = "gp-ai-fill gp-pg" .. step, key = "fill" }) }
- if shine then table.insert(kids, el("span", { class = "gp-ai-shine", key = "shine" })) end
- return el("span", { class = "gp-ai-bar", key = "bar" }, kids)
-end
-
 -- The explanation going, with nothing to read yet: a turning spark, the phrase written in once,
 -- an estimated progress bar, and the clock.
 local function explainingRow(run: Agent.Run): Node
- return el("div", { class = "gp-ai gp-ai-busy", key = "ai" }, {
-  el("span", { class = "gp-ai-spark", key = "spark" }, { Ui.icon("sparkle") }),
-  el("span", { class = "gp-ai-phrase", key = "phrase" }, writing(EXPLAINING)),
-  bar(run, "explain", true),
-  el("span", { class = "gp-ai-meta", key = "meta", text = clock(run, "explain") }),
- })
+ return Progress.row("div", "gp-ai gp-ai-busy", "ai", EXPLAINING, run.seconds.explain, run.expected.explain)
 end
 
 -- The review going under a page the reader can already read: one still, muted run of a spark, the
@@ -100,8 +69,8 @@ local function reviewing(run: Agent.Run): Node
  return el("span", { class = "gp-ai-quiet", key = "reviewing" }, {
   el("span", { class = "gp-ai-quiet-icon", key = "spark" }, { Ui.icon("sparkle") }),
   span("gp-ai-quiet-text", REVIEWING),
-  bar(run, "review", false),
-  el("span", { class = "gp-ai-meta", key = "meta", text = clock(run, "review") }),
+  Progress.bar(run.seconds.review, run.expected.review, false),
+  el("span", { class = "gp-ai-meta", key = "meta", text = Agent.clock(run.seconds.review) }),
  })
 end
 

@@ -549,10 +549,12 @@ type AgentFixInput = { kind: "bot"; details: FixDetails; authors?: string[] }
 type AgentFix = {
 	worktree: string; branch: string; base: string; headOid: string
 	commit: string; hunks: ConflictHunk[]; summary: string; usedAgent: boolean
+	session?: string // the folder the conflict agent saved its conversation in (omp --session-dir); plugin only
+	origin?: string // the agent's own commit, once Open agent chat moved the fix past it; hunks then add "chat:N" edits
 }
 type AgentOutcome =
 	| { kind: "running"; run: AgentRun } | { kind: "ready"; fix: AgentFix }
-	| { kind: "failed"; reason: string; worktree?: string } | { kind: "stopped" }
+	| { kind: "failed"; reason: string; worktree?: string; session?: string } | { kind: "stopped" }
 type Lease = { path: string; id: string; holder: string }
 interface AgentEngine {
 	stop(): void
@@ -575,13 +577,18 @@ interface AgentHost {
 	returnAgentFix(path: string): Promise<Result<true>>
 	readAgentFix(fix: AgentFix): Promise<Result<AgentFixRead>>
 	pushAgentFix(plan: ReviewFixPlan, canPush: () => boolean): Promise<Result<true>>
+	// Plugin only (Open agent chat): sessionFolder(key, now) makes a run's conversation folder; offerChat(session, cwd, command)
+	// writes kv "hub.chats" and returns the https://github.com/#prguide-chat=<id> link the window's link route claims;
+	// syncAgentFixChat(fix, committing) commits a ready fix worktree's edits and returns AgentFix.fromChat's fix to review again.
 	// Plugin only: agentClones, rememberAgentClone, findAgentClone (kv "hub.clones", the folder prompt).
 }
 ```
 
 `startAgentFix` holds one engine at a time (`activeAgentFix`) and refuses a second ("An agent fix already holds a worktree"). `changed` streams outcomes while `done` settles once. In a web app, run the engine as a worker job and stream `AgentOutcome` to the browser over server-sent events or a WebSocket.
 
-`pushAgentFix` checks the plan again, reads the PR (`gh pr view N --repo R --json headRefName,headRefOid,headRepository,headRepositoryOwner`, which is `GET /pulls/{n}`: `head.ref`, `head.sha`, `head.repo.full_name`), refuses when the head moved, then runs `git ls-remote` so a push whose answer was lost is never sent twice, then `git push`. It calls `canPush()` before every command. Keep all three checks.
+`pushAgentFix` checks the plan again, reads the PR (`gh pr view N --repo R --json headRefName,headRefOid,headRepository,headRepositoryOwner`, which is `GET /pulls/{n}`: `head.ref`, `head.sha`, `head.repo.full_name`), refuses when the head moved, then runs `git ls-remote` so a push whose answer was lost is never sent twice, then `git push`. It calls `canPush()` before every command. Keep all three checks. A fix with a `session` also refuses to push while its worktree has tracked edits or a HEAD other than `fix.commit`: what Open agent chat changed is reviewed first.
+
+Loading rows (`State.Work`, `Card.work`) count from `since` to `State.clock`. `Runtime.draw` and a 1 s `pulse` timer set the clock only while `State.working` is true, and a render slower than 20 ms stretches the next tick to 5 s. In a web app this is a client-side interval.
 
 `hub/agent-run.luau` reads the PR's refs before an engine starts with `Github.commands.refs` (see B.3). It runs that command through `Fetch.runner` directly, because it needs the raw JSON rather than the client's error mapping. In the port it is the same `GithubClient` call.
 
@@ -600,6 +607,8 @@ The store is the `Host.kv` keys the plugin writes. Every window of a Tern sessio
 | `model` | `{ model, effort?, lens, explainModel?, explainEffort? }`: `model` and `effort` are the review model, which agent fixes also use; `explainModel` is kept only once the reader picks one, and until then OMP's `smol` role explains. A `review` switch older versions wrote is ignored on read and dropped on the next save | `AgentHost.saveChoice` (the review page's model menu and the hub's Settings), read again by `AgentHost.refreshChoice` when either opens | one |
 | `runSeconds` | number: the last explanation's seconds | `Fetch.saveSeconds("explain")` | one |
 | `reviewSeconds` | number: the last review's seconds | `Fetch.saveSeconds("review")` | one |
+| `hub.fixSeconds`, `hub.botFixSeconds`, `hub.summarySeconds` | number: the last merge-conflict fix's, bot-comment fix's and feedback summary's seconds, which the hub's loading bars estimate from (defaults 240, 180, 45) | `Fetch.saveHubSeconds` | one each |
+| `hub.chats` | `Record<id, { dir, cwd, command, at }>`: how each conversation Open agent chat offered resumes, read by the window's link route (`Links.chatLaunch`) | `AgentHost.offerChat` | 20, oldest `at` dropped. Plugin only. Drop. |
 | `links` | `"tern" \| "browser"`: where GitHub links open | `Fetch.saveLinkTarget` (Settings, `hub-links`) | one. Drop: a web app opens links in a new tab. |
 | `hub.prepare` | boolean: prepare AI guides for review requests in the background; missing means off | `Fetch.savePrepareGuides` (Settings, `hub-guides`) | one |
 | `hub.preparing` | `{ key: "owner/repo#n@<head>", at: seconds }`: the PR a window is preparing a guide for; another window passes that PR by until it is returned or 20 minutes old | `Prepare` (`src/hub/prepare.luau`) | one |
@@ -734,6 +743,7 @@ Port the table as is, as a `Record<string, (b, cx, value) => void>` and one `dis
 | `card-agent-stop` | `AgentRun.stopAgent` |
 | `card-agent-retry` | `AgentRun.retryAgent` |
 | `card-agent-worktree` | `AgentRun.openWorktree` |
+| `card-agent-chat` | `AgentRun.openChat` (⇧O and the ▾ row): opens the conversation's link; the window focuses its pane when it is already open. Plugin only |
 | `card-summarize` | `Ops.summarize` |
 | `card-method` | `State.openMenu(s, "merge")` |
 | `hub-refresh` | `Refresh.refetch`, or `AgentRun.advanceAgentFixture` or `Refresh.stepFixture` on a sample board |
