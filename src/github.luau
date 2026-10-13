@@ -835,10 +835,6 @@ M.commands = {
 	updateBranch = function(pr: HubPR): Command
 		return { argv = { "gh", "pr", "update-branch", tostring(pr.number), "--repo", pr.repo }, stdin = nil }
 	end,
-	-- Runs the failed jobs of one workflow run again; zero tokens, and never sent but by a press.
-	rerun = function(repo: string, runId: number): Command
-		return { argv = { "gh", "run", "rerun", tostring(runId), "--failed", "--repo", repo }, stdin = nil }
-	end,
 	-- Replies in a review thread, and resolves one: GraphQL writes, the only way to do either.
 	reply = function(pr: HubPR, threadId: string, body: string): Command
 		return {

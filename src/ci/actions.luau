@@ -1,7 +1,7 @@
 --!strict
--- GitHub Actions logs for the fixes page: which failing checks are Actions jobs, the `gh run view --log-failed`
--- command that reads one, and the cut that keeps the lines around its errors. It reaches GitHub only through the
--- runner it is given.
+-- GitHub Actions for the fixes page and Re-run failed checks: which failing checks are Actions jobs, the
+-- `gh run view --log-failed` command that reads one, the cut that keeps the lines around its errors, and
+-- `gh run rerun --failed` for each failed run. It reaches GitHub only through the runner it is given.
 local Log = require("./log")
 
 local M = {}
@@ -24,6 +24,17 @@ function M.command(repo: string, check: Log.Check): { string }
 		table.insert(argv, job)
 	end
 	return argv
+end
+
+-- Runs the failed jobs of one workflow run again; zero tokens, and never sent but by a press.
+function M.retryCommand(repo: string, runId: number): { string }
+	return { "gh", "run", "rerun", tostring(runId), "--failed", "--repo", repo }
+end
+
+local function reason(out: Log.Out): string?
+	if out.timed_out then return "gh timed out" end
+	if out.status == 0 then return nil end
+	return string.match(out.stderr, "[^\n]+") or ("gh exited " .. out.status)
 end
 
 local function isError(text: string, flagged: boolean): boolean
@@ -103,12 +114,21 @@ function M.provider(run: Log.Run): Log.Provider
 		end,
 		read = function(check: Log.Check, repo: string, done: (Log.Log?, string?) -> ())
 			run(M.command(repo, check), { timeout_ms = LOG_MS }, function(out)
-				if out.timed_out then return done(nil, "gh timed out") end
-				if out.status ~= 0 then return done(nil, (string.match(out.stderr, "[^\n]+") or ("gh exited " .. out.status))) end
+				local why = reason(out)
+				if why then return done(nil, why) end
 				local log = M.parse(out.stdout)
 				if #log.sections == 0 then return done(nil, "the run has no failed steps") end
 				done(log, nil)
 			end)
+		end,
+		retry = function(checks: { Log.Check }, repo: string, done: (number?, string?) -> ())
+			local ids: { number } = {}
+			for _, check in checks do
+				if check.runId and table.find(ids, check.runId) == nil then table.insert(ids, check.runId) end
+			end
+			Log.each(ids, function(id, after)
+				run(M.retryCommand(repo, id), { timeout_ms = LOG_MS }, function(out) after(reason(out)) end)
+			end, done)
 		end,
 	}
 end

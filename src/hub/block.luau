@@ -715,7 +715,7 @@ local block: BlockDef<Block> = {
 				for _, case in evidence.cases do
 					if pr and case.name == name then
 						local verdict = Model.flake(evidence.evidence(case))
-						s.flakes[key] = { flaky = verdict.flaky, reason = verdict.reason, runs = evidence.runIds[key], headOid = pr.headOid }
+						s.flakes[key] = { flaky = verdict.flaky, reason = verdict.reason, headOid = pr.headOid }
 					end
 				end
 			end

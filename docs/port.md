@@ -206,13 +206,13 @@ Each module's one job comes from its header comment. A verdict says what the por
 
 ### CI logs
 
-A failing check with no usable annotation shows its log on the fixes page. Each CI is its own module that meets one contract, and `ciProviders` in `src/hub/block.luau` is the only place they meet.
+A failing check with no usable annotation shows its log on the fixes page, and Re-run failed checks re-runs it. Each CI is its own module that meets one contract, and `ciProviders` in `src/hub/block.luau` is the only place they meet.
 
 | Module | One job | Verdict | Tests |
 |---|---|---|---|
-| `src/ci/log.luau` | The shape of a failed-check log (`Log`, `Section`, `Load`), the `Provider` contract (`owns`, `read`), `providerFor` and `refs` (the changed files a log names). Pure. | Port 1:1. | `ci_log_test` |
-| `src/ci/actions.luau` | GitHub Actions logs: which checks are Actions jobs, the `gh run view --log-failed` command (`command`), and the cut that keeps 12 lines before and 3 after each error, 120 a job at most (`parse`). | Port `jobId` and `parse` 1:1. Replace the command with the Actions API ([B.3.1](#b31-ci-logs)). | `ci_log_test` |
-| `src/ci/buildkite.luau` | Buildkite logs: which checks are Buildkite builds, the `bk build view` and `bk job log` commands, and the readers of their output. | Port `build`, `parseFailures` and `parseLog` 1:1. Replace `bk` with the Buildkite REST API ([B.3.1](#b31-ci-logs)). | `ci_log_test` |
+| `src/ci/log.luau` | The shape of a failed-check log (`Log`, `Section`, `Load`), the `Provider` contract (`owns`, `read`, `retry`), `providerFor`, `byProvider` (failing checks by the module that owns them), `each` (one call after another) and `refs` (the changed files a log names). Pure. | Port 1:1. | `ci_log_test` |
+| `src/ci/actions.luau` | GitHub Actions logs: which checks are Actions jobs, the `gh run view --log-failed` command (`command`), the cut that keeps 12 lines before and 3 after each error, 120 a job at most (`parse`), and `gh run rerun --failed` once per run (`retryCommand`). | Port `jobId` and `parse` 1:1. Replace the commands with the Actions API ([B.3.1](#b31-ci-logs)). | `ci_log_test` |
+| `src/ci/buildkite.luau` | Buildkite logs: which checks are Buildkite builds, the `bk build view`, `bk job log` and `bk job retry` commands, and the readers of their output. | Port `build`, `parseFailures` and `parseLog` 1:1. Replace `bk` with the Buildkite REST API ([B.3.1](#b31-ci-logs)). | `ci_log_test` |
 
 ### Boundaries and the host
 
@@ -418,7 +418,6 @@ type GithubCommand =
 	| { kind: "close"; pr: HubPR }
 	| { kind: "refs"; pr: HubPR } // returns { headRefName, baseRefName, headRefOid }
 	| { kind: "updateBranch"; pr: HubPR }
-	| { kind: "rerun"; repo: string; runId: number }
 	| { kind: "reply"; pr: HubPR; threadId: string; body: string }
 	| { kind: "resolve"; threadId: string }
 ```
@@ -439,7 +438,6 @@ type GithubCommand =
 | `close` | `gh pr close N --repo R` | `PATCH /repos/{o}/{r}/pulls/{n}` with `{ state: "closed" }`. |
 | `refs` | `gh pr view N --repo R --json headRefName,baseRefName,headRefOid` | `GET /repos/{o}/{r}/pulls/{n}`: `head.ref`, `base.ref`, `head.sha`. `hub/agent-run` reads it just before an engine starts and refuses when the head or base moved. |
 | `updateBranch` | `gh pr update-branch N --repo R` | `PUT /repos/{o}/{r}/pulls/{n}/update-branch` (a merge, not a rebase). |
-| `rerun` | `gh run rerun <runId> --failed --repo R` | `POST /repos/{o}/{r}/actions/runs/{id}/rerun-failed-jobs`. |
 | `reply` | `gh api graphql` with `REPLY_MUTATION` | GraphQL `addPullRequestReviewThreadReply`, unchanged. |
 | `resolve` | `gh api graphql` with `RESOLVE_MUTATION` | GraphQL `resolveReviewThread`, unchanged. |
 
@@ -447,7 +445,7 @@ type GithubCommand =
 
 ### B.3.1 CI logs
 
-From `Provider` in `src/ci/log.luau`. `hub/details.luau` asks the first provider in `b.ci` that `owns` a failing check to `read` its log, once per check URL and commit. The plugin builds `b.ci` over `Fetch.runner` (`ciProviders`); the sample board builds it over `fixtures/hub/ci-logs.luau`.
+From `Provider` in `src/ci/log.luau`. `hub/details.luau` asks the first provider in `b.ci` that `owns` a failing check to `read` its log, once per check URL and commit. `hub/ops.luau`'s `rerun` reads the card's failing checks from the details, splits them with `Log.byProvider`, and calls each provider's `retry` once with all of its checks; a check no provider owns is named in the failure toast. The plugin builds `b.ci` over `Fetch.runner` (`ciProviders`); the sample board builds it over `fixtures/hub/ci-logs.luau`.
 
 ```ts
 type Check = { name: string; url: string; runId?: number }
@@ -457,6 +455,8 @@ type Load = { state: "loading" } | { state: "loaded"; log: Log } | { state: "fai
 interface Provider {
 	owns(check: Check): boolean
 	read(check: Check, repo: string): Promise<Result<Log>>
+	// Every failing check this provider owns, at once, so it re-runs each run or build once. Resolves to how many it started.
+	retry(checks: Check[], repo: string): Promise<Result<number>>
 }
 ```
 
@@ -465,6 +465,8 @@ interface Provider {
 | Actions log | `gh run view <runId> --repo R --log-failed [--job <job>]`, 60 s (`Actions.command`). The job comes from the check's link. `Actions.parse` keeps 12 lines before and 3 after each error line, the last 30 when none reads as one, and 120 a job at most. | `GET /repos/{o}/{r}/actions/runs/{run_id}/jobs` for the failed jobs and their steps, then `GET /repos/{o}/{r}/actions/jobs/{job_id}/logs` (a redirect to the plain-text log). That log is the whole job, so cut it to the failed steps before `Actions.parse`. |
 | Buildkite failed jobs | `bk build view <org>/<pipeline>/<n> --recursive --json`, 60 s, with `BUILDKITE_ORGANIZATION_SLUG=<org>` so `bk` uses that org's saved token (`Buildkite.failuresCommand`). | `GET https://api.buildkite.com/v2/organizations/{org}/pipelines/{pipeline}/builds/{number}` with a Buildkite API token, then its failed `jobs`. |
 | Buildkite job log | `bk job log <job> --agent --max-tokens 1500` for the first 3 failed jobs, or the one the link names (`Buildkite.logCommand`). `--agent` already keeps the lines around the errors. | `GET .../builds/{number}/jobs/{job_id}/log`. That is the whole log, so cut it as `Actions.parse` does. |
+| Actions re-run | `gh run rerun <runId> --failed --repo R`, once per workflow run (`Actions.retryCommand`). | `POST /repos/{o}/{r}/actions/runs/{id}/rerun-failed-jobs`. |
+| Buildkite re-run | `bk job retry <job>` with `BUILDKITE_ORGANIZATION_SLUG=<org>`, for the job a link names, else for each failed job of the build (`Buildkite.retryCommand`). | `PUT .../builds/{number}/jobs/{job_id}/retry`. |
 
 `Log.refs` finds `path:line` mentions of the PR's changed files in a log (at most 5), and `hub/details.luau`'s `readLogFiles` reads those files with `Prdata.readFixes`, so the page can pin the lines like annotations. In the port those reads are contents API calls or worker reads, as for annotated files.
 
@@ -797,7 +799,7 @@ Run all of them with `/opt/homebrew/bin/luau tests/run.luau`. `tests/run.luau` l
 | `tests/merge_test.luau` | `github`, `hub/model`, `hub/state`, `hub/sync` | Merge-method resolution and detection, merge-failure sources, the refresh carrying pending merges, merge commands and cards. |
 | `tests/fixes_test.luau` | `github`, `hub/fixes`, `hub/model` | The fixes page's details, noise filter, steps, excerpts, `git merge-tree` and `git log` readers. |
 | `tests/selection_test.luau` | `github`, `hub/model`, `hub/state` | Marks, Merge selected, Close stale, the confirm. |
-| `tests/flake_test.luau` | `github`, `hub/model`, `hub/state` | The flake verdict matrix, run parsing, `historyCache` (one read per repo per hour), the re-run command, and where Re-run sits on a card. |
+| `tests/flake_test.luau` | `github`, `hub/model`, `hub/state` | The flake verdict matrix, run parsing, `historyCache` (one read per repo per hour), and where Re-run sits on a card. |
 | `tests/rereview_test.luau` | `github`, `hub/model`, `hub/state` | Re-request review after new commits, and where Merge when ready is offered. |
 | `tests/agent_fix_test.luau` | `hub/agent-fix` | The engine's exact command sequence for conflicts and bot fixes, and the lease take and return. |
 | `tests/agent_state_test.luau` | `hub/agent-fix`, `hub/state`, `keys`, `text-field` | The agent card lifecycle, its keys and clicks, lease effects. |
@@ -809,7 +811,8 @@ Run all of them with `/opt/homebrew/bin/luau tests/run.luau`. `tests/run.luau` l
 | `tests/hub_settings_test.luau` | the real `hub/block`, `Host` stubbed, `view/ui`'s `tern.ui` stubbed | Settings: opening focuses the search, typing filters, Tab to Review, a click, the lens, the saved choice, and L only with an empty search. |
 | `tests/agent_diff_test.luau` | `agent`, `pr` | What the explanation's diff shows as one line (generated, vendored, minified and snapshot files) and the whitespace-only hunks it counts instead of showing, outside Python and YAML. |
 | `tests/fold_test.luau` | the real `hub/block`, `Host` stubbed, `view/ui`'s `tern.ui` stubbed | Opening a fold scrolls its header to the top of the board; closing one doesn't scroll. |
-| `tests/ci_log_test.luau` | `ci/actions`, `ci/buildkite`, `ci/log` | The log contract and both CI modules on recorded output (`fixtures/hub/ci-logs.luau`): which checks each owns, the exact commands and env, the cut, failures, and `Log.refs`. |
+| `tests/ci_log_test.luau` | `ci/actions`, `ci/buildkite`, `ci/log` | The log contract and both CI modules on recorded output (`fixtures/hub/ci-logs.luau`): which checks each owns, the exact commands and env, the cut, failures, `Log.refs`, and each module's re-run (once per run or build). |
+| `tests/rerun_test.luau` | `hub/block`, `ci/log` | Re-run failed checks on the hub block: each CI module gets its own failing checks, and a check none owns is named in the toast. |
 | `tests/summary_test.luau` | the real `hub/block` and `agent-host`, `Host` stubbed | Summarize and bot fixes end to end through `ACTIONS`: stale refs, edited comments, timeouts, a closed block, duplicate callbacks. |
 | `tests/tandem_test.luau` | the real `hub/block`, `agent-host`, `tandem`, `Host` stubbed | Tandem ownership, and the shared cache rules it exercises. |
 | `tests/prepare_test.luau` | the real `hub/prepare`, `Fetch`, `Prdata` and `AgentHost` functions and `Host` stubbed; `keys`, `hub/state` | Which PRs want a background guide, one at a time, explanation only, a failure not retried at its head, stopping when turned off or closed, the `hub.preparing` lease, and ⇧G in Settings (plain g types into its search). |

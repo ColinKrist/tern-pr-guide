@@ -131,6 +131,9 @@ failed checks from the same page.
   (through `gh`) and Buildkite (through the [`bk` CLI](https://github.com/buildkite/cli), signed in
   with `bk auth login`; PR Guide asks for the organization in the check's link). Other CI shows the
   check's summary, and `⇧L` opens its page.
+- **Re-run failed checks.** `⇧R` re-runs the failed GitHub Actions runs (`gh run rerun --failed`)
+  and the failed Buildkite jobs (`bk job retry`). A failing check from any other CI is named in the
+  error, since PR Guide can't re-run it.
 
 - **Agent fixes.** Your OMP agent resolves a conflict or addresses a bot review in an isolated
   worktree, never in your checkout. You follow its progress on the card.

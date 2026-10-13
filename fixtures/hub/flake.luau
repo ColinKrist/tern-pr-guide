@@ -63,6 +63,4 @@ M.board = {
 	["acme/web#111"] = "history", ["acme/web#104"] = "typeerror", ["acme/api#112"] = "timeout",
 } :: { [string]: string }
 
-M.runIds = { ["acme/web#111"] = { 5107 }, ["acme/web#104"] = { 5110 }, ["acme/api#112"] = { 5101 } } :: { [string]: { number } }
-
 return M

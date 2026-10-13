@@ -9,6 +9,7 @@ local Details = require("./details")
 local FilterStore = require("./filter-store")
 local Fixes = require("./fixes")
 local Github = require("../github")
+local Log = require("../ci/log")
 local Lookups = require("./lookups")
 local Model = require("./model")
 local Refresh = require("./refresh")
@@ -408,8 +409,8 @@ local function updateBranch(b: Block, cx: BlockCx, key: string)
 	end)
 end
 
--- Re-run failed checks (⇧R, behind Fix checks ▾): `gh run rerun <id> --failed` for each failing workflow run of the
--- card, one at a time. Only a press runs it. The runs come from the evidence on hand, else from the details.
+-- Re-run failed checks (⇧R, behind Fix checks ▾): the card's failing checks, read from the details, go to the CI
+-- module that owns them, which re-runs each of its runs or builds once. Only a press runs it.
 local function rerun(b: Block, cx: BlockCx, key: string)
 	local s = b.s
 	local pr = State.prOf(s, key)
@@ -421,41 +422,38 @@ local function rerun(b: Block, cx: BlockCx, key: string)
 		cx:toast("error", "Couldn't re-run checks on #" .. pr.number .. ": " .. reasonOf(reason), pr.repo)
 		draw(b, cx)
 	end
-	local function go(ids: { number })
-		if #ids == 0 then return fail("GitHub lists no workflow run for the failing checks") end
-		State.setBusy(s, key, "Re-running…")
-		draw(b, cx)
-		local function step(i: number)
-			if b.closed then return end
-			if i > #ids then
-				State.setBusy(s, key, nil)
-				b.flakeTried[pr.key .. "@" .. pr.headOid] = nil
-				State.setFlake(s, key, nil)
-				cx:toast("success", "Re-running failed checks on #" .. pr.number, pr.repo)
-				refetchSoon(b, cx)
-				return draw(b, cx)
-			end
-			b.github.run(Github.commands.rerun(pr.repo, ids[i]), function(_, err)
-				if b.closed then return end
-				if err then return fail(err.message) end
-				step(i + 1)
-			end)
-		end
-		step(1)
-	end
-	local known = State.flakeOf(s, key)
-	if known and #known.runs > 0 then return go(known.runs) end
 	State.setBusy(s, key, "Reading checks…")
 	draw(b, cx)
 	b.github.details(pr, function(d, err)
 		if b.closed then return end
-		State.setBusy(s, key, nil)
 		if d == nil then return fail(if err then err.message else "no answer") end
-		local ids: { number } = {}
-		for _, check in d.checks do
-			if check.runId and table.find(ids, check.runId) == nil then table.insert(ids, check.runId) end
+		local failing: { Log.Check } = {}
+		for _, check in d.checks do table.insert(failing, check) end
+		if #failing == 0 then return fail("GitHub lists no failing checks") end
+		local groups, unowned = Log.byProvider(b.ci, failing)
+		if #unowned > 0 then
+			local more = if #unowned > 1 then " and " .. (#unowned - 1) .. " more" else ""
+			cx:toast("error", "Couldn't re-run " .. unowned[1].name .. more .. ": no CI module reads " .. (if #unowned > 1 then "them" else "it"), pr.repo)
 		end
-		go(ids)
+		if #groups == 0 then
+			State.setBusy(s, key, nil)
+			return draw(b, cx)
+		end
+		State.setBusy(s, key, "Re-running…")
+		draw(b, cx)
+		Log.each(groups, function(group: Log.Group, after)
+			local ok, thrown = pcall(group.provider.retry, group.checks, pr.repo, function(_, why) after(why) end)
+			if not ok then after(tostring(thrown)) end
+		end, function(_, why)
+			if b.closed then return end
+			if why then return fail(why) end
+			State.setBusy(s, key, nil)
+			b.flakeTried[pr.key .. "@" .. pr.headOid] = nil
+			State.setFlake(s, key, nil)
+			cx:toast("success", "Re-running failed checks on #" .. pr.number, pr.repo)
+			refetchSoon(b, cx)
+			draw(b, cx)
+		end)
 	end)
 end
 

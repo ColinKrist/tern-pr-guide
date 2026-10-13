@@ -38,6 +38,15 @@ local function read(provider: Log.Provider, check: Log.Check, repo: string): (Lo
 	return log, err
 end
 
+local function retry(provider: Log.Provider, checks: { Log.Check }): (number?, string?)
+	local count, err, answered = nil, nil, false
+	provider.retry(checks, "acme/web", function(c, e)
+		count, err, answered = c, e, true
+	end)
+	assert(answered, "retry answered")
+	return count, err
+end
+
 local function has(lines: { string }, text: string): boolean
 	for _, line in lines do
 		if line == text then return true end
@@ -103,4 +112,41 @@ return function()
 	assert(refs[2].path == "src/cart/reprice.ts" and refs[2].line == 57)
 	assert(#Log.refs({ sections = { { title = "", lines = { "at x (lib/src/cart/reprice.ts:9)" } } } }, { "src/cart/reprice.ts" }) == 1)
 	assert(#Log.refs({ sections = { { title = "", lines = { "at x (mysrc/cart/reprice.ts:9)" } } } }, { "src/cart/reprice.ts" }) == 0, "a path ends at a folder boundary")
+
+	-- Re-run: each provider gets the failing checks it owns, and the rest are named as unreadable.
+	local groups, unowned = Log.byProvider(providers, { ACTIONS_CHECK, BUILD_CHECK, OTHER_CHECK, JOB_CHECK })
+	assert(#groups == 2 and groups[1].provider == buildkite and groups[2].provider == actions)
+	assert(#groups[1].checks == 2 and groups[1].checks[1] == BUILD_CHECK and groups[1].checks[2] == JOB_CHECK)
+	assert(#groups[2].checks == 1 and #unowned == 1 and unowned[1] == OTHER_CHECK)
+
+	-- Actions: one `gh run rerun --failed` per workflow run, however many of its jobs failed.
+	local rerunRun, rerunCalls = fakeRun({ ["gh run rerun 902 --failed --repo acme/web"] = "", ["gh run rerun 903 --failed --repo acme/web"] = "" })
+	local count = retry(Actions.provider(rerunRun), {
+		ACTIONS_CHECK, { name = "lint", url = "https://github.com/acme/web/actions/runs/902/job/2", runId = 902 },
+		{ name = "e2e", url = "https://github.com/acme/web/actions/runs/903/job/9", runId = 903 },
+	})
+	assert(count == 2 and #rerunCalls == 2, tostring(#rerunCalls))
+	assert(rerunCalls[1].argv == "gh run rerun 902 --failed --repo acme/web" and rerunCalls[2].argv == "gh run rerun 903 --failed --repo acme/web")
+	local _, rerunErr = retry(Actions.provider(fakeRun({}, { status = 1, stdout = "", stderr = "run 902 cannot be rerun\nmore", timed_out = false })), { ACTIONS_CHECK })
+	assert(rerunErr == "run 902 cannot be rerun", rerunErr)
+
+	-- Buildkite: a build's link lists its failed jobs and retries each; a job's link retries that job; each build and
+	-- job once, asked of the org the link names.
+	local retryOutputs = table.clone(Recorded.outputs)
+	retryOutputs["bk job retry 0190046e-e199-453b-a302-a21a4d649d31"] = ""
+	retryOutputs["bk job retry 0190aaaa-0000-4000-8000-000000000001"] = ""
+	local bkRetryRun, bkRetryCalls = fakeRun(retryOutputs)
+	local bkCount = retry(Buildkite.provider(bkRetryRun, decode), { BUILD_CHECK, JOB_CHECK, BUILD_CHECK })
+	assert(bkCount == 1 and #bkRetryCalls == 2, tostring(#bkRetryCalls))
+	assert(bkRetryCalls[1].argv == "bk build view acme/web/429 --recursive --json")
+	assert(bkRetryCalls[2].argv == "bk job retry 0190046e-e199-453b-a302-a21a4d649d31")
+	assert((bkRetryCalls[2].env :: { [string]: string }).BUILDKITE_ORGANIZATION_SLUG == "acme")
+	local jobsRun, jobsCalls = fakeRun(retryOutputs)
+	local jobsCount = retry(Buildkite.provider(jobsRun, decode), {
+		JOB_CHECK, { name = "Lint", url = "https://buildkite.com/acme/web/builds/430#0190aaaa-0000-4000-8000-000000000001", runId = nil },
+	})
+	assert(jobsCount == 2 and #jobsCalls == 2, "named jobs are retried without listing the build")
+	assert(jobsCalls[1].argv == "bk job retry 0190046e-e199-453b-a302-a21a4d649d31" and jobsCalls[2].argv == "bk job retry 0190aaaa-0000-4000-8000-000000000001")
+	local _, bkErr = retry(Buildkite.provider(fakeRun({}, { status = 1, stdout = "", stderr = "job is not retryable", timed_out = false }), decode), { JOB_CHECK })
+	assert(bkErr == "job is not retryable", bkErr)
 end

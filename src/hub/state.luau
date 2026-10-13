@@ -25,9 +25,8 @@ export type Mode = "board" | "search" | "link" | "menu" | "confirm" | "help" | "
 export type HelpPage = "board" | "fixes" | "review-fix"
 export type MenuId = "filters" | "title-filter" | "check-repository" | "check-filter" | "repositories" | "sort" | "merge" | "actions" | "settings"
 export type Ring = "bad" | "good" | "bad-out" | "good-out" -- red ring, green wash, then the same fading
--- What the flake evidence says about a card's failing checks, for the commit it was read on. `runs` are the workflow
--- runs Re-run failed checks sends `gh run rerun` to, once each.
-export type Flake = { flaky: boolean, reason: string?, runs: { number }, headOid: string }
+-- What the flake evidence says about a card's failing checks, for the commit it was read on.
+export type Flake = { flaky: boolean, reason: string?, headOid: string }
 export type CardAction = { act: string, value: string?, label: string, key: string?, confirm: boolean }
 
 export type AgentFixState =
