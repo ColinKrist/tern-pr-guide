@@ -26,6 +26,15 @@ return function()
 	assert(review.hunks[1].id == "fonts-loader" and review.hunks[1].path == "src/fonts.ts")
 	assert(review.hunks[2].id == "fonts-cache" and review.hunks[2].path == "src/fonts.ts")
 	assert(review.hunks[3].id == "note-props" and review.hunks[3].path == "src/note.ts" and review.hunks[3].by == "rule")
+	-- Tern's json.decode tags arrays with a protected metatable that table.clone refuses.
+	local function locked(value: any): any
+		if type(value) ~= "table" then return value end
+		local out = {}
+		for k, v in value do out[k] = locked(v) end
+		return setmetatable(out, { __metatable = "array" })
+	end
+	local decoded = ReviewFix.build(locked(Fixture.fix), Fixture.files, locked(Fixture.details))
+	assert(decoded.verified and #decoded.hunks == 3, "decoded conflict hunks build a review")
 	local expected = {
 		{
 			{ "base", "// loader", nil, 1 }, { "base", "shared", nil, 2 }, { "theirs", "main manifest", "main", 3 },

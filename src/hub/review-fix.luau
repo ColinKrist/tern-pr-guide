@@ -48,6 +48,11 @@ local function fileLines(text: string): { string }
 	return lines
 end
 
+-- A plain copy of a list. Tern's json.decode tags arrays with a protected metatable that table.clone refuses.
+local function copy(list: { string }): { string }
+	return table.move(list, 1, #list, 1, {})
+end
+
 local function same(a: { string }, b: { string }): boolean
 	if #a ~= #b then return false end
 	for i, line in a do if line ~= b[i] then return false end end
@@ -63,12 +68,12 @@ local function original(hunk: AgentFix.ConflictHunk, details: Fixes.FixDetails?,
 			if conflict.path ~= hunk.path then continue end
 			for _, prior in conflict.hunks do
 				if prior.start == hunk.start and same(prior.branch, ours) and same(prior.main, theirs) then
-					return table.clone(prior.branch), table.clone(prior.main)
+					return copy(prior.branch), copy(prior.main)
 				end
 			end
 		end
 	end
-	return table.clone(ours), table.clone(theirs)
+	return copy(ours), copy(theirs)
 end
 
 function M.build(fix: AgentFix.Fix, files: { [string]: string }, details: Fixes.FixDetails?, originals: { [string]: Original }?): Review
@@ -98,7 +103,7 @@ function M.build(fix: AgentFix.Fix, files: { [string]: string }, details: Fixes.
 		local resolution = hunk.resolved
 		local text = files[hunk.path]
 		if not resolution or text == nil then return fail("a conflict resolution is missing") end
-		local pattern: { string } = table.clone(hunk.context.before)
+		local pattern = copy(hunk.context.before)
 		for _, line in resolution.lines do
 			if line.tag ~= "base" and LABELS[line.tag] == nil then return fail("a line has an unknown source") end
 			table.insert(pattern, line.text)
