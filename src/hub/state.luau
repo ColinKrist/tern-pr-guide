@@ -1065,9 +1065,17 @@ function M.closeSearch(s: State, clear: boolean)
 	if clear and s.search.text ~= "" then M.setSearch(s, "") end
 end
 
+-- Opening a fold selects its first row, so j and k carry on from there.
 function M.toggleFold(s: State, name: string)
 	s.folded[name] = not s.folded[name]
 	M.project(s)
+	if s.folded[name] then return end
+	if name == M.ROW_FOLD[s.tab] then
+		if s.board.open.recent and #s.board.recent > 0 then M.select(s, M.recentKey(s.board.recent[1])) end
+		return
+	end
+	local fold = M.fold(s, name :: Column)
+	if fold and fold.open then M.select(s, fold.cards[1].pr.key) end
 end
 
 -- The card the Next up banner shows: the next item as a board card, whichever tab it sits on.
