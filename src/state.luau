@@ -14,7 +14,7 @@ local Review = require("./review")
 local Search = require("./search")
 
 -- Which keys the page listens for: the open text field or panel, else reading.
-export type Mode = "search" | "models" | "composer" | "summary" | "review" | "reading"
+export type Mode = "actions" | "search" | "models" | "composer" | "summary" | "review" | "reading"
 
 -- A comment being written on lines from..to of `file`, hung under `to` in the step block `block`,
 -- or in the file's own block when no step shows the line.
@@ -67,9 +67,20 @@ export type Place = {
 -- is nil for a PR with none; `open`: the host's reviewers and checks popover is showing under them.
 export type Status = { reviews: Checks.ReviewMark, checks: Checks.Mark?, open: boolean }
 
--- What a host (the PR hub) tells the page it shows. `pr`: the host has a Pull request menu for the page's PR (⇧P),
--- and `prOpen`: that menu or its question is open. `status`: the PR is on the host's board.
-export type Hosted = { fixes: boolean, pr: boolean, prOpen: boolean, status: Status? }
+-- The Actions menu's groups, in order: landing the PR, reviewing it, its links, and closing it. A hairline sets each
+-- group off from the one before; a group with no rows drops.
+export type ActionGroup = "land" | "review" | "links" | "close"
+local GROUPS: { ActionGroup } = { "land", "review", "links", "close" }
+
+-- A row a host adds to the page's Actions menu: the action the host runs, its label, its key in the menu, its group.
+export type HostAction = { act: string, value: string?, label: string, key: string, group: ActionGroup }
+
+-- A row of the Actions menu; `host`: the host runs it, else the page does.
+export type ActionRow = { act: string, value: string?, label: string, key: string, group: ActionGroup, host: boolean }
+
+-- What a host (the PR hub) tells the page it shows. `actions`: its rows for the Actions menu, and `asking`: its question
+-- about one of them is open under the Actions button. `status`: the PR is on the host's board.
+export type Hosted = { fixes: boolean, actions: { HostAction }, asking: boolean, status: Status? }
 
 export type State = {
  -- The node path the page sits under in its host's view; every frame op and path starts there.
@@ -111,6 +122,8 @@ export type State = {
  -- The file view's tree is hidden, giving the code the whole width.
  treeHidden: boolean,
  models: ModelBox.ModelBox?,
+ -- The open Actions menu's highlighted row; nil while it is closed.
+ actionsCursor: number?,
  reviewOpen: boolean,
  -- The review panel's selected comment, an index into Review.items.
  reviewCursor: number,
@@ -129,7 +142,7 @@ export type State = {
  -- switches view nothing arrives ("still"): a switch is instant.
  arrival: "load" | "guide" | "still",
  -- Set when a host (the PR hub) shows the page: `fixes` is whether a Fixes view sits beside it. The page then
- -- shows a Fixes tab, and its `t` is the host's, an Esc hint, with `pr` a Pull request button, and with `status` the
+ -- shows a Fixes tab, and its `t` is the host's, an Esc hint, its rows in the Actions menu, and with `status` the
  -- reviews and checks marks.
  hosted: Hosted?,
 }
@@ -177,7 +190,7 @@ function M.new(pr: Pr.PR, guide: Guide.Guide, to: { repo: string?, dryRunPath: s
   flowOpen = true, descriptionOpen = not guide.guided, foldedFolders = if guide.guided then FileGroup.folded() else {}, supportingOpen = false, fileOpen = {}, pinned = {},
   flash = nil, flashStep = nil, flashCount = 0,
   composer = nil, search = nil, hit = nil,
-  helpOpen = false, treeHidden = false, models = nil, reviewOpen = false, reviewCursor = 1, editingSummary = false,
+  helpOpen = false, treeHidden = false, models = nil, actionsCursor = nil, reviewOpen = false, reviewCursor = 1, editingSummary = false,
   keyed = false, submit = { repo = to.repo, dryRunPath = to.dryRunPath, confirming = false, sending = false, error = nil }, ai = nil,
   born = {}, booted = false, now = 0, arrival = "load", hosted = nil,
  }
@@ -201,7 +214,37 @@ function M.carryOver(from: State, to: State)
  if summary.text ~= from.review.guide.summary then to.review.summary = summary end
 end
 
+-- The Actions menu's rows, group by group: the host's first in each, then the page's own (Mark all reviewed, its label
+-- flipping once every file is, and Open on GitHub).
+function M.actionRows(s: State): { ActionRow }
+ local r = s.review
+ local all = Review.counts(r).filesReviewed == #r.pr.files
+ local own: { [ActionGroup]: ActionRow } = {
+  review = { act = "mark-all", label = if all then "Unmark all reviewed" else "Mark all reviewed", key = "A", group = "review", host = false },
+  links = { act = "open-github", label = "Open on GitHub", key = "G", group = "links", host = false },
+ }
+ local hosted = if s.hosted then s.hosted.actions else {}
+ local out: { ActionRow } = {}
+ for _, group in GROUPS do
+  for _, row in hosted do
+   if row.group == group then table.insert(out, { act = row.act, value = row.value, label = row.label, key = row.key, group = group, host = true }) end
+  end
+  local mine = own[group]
+  if mine then table.insert(out, mine) end
+ end
+ return out
+end
+
+-- The Actions row whose key is `label` ("U", "⇧A"), if any.
+function M.actionIndex(s: State, label: string): number?
+ for index, row in M.actionRows(s) do
+  if row.key == label then return index end
+ end
+ return nil
+end
+
 function M.mode(s: State): Mode
+ if s.actionsCursor then return "actions" end
  if s.search then return "search" end
  if s.models then return "models" end
  if s.composer then return "composer" end

@@ -46,6 +46,31 @@ local function modelsKey(box: ModelBox.ModelBox, key: Key): Action?
  return nil
 end
 
+-- The label a key press has on a card's split button or an Actions row: "A", "⇧A", ",", "⏎".
+local function cardKeyLabel(key: Key): string?
+ if key.ctrl or key.meta or key.alt then return nil end
+ local name = key.name
+ if name == "enter" then return "⏎" end
+ if #name ~= 1 then return nil end
+ local upper = string.upper(name)
+ return if key.shift or name ~= string.lower(name) then "⇧" .. upper else upper
+end
+
+-- The Actions menu: j and k (or the arrows) move, ⏎ runs the highlighted row, a row's own key runs it, Esc or ⇧P
+-- closes it.
+local function actionsKey(s: State.State, key: Key): Action?
+ local name = key.name
+ if key.ctrl or key.meta or key.alt then return nil end
+ if name == "escape" then return act("toggle-actions") end
+ if name == "down" or name == "j" then return act("actions-move", 1) end
+ if name == "up" or name == "k" then return act("actions-move", -1) end
+ if name == "enter" then return act("actions-run", s.actionsCursor) end
+ local label = cardKeyLabel(key)
+ if label == "⇧P" then return act("toggle-actions") end
+ local index = if label then State.actionIndex(s, label) else nil
+ return if index then act("actions-run", index) else nil
+end
+
 local function reviewKey(s: State.State, key: Key): Action?
  local name = key.name
  local typed = key.text or name
@@ -67,6 +92,7 @@ local function readingKey(s: State.State, key: Key): Action?
  if name == "j" then return act("step", 1) end
  if name == "k" then return act("step", -1) end
  if name == "n" then return act("next-suggestion", 1) end
+ if (name == "p" and key.shift) or name == "P" then return act("toggle-actions") end
  if name == "p" then return act("next-suggestion", -1) end
  if name == "enter" and key.shift then return act("mark-change", step.change) end
  if name == "enter" then return act("review-step", step.key) end
@@ -98,6 +124,7 @@ end
 -- The action `key` triggers, or nil when it changes nothing or, in a text mode, types into the field.
 function M.action(s: State.State, key: Key): Action?
  local mode = State.mode(s)
+ if mode == "actions" then return actionsKey(s, key) end
  if mode == "search" then return searchKey(key) end
  if mode == "models" then
   return if key.name == "escape" then act("toggle-models") else modelsKey(s.models :: ModelBox.ModelBox, key)
@@ -105,16 +132,6 @@ function M.action(s: State.State, key: Key): Action?
  if mode == "composer" or mode == "summary" then return nil end
  if mode == "review" and not isQuestionMark(key) then return reviewKey(s, key) end
  return readingKey(s, key)
-end
-
--- The shortcut label a key press has on a card's split button: "A", "⇧A", ",", "⏎".
-local function cardKeyLabel(key: Key): string?
-	if key.ctrl or key.meta or key.alt then return nil end
-	local name = key.name
-	if name == "enter" then return "⏎" end
-	if #name ~= 1 then return nil end
-	local upper = string.upper(name)
-	return if key.shift or name ~= string.lower(name) then "⇧" .. upper else upper
 end
 
 local function hubMenuKey(s: HubState.State, key: Key): Action?
@@ -335,17 +352,16 @@ end
 
 -- What the hub's page host knows about the review page it shows: whether Esc is its own (nothing of the
 -- page's is open), whether letters are the page's keys (no field or panel has them), whether a Fixes view
--- sits beside the page, whether the PR has pull request actions, and whether it shows the PR's status marks.
-export type PageHost = { rest: boolean, reading: boolean, fixes: boolean, pr: boolean, status: boolean }
+-- sits beside the page, and whether it shows the PR's status marks.
+export type PageHost = { rest: boolean, reading: boolean, fixes: boolean, status: boolean }
 
 -- The key the hub takes before the page does: Esc at rest goes back to the board, `t` cycles the views
--- when Fixes is one of them (the page's own `t` flips Guided and Files), ⇧P opens the Pull request
--- menu, and `v` the reviewers and checks under the status marks. Every other key is the page's.
+-- when Fixes is one of them (the page's own `t` flips Guided and Files), and `v` opens the reviewers and
+-- checks under the status marks. Every other key is the page's.
 function M.hubPageAction(key: Key, host: PageHost): Action?
 	if key.ctrl or key.meta or key.alt then return nil end
 	if key.name == "escape" and host.rest then return act("pages-back") end
 	if key.name == "t" and not key.shift and host.fixes and host.reading then return act("pages-cycle") end
-	if host.pr and host.reading and cardKeyLabel(key) == "⇧P" then return act("hub-pr-menu") end
 	if host.status and host.reading and cardKeyLabel(key) == "V" then return act("hub-checks") end
 	return nil
 end

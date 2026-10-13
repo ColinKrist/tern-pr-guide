@@ -1,5 +1,5 @@
 --!strict
--- The hub's menus (filters, repositories, sort, a card's other actions, a PR page's Pull request menu) and Settings (the review page's model and lens
+-- The hub's menus (filters, repositories, sort, a card's other actions, the fixes page's Pull request menu) and Settings (the review page's model and lens
 -- menu, then where links open and background guides) as Tern overlays under their buttons. A menu opened by a
 -- key draws without animation: Tern's overlay pops only for the mouse.
 local ModelPanel = require("../model-panel")
@@ -171,7 +171,7 @@ local function filterFoot(s: State.State): Node?
 	return el("div", { class = "gp-hs-row", key = "foot" }, { span("gp-md-label", s.board.hidden .. " pull requests hidden") })
 end
 
--- `pr`: the Pull request button of the page the menu opens over.
+-- `pr`: the fixes page's Pull request button, which its menu opens under.
 function M.view(s: State.State, pr: string?): Node
 	local kids: { Node }
 	if s.menu == "settings" then

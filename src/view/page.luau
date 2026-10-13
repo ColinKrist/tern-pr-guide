@@ -2,6 +2,7 @@
 -- The page: header, description, overview, each change's card beside its code, the supporting
 -- files, and the hint bar. Also the node paths the page scrolls to and focuses, which follow these keys. Each path starts at the page's root,
 -- the node path its host mounts the page under ("main" for the guide block).
+local ActionsMenu = require("./actions-menu")
 local Agent = require("../agent")
 local Change = require("./change")
 local Code = require("./code")
@@ -118,9 +119,10 @@ local function headerPath(root: string): string
  return root .. ".page.header"
 end
 
--- The Pull request button in the header's status row, which the host's Pull request menu hangs under.
-function M.prButtonPath(root: string): string
- return headerPath(root) .. ".status.pr"
+-- The Actions button in the header's status row, which the Actions menu and the host's question about one of its rows
+-- hang under.
+function M.actionsPath(root: string): string
+ return headerPath(root) .. ".status.actions"
 end
 
 -- The reviews and checks marks in the header's status row, which the host's checks popover hangs under.
@@ -195,9 +197,15 @@ end
 local LAYER = "layer"
 M.modelFieldPath = LAYER .. ".models.body.box.field"
 
--- The layer: while the model menu is open, a scrim that closes it on a click anywhere outside, and
--- the menu as an overlay under the Settings button.
+-- The layer: while the Actions menu or the model menu is open, a scrim that closes it on a click anywhere outside, and
+-- the menu as an overlay under its button.
 function M.layer(s: State.State): Node?
+ if s.actionsCursor then
+  return el("div", {}, {
+   el("div", { class = "gp-md-scrim", key = "scrim", actions = { click = "toggle-actions" } }),
+   ActionsMenu.view(State.actionRows(s), s.actionsCursor, M.actionsPath(s.root), not s.keyed),
+  })
+ end
  local run, box = s.ai, s.models
  if not run or not box or Agent.busy(run) then return nil end
  return el("div", {}, {

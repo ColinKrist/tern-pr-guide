@@ -809,14 +809,13 @@
 .gp-ol-herebox .gp-ol-steptitle { color: var(--gp-blue-ink); }
 .gp-ol-herebox .gp-ol-dot { color: var(--gp-blue); }
 .gp-ol-herebox .gp-ol-stepbody { color: var(--t2); }
-/* header actions: search and GitHub */
+/* header actions: search, settings and Actions */
 .gp-hdr-act { display: flex; gap: 7px; align-items: center; padding: 2px 8px; border-radius: var(--r-chip); cursor: pointer; transition: background-color 140ms ease; }
 .gp-hdr-act:hover, .gp-hdr-act-open { background: var(--l1); }
 .gp-hdr-act-label { font-family: var(--sans); font-size: 13px; color: var(--t2); }
 .gp-hdr-act .sf-icon { color: var(--t3); }
 /* a quiet action: its icon and key, no label */
 .gp-hdr-act-ico { gap: 6px; padding: 2px 6px; }
-.gp-hdr-act-done .sf-icon { color: var(--gp-added); }
 /* Back to the board: Tern has no left chevron, so the right one turns around. */
 .gp-back-ico { display: flex; transform: rotate(180deg); }
 .gp-back-ico .sf-icon, .gp-back-ico .ico { width: 12px; height: 12px; color: var(--t3); }
@@ -1385,7 +1384,7 @@
 .gp-hub-rc-when { width: 64px; flex-shrink: 0; text-align: right; font-size: 12.5px; color: var(--t3); font-variant-numeric: tabular-nums; }
 
 /* the menus and the key panel: Tern overlays holding rows like the model menu's */
-[data-role='gp.hubfilter'] .sf-ov-body, [data-role='gp.hubmenu'] .sf-ov-body, [data-role='gp.hubsettings'] .sf-ov-body, [data-role='gp.hubhelp'] .sf-ov-body, [data-role='gp.hubchecks'] .sf-ov-body { padding: 0; gap: 0; }
+[data-role='gp.hubfilter'] .sf-ov-body, [data-role='gp.hubmenu'] .sf-ov-body, [data-role='gp.actions'] .sf-ov-body, [data-role='gp.hubsettings'] .sf-ov-body, [data-role='gp.hubhelp'] .sf-ov-body, [data-role='gp.hubchecks'] .sf-ov-body { padding: 0; gap: 0; }
 .gp-hm-head { padding: 10px 14px 0; font-family: var(--sans); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--t3); }
 .gp-hm-list { max-height: 360px; }
 .gp-hm-row { font-size: 13px; white-space: nowrap; }
@@ -1398,6 +1397,9 @@
 .gp-hm-count { font-size: 11.5px; color: var(--t3); font-variant-numeric: tabular-nums; }
 .gp-hm-sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; padding-left: 16px; font-size: 12px; color: var(--t3); }
 .gp-hm-clear .gp-hm-label { color: var(--t2); }
+/* the review page's Actions menu: a hairline between groups, inset to the rows, and Close in red */
+.gp-am-div { height: 1px; margin: 5px 8px; background: var(--l2); }
+.gp-am-danger .gp-hm-label { color: var(--gp-danger-text); }
 .gp-hm-edit { flex-wrap: nowrap; gap: 10px; }
 .gp-hm-edit > * { flex-shrink: 0; }
 .gp-hm-field { flex: 1 1 0; min-width: 0; overflow: hidden; padding: 4px 8px; }
