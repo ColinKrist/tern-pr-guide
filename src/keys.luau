@@ -120,6 +120,19 @@ end
 
 local function hubMenuKey(s: HubState.State, key: Key): Action?
 	local name = key.name
+	if s.filterEdit then
+		if name == "escape" then return act("hub-filter-back") end
+		if name == "tab" then return act("hub-filter-focus") end
+		if s.filterEdit.typing then
+			if name == "enter" then return act("hub-filter-save") end
+			return nil
+		end
+	elseif (s.menu == "repositories" or s.menu == "check-repository") and name == "escape" then
+		return act("hub-filter-back")
+	end
+	if s.menu == "filters" and name == "space" and HubState.menuRows(s)[s.menuCursor] and HubState.menuRows(s)[s.menuCursor].kind == "rule" then
+		return act("hub-filter-toggle", s.menuCursor)
+	end
 	-- The merge menu is asking for a command or a label: ⏎ saves, Esc goes back to the list, the rest is typed.
 	if s.methodEdit then
 		if name == "enter" then return act("hub-method-save") end
@@ -201,7 +214,7 @@ local function hubBoardKey(s: HubState.State, key: Key): Action?
 	if label == "R" then return act("hub-fold", HubState.ROW_FOLD[s.tab]) end
 	if label == "⇧T" and s.tab == "review" then return act("hub-fold", "team") end
 	if label == "A" and s.tab == "review" then return act("hub-fold", "approved") end
-	if label == "F" then return act("hub-menu", "repositories") end
+	if label == "F" then return act("hub-menu", "filters") end
 	if label == "S" then return act("hub-menu", "sort") end
 	if label == "⇧S" or label == "⇧M" then return act("hub-menu", "settings") end
 	if label == "N" then return act("hub-link") end

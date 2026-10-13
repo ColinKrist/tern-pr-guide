@@ -23,7 +23,7 @@ export type FixDetails = Fixes.FixDetails
 
 export type Mode = "board" | "search" | "link" | "menu" | "confirm" | "help" | "fixes" | "reply" | "review-fix"
 export type HelpPage = "board" | "fixes" | "review-fix"
-export type MenuId = "repositories" | "sort" | "merge" | "actions" | "settings"
+export type MenuId = "filters" | "title-filter" | "check-repository" | "check-filter" | "repositories" | "sort" | "merge" | "actions" | "settings"
 export type Ring = "bad" | "good" | "bad-out" | "good-out" -- red ring, green wash, then the same fading
 -- What the flake evidence says about a card's failing checks, for the commit it was read on. `runs` are the workflow
 -- runs Re-run failed checks sends `gh run rerun` to, once each.
@@ -66,6 +66,7 @@ export type Card = {
 export type BatchRow = { ref: string, title: string } -- "web #412" and its title
 export type BatchConfirm = { question: string, rows: { BatchRow }, more: number, lines: { string }, go: string, act: string }
 export type Selection = { group: Model.Group, count: number, verb: string, key: string, act: string, confirm: BatchConfirm? }
+export type FilterEdit = { index: number?, operator: Model.TitleOperator, repo: string?, field: Fields.Field, typing: boolean }
 export type MethodEdit = { repo: string, kind: "comment" | "label", field: Fields.Field }
 export type RepoOption = { repo: string, count: number, on: boolean }
 
@@ -83,6 +84,7 @@ export type BoardData = {
 	counts: { mine: number, review: number }, -- your-turn cards per tab: the blue counts
 	repositories: { RepoOption },
 	nextUp: Model.NextUp?,
+	hidden: number, -- PRs in this tab excluded by durable visibility rules
 	empty: boolean,
 }
 
@@ -111,6 +113,10 @@ export type State = {
 	selected: string?,
 	marked: { [string]: boolean },
 	repositories: { [string]: boolean }?,
+	repositoriesEnabled: boolean,
+	titleRules: { Model.TitleRule },
+	ignoredChecks: { Model.IgnoredCheck },
+	filterEdit: FilterEdit?,
 	sort: Sort,
 	search: Fields.Field,
 	link: Fields.Field,
@@ -145,7 +151,8 @@ export type State = {
 	booted: boolean, -- arrival motion, as src/state.luau
 }
 
-export type MenuRow = { label: string, sub: string?, count: number?, on: boolean, kind: "choice" | "check" | "clear" }
+export type MenuKind = "choice" | "check" | "clear" | "rule" | "navigate"
+export type MenuRow = { label: string, sub: string?, count: number?, on: boolean, kind: MenuKind, value: string? }
 
 local M = {}
 M.SUMMARIZING = "Summarizing feedback…"
@@ -280,7 +287,7 @@ M.SORTS = {
 local function emptyBoard(tab: Tab): BoardData
 	return {
 		tab = tab, columns = {}, folds = {}, recent = {}, open = { recent = false },
-		grid = {}, counts = { mine = 0, review = 0 }, repositories = {}, nextUp = nil, empty = true,
+		grid = {}, counts = { mine = 0, review = 0 }, repositories = {}, nextUp = nil, hidden = 0, empty = true,
 	}
 end
 
@@ -294,6 +301,43 @@ local function validSort(value: any): Sort?
 		if sort.id == value then return sort.id end
 	end
 	return nil
+end
+
+-- Saved filters. Text rules combine with AND; a repository selection is one rule.
+M.TITLE_OPERATORS = {
+	{ id = "contains", label = "contains" }, { id = "not_contains", label = "does not contain" },
+	{ id = "starts", label = "starts with" }, { id = "not_starts", label = "does not start with" },
+}
+
+function M.titleOperator(id: any): string?
+	for _, option in M.TITLE_OPERATORS do if option.id == id then return option.label end end
+	return nil
+end
+
+function M.filter(s: State, search: string): Model.Filter
+	return { repositories = if s.repositoriesEnabled then s.repositories else nil, titles = s.titleRules, search = search }
+end
+
+function M.filterCount(s: State): number
+	local count = if s.repositories and s.repositoriesEnabled then 1 else 0
+	for _, rule in s.titleRules do if rule.enabled then count += 1 end end
+	for _, rule in s.ignoredChecks do if rule.enabled then count += 1 end end
+	return count
+end
+
+function M.checkRepositories(s: State): { string }
+	local seen: { [string]: boolean } = {}
+	for _, pr in s.prs do seen[pr.repo] = true end
+	local out: { string } = {}
+	for repo in seen do table.insert(out, repo) end
+	table.sort(out)
+	return out
+end
+
+function M.ignoredRepositories(s: State): { [string]: boolean }
+	local out: { [string]: boolean } = {}
+	for _, rule in s.ignoredChecks do if rule.enabled then out[string.lower(rule.repo)] = true end end
+	return out
 end
 
 -- `saved` is what the block's `save` returned last time (tab, sort, repositories, folded), or anything at all.
@@ -320,12 +364,25 @@ function M.new(prs: { HubPR }, now: number, saved: any): State
 	end
 	local s: State = {
 		prs = prs, now = now, board = emptyBoard(tab), tab = tab, selected = nil, marked = {},
-		repositories = repositories, sort = sort, search = Fields.create(""), link = Fields.create(""),
+		repositories = repositories, repositoriesEnabled = not (type(saved) == "table" and saved.repositoriesEnabled == false),
+		titleRules = {}, ignoredChecks = {}, filterEdit = nil, sort = sort, search = Fields.create(""), link = Fields.create(""),
 		mode = "board", helpPage = nil, route = nil, menu = nil, menuCursor = 1, confirm = nil, methodEdit = nil, folded = folded, recent = {}, merged = {}, walking = false,
 		ringed = {}, agents = {}, details = {}, flakes = {}, summaries = {}, merges = {}, autoMerge = {}, acted = {}, busy = {},
 		refreshedAt = nil, loading = false, error = nil, agent = nil, models = nil, links = "tern",
 		keyed = false, born = {}, booted = false,
 	}
+	if type(saved) == "table" then
+		for _, rule in if type(saved.titleRules) == "table" then saved.titleRules else {} do
+			if type(rule) == "table" and type(rule.value) == "string" and rule.value ~= "" and type(rule.enabled) == "boolean" and M.titleOperator(rule.operator) then
+				table.insert(s.titleRules, { operator = rule.operator, value = rule.value, enabled = rule.enabled })
+			end
+		end
+		for _, rule in if type(saved.ignoredChecks) == "table" then saved.ignoredChecks else {} do
+			if type(rule) == "table" and type(rule.repo) == "string" and string.match(rule.repo, "^[%w_.%-]+/[%w_.%-]+$") and type(rule.name) == "string" and rule.name ~= "" and type(rule.enabled) == "boolean" then
+				table.insert(s.ignoredChecks, { repo = rule.repo, name = rule.name, enabled = rule.enabled })
+			end
+		end
+	end
 	M.project(s)
 	return s
 end
@@ -379,7 +436,7 @@ function M.flakeOf(s: State, key: string): Flake?
 end
 
 -- What a saved state holds, for the block's `save`.
-function M.saved(s: State): { tab: Tab, sort: Sort, repositories: { string }?, folded: { [string]: boolean } }
+function M.saved(s: State): any
 	local repositories: { string }? = nil
 	if s.repositories then
 		local list: { string } = {}
@@ -387,7 +444,21 @@ function M.saved(s: State): { tab: Tab, sort: Sort, repositories: { string }?, f
 		table.sort(list)
 		repositories = list
 	end
-	return { tab = s.tab, sort = s.sort, repositories = repositories, folded = s.folded }
+	return { tab = s.tab, sort = s.sort, repositories = repositories, repositoriesEnabled = s.repositoriesEnabled, titleRules = s.titleRules, ignoredChecks = s.ignoredChecks, folded = s.folded }
+end
+
+-- The account preference record contains filters only; pane navigation stays in `saved`.
+function M.savedFilters(s: State): any
+	local saved = M.saved(s)
+	return { schema = 1, repositories = saved.repositories, repositoriesEnabled = s.repositoriesEnabled, titleRules = s.titleRules, ignoredChecks = s.ignoredChecks }
+end
+
+function M.loadFilters(s: State, saved: any)
+	if type(saved) ~= "table" or saved.schema ~= 1 then return end
+	local restored = M.new({}, s.now, saved)
+	s.repositories, s.repositoriesEnabled = restored.repositories, restored.repositoriesEnabled
+	s.titleRules, s.ignoredChecks = restored.titleRules, restored.ignoredChecks
+	M.project(s)
 end
 
 -- The actions a card offers, from the spec's "Cards and actions" table. Keys are the shortcuts the
@@ -579,6 +650,8 @@ local function chipsFor(pr: HubPR, placement: Model.Placement, now: number): ({ 
 			table.insert(chips, chip("Waiting on " .. Model.reviewerList(again.waiting) .. " to re-review", "wait"))
 		elseif pr.checks.state == "pending" then
 			table.insert(chips, chip("Waiting on checks", "running"))
+		elseif pr.checks.state == "failing" and pr.reviews.decision == "approved" then
+			table.insert(chips, chip("Waiting on checks", "wait"))
 		else
 			table.insert(chips, chip("Waiting on review", "wait"))
 		end
@@ -622,7 +695,7 @@ function M.pendingNote(s: State, pr: HubPR): string?
 	local resolved = s.merges[pr.repo]
 	local method = if resolved then resolved.method else nil
 	-- Asked for before the PR is ready: whatever the method, it merges by itself once approved and green.
-	if Model.classify(pr, s.now) == "in_review" then return "Merges when ready" end
+	if Model.classify(pr, s.now, s.ignoredChecks) == "in_review" then return "Merges when ready" end
 	if pending.method == "queue" then return "In the merge queue" end
 	if pending.method == "label" then
 		return "Labeled " .. (if method and method.kind == "label" then method.label else "for merge") .. " · waiting for the merge"
@@ -741,7 +814,11 @@ end
 
 -- Rebuilds the Next up banner's data: the item after the selection while walking, else the first.
 local function refreshNext(s: State)
-	s.board.nextUp = Model.nextUp(s.prs, s.now, if s.walking then s.selected else nil)
+	local visible: { HubPR } = {}
+	for _, pr in s.prs do
+		if Model.visible(pr, M.filter(s, "")) then table.insert(visible, pr) end
+	end
+	s.board.nextUp = Model.nextUp(visible, s.now, if s.walking then s.selected else nil, s.ignoredChecks)
 end
 
 -- A mark lasts while its card is still selectable and shows on the board (this tab, the filter, an open fold).
@@ -781,15 +858,17 @@ end
 
 function M.project(s: State)
 	dropObsoleteAgents(s)
-	local filter: Model.Filter = { repositories = s.repositories, search = s.search.text }
+	local filter = M.filter(s, s.search.text)
 	local placements: { [string]: Model.Placement } = {}
 	local counts = { mine = 0, review = 0 }
 	local inTab: { HubPR } = {}
+	local hidden = 0
 	local byKey: { [string]: HubPR } = {}
 	for _, pr in s.prs do
-		local placement = Model.placement(pr, s.now)
+		local placement = Model.placement(pr, s.now, s.ignoredChecks)
 		placements[pr.key] = placement
 		byKey[pr.key] = pr
+		if placement.tab == s.tab and not Model.visible(pr, M.filter(s, "")) then hidden += 1 end
 		if Model.visible(pr, filter) then
 			if placement.column == "needs_fixes" then counts.mine += 1 end
 			if placement.column == "to_review" then counts.review += 1 end
@@ -804,7 +883,7 @@ function M.project(s: State)
 	for _, column in M.COLUMNS[s.tab] do
 		local cards: { Card } = {}
 		local keys: { string } = {}
-		for _, pr in Model.order(inTab, column, s.sort, s.now) do
+		for _, pr in Model.order(inTab, column, s.sort, s.now, s.ignoredChecks) do
 			table.insert(cards, toCard(pr, placements[pr.key], s))
 			table.insert(keys, pr.key)
 			present[pr.key] = true
@@ -819,7 +898,7 @@ function M.project(s: State)
 	local folded = 0
 	for _, column in M.FOLDS[s.tab] do
 		local cards: { Card } = {}
-		for _, pr in Model.order(inTab, column, s.sort, s.now) do table.insert(cards, toCard(pr, placements[pr.key], s)) end
+		for _, pr in Model.order(inTab, column, s.sort, s.now, s.ignoredChecks) do table.insert(cards, toCard(pr, placements[pr.key], s)) end
 		local open = #cards > 0 and (not s.folded[column] or searching)
 		if open then
 			for _, card in cards do present[card.pr.key] = true end
@@ -834,7 +913,7 @@ function M.project(s: State)
 	local needle = string.lower(s.search.text)
 	for _, opened in if s.tab == "review" then s.recent else s.merged do
 		local current = s.tab == "review" or s.now - (Model.epoch(opened.at) or 0) < Model.ACTIVE_DAYS * 86400
-		if current and (needle == "" or recentMatches(opened, needle)) then table.insert(recent, opened) end
+		if current and Model.titleMatches(opened.title, s.titleRules) and (not s.repositoriesEnabled or not s.repositories or s.repositories[opened.repo]) and (needle == "" or recentMatches(opened, needle)) then table.insert(recent, opened) end
 	end
 	local recentOpen = #recent > 0 and (not s.folded[M.ROW_FOLD[s.tab]] or searching)
 	if recentOpen then
@@ -845,7 +924,7 @@ function M.project(s: State)
 	-- with nothing left to show stays listed, so it can be unchosen.
 	local counted: { [string]: number } = {}
 	for _, pr in s.prs do
-		if placements[pr.key].tab == s.tab and Model.visible(pr, { repositories = nil, search = s.search.text }) then
+		if placements[pr.key].tab == s.tab and Model.visible(pr, { repositories = nil, search = s.search.text, titles = s.titleRules }) then
 			counted[pr.repo] = (counted[pr.repo] or 0) + 1
 		end
 	end
@@ -864,7 +943,7 @@ function M.project(s: State)
 	s.board = {
 		tab = s.tab, columns = columns, folds = folds, recent = recent,
 		open = { recent = recentOpen },
-		grid = grid, counts = counts, repositories = repositories, nextUp = nil,
+		grid = grid, counts = counts, repositories = repositories, nextUp = nil, hidden = hidden,
 		empty = total == 0 and folded == 0 and #recent == 0,
 	}
 	if s.selected and not present[s.selected] then s.selected = nil end
@@ -1036,6 +1115,7 @@ function M.toggleRepository(s: State, repo: string)
 	end
 	if set[repo] then set[repo] = nil else set[repo] = true end
 	s.repositories = if next(set) == nil then nil else set
+	s.repositoriesEnabled = true
 	M.project(s)
 end
 
@@ -1084,23 +1164,22 @@ function M.nextCard(s: State): Card?
 	local next = s.board.nextUp
 	if not next then return nil end
 	for _, pr in s.prs do
-		if pr.key == next.item.key then return toCard(pr, Model.placement(pr, s.now), s) end
+		if pr.key == next.item.key then return toCard(pr, Model.placement(pr, s.now, s.ignoredChecks), s) end
 	end
 	return nil
 end
 
 -- Selects the next item in the queue (`.` and the banner's Go), switching tabs when needed and clearing the
--- search or repository filter only if it hides the item. Walking then reads "n of N". Returns whether it moved.
+-- temporary search only if it hides the item. Durable filters narrow the queue. Walking then reads "n of N". Returns whether it moved.
 function M.walk(s: State): boolean
 	local next = s.board.nextUp
 	if not next then return false end
 	for _, pr in s.prs do
 		if pr.key == next.item.key then
-			local placement = Model.placement(pr, s.now)
+			local placement = Model.placement(pr, s.now, s.ignoredChecks)
 			s.tab = placement.tab
-			if not Model.visible(pr, { repositories = s.repositories, search = s.search.text }) then
+			if not Model.visible(pr, M.filter(s, s.search.text)) then
 				s.search = Fields.create("")
-				s.repositories = nil
 			end
 			unfold(s, placement.column)
 			s.mode, s.menu = "board", nil
@@ -1128,13 +1207,48 @@ function M.closeHelp(s: State)
 end
 
 -- The rows of the open menu.
-local function row(label: string, sub: string?, count: number?, on: boolean, kind: "choice" | "check" | "clear"): MenuRow
+local function row(label: string, sub: string?, count: number?, on: boolean, kind: MenuKind): MenuRow
 	return { label = label, sub = sub, count = count, on = on, kind = kind }
 end
 
 function M.menuRows(s: State): { MenuRow }
 	local rows: { MenuRow } = {}
-	if s.menu == "sort" then
+	if s.menu == "filters" then
+		local chosen: { string } = {}
+		for repo in s.repositories or {} do table.insert(chosen, repo) end
+		table.sort(chosen)
+		table.insert(rows, row("Repository", if #chosen == 0 then "All repositories" else table.concat(chosen, ", "), nil, s.repositoriesEnabled and #chosen > 0, if #chosen > 0 then "rule" else "navigate"))
+		for _, rule in s.titleRules do
+			local item = row("Title " .. (M.titleOperator(rule.operator) or ""), nil, nil, rule.enabled, "rule")
+			item.value = rule.value
+			table.insert(rows, item)
+		end
+		for _, rule in s.ignoredChecks do
+			local item = row("Ignore check in Needs fixes", rule.repo, nil, rule.enabled, "rule")
+			item.value = rule.name
+			table.insert(rows, item)
+		end
+		table.insert(rows, row("Add title filter", nil, nil, false, "navigate"))
+		table.insert(rows, row("Ignore a check…", nil, nil, false, "navigate"))
+		if s.repositories or #s.titleRules > 0 or #s.ignoredChecks > 0 then table.insert(rows, row("Clear filters", nil, nil, false, "clear")) end
+	elseif s.menu == "title-filter" and s.filterEdit then
+		for _, option in M.TITLE_OPERATORS do table.insert(rows, row(option.label, nil, nil, option.id == s.filterEdit.operator, "choice")) end
+		if s.filterEdit.index then table.insert(rows, row("Remove filter", nil, nil, false, "clear")) end
+	elseif s.menu == "check-repository" then
+		for _, repo in M.checkRepositories(s) do table.insert(rows, row(repo, nil, nil, false, "navigate")) end
+	elseif s.menu == "check-filter" and s.filterEdit then
+		local names: { [string]: boolean } = {}
+		for _, pr in s.prs do
+			if pr.repo == s.filterEdit.repo then
+				for _, name in pr.checks.failedNames or {} do names[name] = true end
+			end
+		end
+		local sorted: { string } = {}
+		for name in names do table.insert(sorted, name) end
+		table.sort(sorted)
+		for _, name in sorted do table.insert(rows, row(name, nil, nil, false, "navigate")) end
+		if s.filterEdit.index then table.insert(rows, row("Remove filter", nil, nil, false, "clear")) end
+	elseif s.menu == "sort" then
 		for _, sort in M.SORTS do
 			table.insert(rows, row(sort.label, sort.sub, nil, s.sort == sort.id, "choice"))
 		end
@@ -1180,9 +1294,11 @@ function M.openMenu(s: State, menu: MenuId)
 		end
 	end
 	s.methodEdit = nil
+	s.filterEdit = nil
 end
 
 function M.closeMenu(s: State)
+	s.filterEdit = nil
 	s.menu = nil
 	s.models = nil
 	s.methodEdit = nil
@@ -1198,6 +1314,60 @@ function M.setLinks(s: State, to: string?)
 	s.links = if to == "tern" or to == "browser" then to elseif s.links == "tern" then "browser" else "tern"
 end
 
+-- Space or the checkbox toggles a saved rule, retaining its values. Enter or the row edits it.
+function M.toggleFilter(s: State, index: number)
+	if s.menu ~= "filters" then return end
+	if index == 1 and s.repositories then s.repositoriesEnabled = not s.repositoriesEnabled
+	elseif index > 1 and index <= #s.titleRules + 1 then
+		local rule = s.titleRules[index - 1]
+		rule.enabled = not rule.enabled
+	else
+		local rule = s.ignoredChecks[index - #s.titleRules - 1]
+		if rule then rule.enabled = not rule.enabled end
+	end
+	M.project(s)
+end
+
+function M.beginFilterEdit(s: State, kind: "title" | "check", index: number?, repo: string?)
+	local title = if kind == "title" and index then s.titleRules[index] else nil
+	local check = if kind == "check" and index then s.ignoredChecks[index] else nil
+	M.openMenu(s, if kind == "title" then "title-filter" else "check-filter")
+	s.filterEdit = { index = index, operator = if title then title.operator else "not_starts", repo = if check then check.repo else repo, field = Fields.create(if title then title.value elseif check then check.name else ""), typing = true }
+	if kind == "title" then
+		local operator = if title then title.operator else "not_starts"
+		for i, option in M.TITLE_OPERATORS do if option.id == operator then s.menuCursor = i end end
+	end
+end
+
+function M.saveFilter(s: State): boolean
+	local edit = s.filterEdit
+	if not edit then return false end
+	local value = string.gsub(string.gsub(edit.field.text, "^%s+", ""), "%s+$", "")
+	if value == "" then return false end
+	if s.menu == "title-filter" then
+		local old = if edit.index then s.titleRules[edit.index] else nil
+		local rule: Model.TitleRule = { operator = edit.operator, value = value, enabled = old == nil or old.enabled }
+		if edit.index then s.titleRules[edit.index] = rule else table.insert(s.titleRules, rule) end
+	elseif s.menu == "check-filter" and edit.repo then
+		local old = if edit.index then s.ignoredChecks[edit.index] else nil
+		local rule: Model.IgnoredCheck = { repo = edit.repo, name = value, enabled = old == nil or old.enabled }
+		if edit.index then s.ignoredChecks[edit.index] = rule else table.insert(s.ignoredChecks, rule) end
+	else return false end
+	M.project(s)
+	M.openMenu(s, "filters")
+	return true
+end
+
+function M.removeFilter(s: State)
+	local edit = s.filterEdit
+	if edit and edit.index then
+		if s.menu == "title-filter" then table.remove(s.titleRules, edit.index)
+		elseif s.menu == "check-filter" then table.remove(s.ignoredChecks, edit.index) end
+	end
+	M.project(s)
+	M.openMenu(s, "filters")
+end
+
 -- Applies row `index` of the open menu: a sort is chosen and the menu closes; a repository is
 -- toggled and the menu stays; Clear filter clears and closes. Returns whether the menu closed.
 function M.menuPick(s: State, index: number): boolean
@@ -1205,7 +1375,32 @@ function M.menuPick(s: State, index: number): boolean
 	local row = rows[index]
 	if not row then return false end
 	s.menuCursor = index
-	if s.menu == "sort" then
+	if s.menu == "filters" then
+		local titles, checks = #s.titleRules, #s.ignoredChecks
+		if index == 1 then M.openMenu(s, "repositories")
+		elseif index <= titles + 1 then M.beginFilterEdit(s, "title", index - 1, nil)
+		elseif index <= titles + checks + 1 then M.beginFilterEdit(s, "check", index - titles - 1, nil)
+		elseif index == titles + checks + 2 then M.beginFilterEdit(s, "title", nil, nil)
+		elseif index == titles + checks + 3 then M.openMenu(s, "check-repository")
+		else
+			s.repositories, s.repositoriesEnabled, s.titleRules, s.ignoredChecks = nil, true, {}, {}
+			M.project(s)
+			M.closeMenu(s)
+			return true
+		end
+		return false
+	elseif s.menu == "title-filter" and s.filterEdit then
+		if row.kind == "clear" then M.removeFilter(s)
+		else s.filterEdit.operator = M.TITLE_OPERATORS[index].id :: Model.TitleOperator; s.filterEdit.typing = true end
+		return false
+	elseif s.menu == "check-repository" then
+		M.beginFilterEdit(s, "check", nil, row.label)
+		return false
+	elseif s.menu == "check-filter" and s.filterEdit then
+		if row.kind == "clear" then M.removeFilter(s)
+		else s.filterEdit.field = Fields.create(row.label); M.saveFilter(s) end
+		return false
+	elseif s.menu == "sort" then
 		M.setSort(s, M.SORTS[index].id)
 		M.closeMenu(s)
 		return true
@@ -1572,7 +1767,7 @@ function M.linkTarget(s: State): LinkTarget
 	if not ref then return { kind = "invalid" } end
 	local pr = M.find(s, ref.repo, ref.number)
 	if pr then
-		local placement = Model.placement(pr, s.now)
+		local placement = Model.placement(pr, s.now, s.ignoredChecks)
 		if placement.tab == "review" and (placement.column == "inactive" or placement.column == "team") then
 			return { kind = "folded", repo = pr.repo, number = pr.number, pr = pr, column = placement.column }
 		end
@@ -1599,10 +1794,13 @@ end
 function M.show(s: State, key: string): boolean
 	for _, pr in s.prs do
 		if pr.key == key then
-			local placement = Model.placement(pr, s.now)
+			local placement = Model.placement(pr, s.now, s.ignoredChecks)
 			s.tab = placement.tab
 			s.search = Fields.create("")
 			s.repositories = nil
+			for _, rule in s.titleRules do
+				if not Model.titleMatches(pr.title, { rule }) then rule.enabled = false end
+			end
 			unfold(s, placement.column)
 			s.mode, s.menu = "board", nil
 			M.project(s)

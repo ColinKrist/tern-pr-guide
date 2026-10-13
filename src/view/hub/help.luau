@@ -75,7 +75,9 @@ local function boardGroups(s: State.State): { Group }
 	local board: { { string } } = {
 		{ "/", "Search" },
 		{ "N", "Add a pull request by link" },
-		{ "F", "Filter by repository" },
+		{ "F", "Filter by repository or title; ignore named checks" },
+		{ "⏎ / Space", "Edit or toggle a saved filter" },
+		{ "Tab", "Between filter text and options; ⏎ applies" },
 		{ "S", "Sort" },
 		{ "⇧S", "Settings: models, effort, lens and where links open (also ⇧M)" },
 		{ "⌘R", "Refresh" },

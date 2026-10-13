@@ -8,7 +8,10 @@ export type Reason = "merge_failed" | "feedback" | "checks" | "conflict" -- in t
 export type Sort = "repository" | "priority" | "newest" | "oldest" | "smallest"
 
 export type CheckState = "none" | "pending" | "passing" | "failing"
-export type Checks = { state: CheckState, passing: number, failing: number, pending: number }
+export type Checks = { state: CheckState, passing: number, failing: number, pending: number, failedNames: { string }? }
+export type IgnoredCheck = { repo: string, name: string, enabled: boolean }
+export type TitleOperator = "contains" | "not_contains" | "starts" | "not_starts"
+export type TitleRule = { operator: TitleOperator, value: string, enabled: boolean }
 
 export type Verdict = "approved" | "changes_requested" | "commented" | "dismissed"
 -- A reviewer's latest review (hub-f's `latestReviews`).
@@ -79,7 +82,7 @@ export type Refresh = {
 	merged: { Opened }?, -- the viewer's recently merged PRs, newest first; nil when that search failed
 }
 
-export type Filter = { repositories: { [string]: boolean }?, search: string } -- nil repositories = all
+export type Filter = { repositories: { [string]: boolean }?, search: string, titles: { TitleRule }? } -- nil repositories = all
 
 -- Next up
 export type NextItem = { key: string, tab: Tab, column: Column, reason: Reason? }
@@ -223,17 +226,34 @@ function M.canMergeWhenReady(resolution: MergeResolution?, allowed: boolean?): b
 	return allowed == true
 end
 
-function M.reasons(pr: HubPR, now: number): { Reason }
+-- Only named failures from the current check snapshot can be ignored. Missing or partial evidence
+-- leaves every unknown failure actionable. The raw state still controls Ready to merge and merging.
+function M.actionableFailures(pr: HubPR, ignored: { IgnoredCheck }?): number
+	local failures = pr.checks.failing
+	local names = pr.checks.failedNames
+	if not names or #names > failures then return failures end
+	for _, name in names do
+		for _, rule in ignored or {} do
+			if rule.enabled and string.lower(rule.repo) == string.lower(pr.repo) and rule.name == name then
+				failures -= 1
+				break
+			end
+		end
+	end
+	return failures
+end
+
+function M.reasons(pr: HubPR, now: number, ignored: { IgnoredCheck }?): { Reason }
 	local out: { Reason } = {}
 	if pr.role ~= "mine" or pr.draft or not active(pr, now) then return out end
 	if pr.mergeFailure then out[#out + 1] = "merge_failed" end
 	if personFeedback(pr) then out[#out + 1] = "feedback" end
-	if pr.checks.state == "failing" then out[#out + 1] = "checks" end
+	if pr.checks.state == "failing" and (pr.checks.failing == 0 or M.actionableFailures(pr, ignored) > 0) then out[#out + 1] = "checks" end
 	if pr.conflicts then out[#out + 1] = "conflict" end
 	return out
 end
 
-function M.placement(pr: HubPR, now: number): Placement
+function M.placement(pr: HubPR, now: number, ignored: { IgnoredCheck }?): Placement
 	if pr.role == "review" then
 		local reviews = pr.reviews
 		local mine = reviews.mine
@@ -253,7 +273,7 @@ function M.placement(pr: HubPR, now: number): Placement
 	if pr.draft or not active(pr, now) then return { tab = "mine", column = "inactive", reasons = {} } end
 	-- Tandem owns the branch it watches: the PR waits in In review, whatever is wrong with it or not.
 	if pr.tandem then return { tab = "mine", column = "in_review", reasons = {} } end
-	local reasons = M.reasons(pr, now)
+	local reasons = M.reasons(pr, now, ignored)
 	if #reasons > 0 then return { tab = "mine", column = "needs_fixes", reasons = reasons } end
 	local passing = pr.checks.state == "passing" or pr.checks.state == "none"
 	if pr.reviews.decision == "approved" and passing and not pr.conflicts then
@@ -262,8 +282,8 @@ function M.placement(pr: HubPR, now: number): Placement
 	return { tab = "mine", column = "in_review", reasons = reasons }
 end
 
-function M.classify(pr: HubPR, now: number): Column
-	return M.placement(pr, now).column
+function M.classify(pr: HubPR, now: number, ignored: { IgnoredCheck }?): Column
+	return M.placement(pr, now, ignored).column
 end
 
 -- A bot's latest review or unresolved thread, for Fix bot comments.
@@ -357,8 +377,23 @@ function M.size(pr: HubPR): number
 end
 
 -- Search matches "#n", title, author, repo and base branch, ignoring case.
+function M.titleMatches(title: string, rules: { TitleRule }?): boolean
+	local text = string.lower(title)
+	for _, rule in rules or {} do
+		if rule.enabled then
+			local value = string.lower(rule.value)
+			local found = if rule.operator == "starts" or rule.operator == "not_starts"
+				then string.sub(text, 1, #value) == value else string.find(text, value, 1, true) ~= nil
+			local exclude = rule.operator == "not_contains" or rule.operator == "not_starts"
+			if found == exclude then return false end
+		end
+	end
+	return true
+end
+
 function M.visible(pr: HubPR, filter: Filter): boolean
 	if filter.repositories and not filter.repositories[pr.repo] then return false end
+	if not M.titleMatches(pr.title, filter.titles) then return false end
 	local query = string.lower((string.gsub(filter.search, "^%s+", "")))
 	query = (string.gsub(query, "%s+$", ""))
 	if query == "" then return true end
@@ -392,8 +427,8 @@ end
 
 type Entry = { pr: HubPR, placement: Placement, urgency: number, active: number, created: number }
 
-local function entry(pr: HubPR, now: number): Entry
-	local placement = M.placement(pr, now)
+local function entry(pr: HubPR, now: number, ignored: { IgnoredCheck }?): Entry
+	local placement = M.placement(pr, now, ignored)
 	return {
 		pr = pr, placement = placement, urgency = urgency(pr, placement),
 		active = seconds(pr.lastActivityAt), created = seconds(pr.createdAt),
@@ -420,10 +455,10 @@ local function priority(column: Column): (Entry, Entry) -> boolean
 end
 
 -- The PRs in `column`, in `sort` order. Ties fall back to the key, so the result is deterministic.
-function M.order(prs: { HubPR }, column: Column, sort: Sort, now: number): { HubPR }
+function M.order(prs: { HubPR }, column: Column, sort: Sort, now: number, ignored: { IgnoredCheck }?): { HubPR }
 	local entries: { Entry } = {}
 	for _, pr in prs do
-		local e = entry(pr, now)
+		local e = entry(pr, now, ignored)
 		if e.placement.column == column then table.insert(entries, e) end
 	end
 	local byPriority = priority(column)
@@ -457,10 +492,10 @@ function M.order(prs: { HubPR }, column: Column, sort: Sort, now: number): { Hub
 end
 
 -- Everything that needs the viewer, across both tabs, most urgent first.
-function M.queue(prs: { HubPR }, now: number): { NextItem }
+function M.queue(prs: { HubPR }, now: number, ignored: { IgnoredCheck }?): { NextItem }
 	local entries: { Entry } = {}
 	for _, pr in prs do
-		local e = entry(pr, now)
+		local e = entry(pr, now, ignored)
 		if yourTurn(e.placement.column) then table.insert(entries, e) end
 	end
 	table.sort(entries, function(a: Entry, b: Entry): boolean
@@ -479,8 +514,8 @@ end
 
 -- The item after `after` in the queue; the first when `after` is nil or no longer queued; wraps; nil when
 -- nothing needs the viewer. `index` is its place in the queue and `total` the queue's length.
-function M.nextUp(prs: { HubPR }, now: number, after: string?): NextUp?
-	local list = M.queue(prs, now)
+function M.nextUp(prs: { HubPR }, now: number, after: string?, ignored: { IgnoredCheck }?): NextUp?
+	local list = M.queue(prs, now, ignored)
 	if #list == 0 then return nil end
 	local index = 1
 	if after then

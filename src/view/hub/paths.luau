@@ -14,6 +14,7 @@ M.settingsButton = M.ROOT .. ".header.top.fresh.settings"
 -- Settings' model search field, in the layer over the board.
 M.settingsField = "layer.menu.body.box.field"
 M.repositoriesButton = M.ROOT .. ".header.tabs.ctls.repos"
+M.filterField = "layer.menu.body.edit.box.field"
 M.sortButton = M.ROOT .. ".header.tabs.ctls.sort"
 -- The add-by-link field, at the top of the To review column.
 M.linkField = M.ROOT .. ".body.board.col_to_review.add.row.field"

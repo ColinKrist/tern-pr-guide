@@ -6,6 +6,7 @@
 local Agent = require("../agent")
 local AgentHost = require("../agent-host")
 local Details = require("./details")
+local FilterStore = require("./filter-store")
 local Fixes = require("./fixes")
 local Github = require("../github")
 local Lookups = require("./lookups")
@@ -465,7 +466,10 @@ local function addByLink(b: Block, cx: BlockCx, _: string)
 	local target = State.linkTarget(s)
 	if target.kind == "board" then
 		State.closeLink(s, true)
-		if State.show(s, target.pr.key) then revealSelected(b, cx) end
+		if State.show(s, target.pr.key) then
+			FilterStore.save(b, cx)
+			revealSelected(b, cx)
+		end
 	elseif target.kind == "folded" then
 		local pr = target.pr
 		if not b.fixture then
@@ -476,7 +480,10 @@ local function addByLink(b: Block, cx: BlockCx, _: string)
 		State.closeLink(s, true)
 		keepCache(b, cx, function() State.markAdded(s, pr.key) end, pr.key, pr.headOid)
 		if b.closed then return end
-		if State.show(s, pr.key) then revealSelected(b, cx) end
+		if State.show(s, pr.key) then
+			FilterStore.save(b, cx)
+			revealSelected(b, cx)
+		end
 	elseif target.kind == "new" then
 		local ref: Model.PRRef = { repo = target.repo, number = target.number }
 		if b.fixture then return cx:toast("info", "The sample board doesn't add pull requests") end

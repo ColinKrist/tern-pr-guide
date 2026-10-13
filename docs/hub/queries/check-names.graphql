@@ -1,0 +1,16 @@
+# Named checks, only for repositories with an ignore rule or an open check picker.
+query CheckNames($ids: [ID!]!) {
+  rateLimit { cost remaining limit resetAt }
+  nodes(ids: $ids) { ... on PullRequest { id number headRefOid commits(last: 1) { nodes { commit { statusCheckRollup {
+    state
+    contexts(first: 100) {
+      checkRunCountsByState { state count }
+      statusContextCountsByState { state count }
+      nodes {
+        __typename
+        ... on CheckRun { name conclusion }
+        ... on StatusContext { context state }
+      }
+    }
+  } } } } } }
+}

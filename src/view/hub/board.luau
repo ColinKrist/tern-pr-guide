@@ -49,20 +49,15 @@ local function control(key: string, open: boolean, active: boolean, label: Node,
 end
 
 local function controls(s: State.State): Node
-	local chosen: { string } = {}
-	for _, option in s.board.repositories do
-		if option.on then table.insert(chosen, string.match(option.repo, "[^/]+$") :: string) end
-	end
-	local repos = if #chosen == 0 then span("gp-hub-ctl-label", "All repositories")
-		elseif #chosen == 1 then span("gp-hub-ctl-label gp-hub-ctl-strong", chosen[1])
-		else span("gp-hub-ctl-label gp-hub-ctl-strong", #chosen .. " repositories")
+	local count = State.filterCount(s)
+	local filter = span("gp-hub-ctl-label" .. (if count > 0 then " gp-hub-ctl-strong" else ""), "Filter" .. (if count > 0 then " · " .. count else ""))
 	local sortName = ""
 	for _, sort in State.SORTS do
 		if sort.id == s.sort then sortName = sort.label end
 	end
 	local sort = el("span", { class = "gp-hub-ctl-label" }, { span("gp-hub-ctl-dim", "Sort:"), span("gp-hub-ctl-strong", sortName) })
 	return el("div", { class = "gp-hub-ctls", key = "ctls" }, {
-		control("repos", s.menu == "repositories", #chosen > 0, repos, "repositories"),
+		control("repos", s.menu == "filters" or s.menu == "repositories" or s.filterEdit ~= nil or s.menu == "check-repository", count > 0, filter, "filters"),
 		control("sort", s.menu == "sort", false, sort, "sort"),
 	})
 end
@@ -278,7 +273,7 @@ local function body(s: State.State, motion: Ui.Motion): Node
 	if s.board.empty and s.loading then
 		message("Loading pull requests…")
 	else
-		if s.board.empty and (s.search.text ~= "" or s.repositories ~= nil) then
+		if s.board.empty and (s.search.text ~= "" or State.filterCount(s) > 0) then
 			message("No pull requests match the search or filter.")
 		else
 			table.insert(kids, columns(s))
