@@ -3,7 +3,9 @@
 -- chip text and the kv codecs.
 local AutoLand = require("../src/hub/auto-land")
 local Cases: any = require("../fixtures/hub/cases")
+local Github = require("../src/github")
 local Model = require("../src/hub/model")
+local RawAutoLand: any = require("../fixtures/hub/raw-auto-land")
 
 local NOW = 1791547200 -- 2026-10-09T12:00:00Z
 local ISO = "2026-10-09T12:00:00Z"
@@ -236,6 +238,36 @@ local function testSignals()
 	assert(next == nil and effect and effect.kind == "off" and effect.notice == "auto-merge was turned off")
 end
 
+-- The label kind over the recorded auto-land read (the smoke repo, 2026-10-13): jubbydev added merge-queue at 09:28:48,
+-- removed it at 09:28:53 and added blocked at 09:28:55.
+local function testRecordedLabels()
+	local parsed = Github.parseLandFacts(RawAutoLand) :: Github.LandFactsUpdate
+	local recorded = parsed.byId["PR_kwDOVC46H88AAAABII2qXQ"]
+	local head = recorded.headOid
+	local board = pr({ headOid = head })
+	local queued = record({ head = head, phase = "queued", queuedAt = "2026-10-13T09:28:48Z", approved = true })
+	local at = Model.epoch("2026-10-13T09:30:00Z") :: number
+	local function step(read: Model.LandFacts, now: number?)
+		return AutoLand.step(queued, board, read, { now = now or at, iso = "2026-10-13T09:30:00Z", viewer = "jubbydev", method = LABEL, settings = SETTINGS })
+	end
+
+	local next, effect = step(recorded)
+	assert(next and next.phase == "recovering" and effect and effect.kind == "recover", "blocked added after the merge was asked for: dequeued")
+
+	local unblocked = table.clone(recorded)
+	unblocked.labels = {}
+	next, effect = step(unblocked)
+	assert(next == nil and effect and effect.kind == "off" and effect.notice == "the merge-queue label was removed", "a person removed merge-queue: cancelled")
+
+	local byBot = table.clone(unblocked)
+	byBot.events = table.clone(recorded.events)
+	byBot.events[2] = { added = false, label = "merge-queue", actor = "aviator-app", bot = true, at = "2026-10-13T09:28:53Z" }
+	next, effect = step(byBot)
+	assert(next == queued and effect == nil, "a bot removed it moments ago: still queued")
+	next, effect = step(byBot, (Model.epoch("2026-10-13T09:28:53Z") :: number) + AutoLand.LABEL_GRACE)
+	assert(effect and effect.kind == "recover", "a bot removed it with no dequeue label for 600 s: dequeued")
+end
+
 local function testKinds()
 	assert(AutoLand.KINDS.label.needsFacts and not AutoLand.KINDS.comment.needsFacts and not AutoLand.KINDS.queue.needsFacts)
 	assert(AutoLand.KINDS.label.queue(LABEL, nil, SETTINGS) == nil, "the label kind can't decide without facts")
@@ -306,6 +338,7 @@ return function()
 	testRecovering()
 	testWaiting()
 	testSignals()
+	testRecordedLabels()
 	testKinds()
 	testRecovery()
 	testLabel()

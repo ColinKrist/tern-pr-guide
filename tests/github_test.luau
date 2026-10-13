@@ -6,6 +6,7 @@ local RawHub: any = require("../fixtures/hub/raw-hub-f")
 local RawThreads: any = require("../fixtures/hub/raw-threads")
 local RawChecks: any = require("../fixtures/hub/raw-checks")
 local RawMerged: any = require("../fixtures/hub/raw-merged")
+local RawAutoLand: any = require("../fixtures/hub/raw-auto-land")
 
 local COST_LIMIT = 18
 local BASE = { "gh", "api", "graphql", "-f" }
@@ -513,6 +514,69 @@ local function testCommands()
 	assert(string.find(added.calls[1].argv[5], 'added0: repository(owner: "o", name: "r") { pullRequest(number: 9) { ...Hub } }', 1, true) ~= nil)
 end
 
+-- Auto-land's read and writes: the recorded answer parsed, the exact argv, and the refresh budget with the read in it.
+local function testAutoLand()
+	local parsed = Github.parseLandFacts(RawAutoLand)
+	assert(parsed ~= nil and parsed.rateLimit.cost == 1 and parsed.rateLimit.remaining == 4090)
+	local blocked = parsed.byId["PR_kwDOVC46H88AAAABII2qXQ"]
+	assert(blocked.state == "open" and blocked.draft == false and blocked.headOid == "2e5a7b5beda1a9fd40ce5844b18b4832be2b9cf5")
+	assert(blocked.headAuthor == "jubbydev" and blocked.autoMerge == false)
+	same(blocked.labels, { "blocked" }, "labels")
+	same(blocked.events, {
+		{ added = true, label = "merge-queue", actor = "jubbydev", bot = false, at = "2026-10-13T09:28:48Z" },
+		{ added = false, label = "merge-queue", actor = "jubbydev", bot = false, at = "2026-10-13T09:28:53Z" },
+		{ added = true, label = "blocked", actor = "jubbydev", bot = false, at = "2026-10-13T09:28:55Z" },
+	}, "events, oldest first")
+	local quiet = parsed.byId["PR_kwDOVC46H88AAAABIIrFkA"]
+	assert(quiet.state == "open" and #quiet.labels == 0 and #quiet.events == 0)
+	assert(parsed.byId["PR_kwDOVC46H88AAAABIIrIDg"].state == "merged")
+
+	-- A bot actor, by its type or by its login; a commit with no linked user; a node that isn't a PR.
+	local raw = clone(RawAutoLand)
+	local node = raw.data.nodes[2]
+	node.timelineItems.nodes = {
+		{ __typename = "UnlabeledEvent", createdAt = "2026-10-13T10:00:00Z", actor = { __typename = "Bot", login = "mergify" }, label = { name = "merge-queue" } },
+		{ __typename = "LabeledEvent", createdAt = "2026-10-13T10:01:00Z", actor = { __typename = "User", login = "aviator-app" }, label = { name = "blocked" } },
+		{ __typename = "LabeledEvent", createdAt = "2026-10-13T10:02:00Z", label = { name = "ghost" } },
+	}
+	node.commits.nodes[1].commit.author = {}
+	node.autoMergeRequest = { enabledAt = "2026-10-13T09:00:00Z" }
+	table.insert(raw.data.nodes, { id = "I_issue" })
+	local edited = Github.parseLandFacts(raw)
+	assert(edited ~= nil and edited.byId.I_issue == nil, "a node that isn't a pull request is left out")
+	local bots = edited.byId["PR_kwDOVC46H88AAAABIIrFkA"]
+	assert(bots.events[1].bot and bots.events[1].actor == "mergify", "a Bot type is a bot")
+	assert(bots.events[2].bot and bots.events[2].actor == "aviator-app", "so is an aviator login")
+	assert(not bots.events[3].bot and bots.events[3].actor == "", "an event with no actor is a person nobody can name")
+	assert(bots.headAuthor == nil and bots.autoMerge == true)
+	assert(Github.parseLandFacts(nil) == nil and Github.parseLandFacts({ data = {} }) == nil and Github.parseLandFacts("x") == nil)
+
+	local pr = byKey["acme/api#110"]
+	same(Github.commands.removeLabel(pr, "blocked"), { argv = { "gh", "pr", "edit", "110", "--repo", "acme/api", "--remove-label", "blocked" } }, "remove-label")
+	same(Github.commands.updateBranch(pr, true), { argv = { "gh", "pr", "update-branch", "110", "--repo", "acme/api", "--rebase" } }, "update-branch --rebase")
+
+	-- One nodes(ids:) call for every PR.
+	local fake = FakeRunner.new({ { prefix = BASE, contains = "query AutoLand(", reply = { stdout = "auto-land" } } })
+	local client = Github.client(fake.run, decoder({ ["auto-land"] = RawAutoLand }))
+	local value, err = first(function(done) client.landFacts({ "PR_a", "PR_b" }, done) end)
+	assert(err == nil and value.byId["PR_kwDOVC46H88AAAABII2qXQ"] ~= nil)
+	fake.expectOnly(1)
+	local call = fake.calls[1]
+	assert(string.sub(call.argv[5], 1, 22) == "query=query AutoLand($" and #call.argv == 9)
+	assert(call.argv[6] == "-f" and call.argv[7] == "ids[]=PR_a" and call.argv[8] == "-f" and call.argv[9] == "ids[]=PR_b")
+	local none = FakeRunner.new({})
+	local empty = first(function(done) Github.client(none.run, decoder({})).landFacts({}, done) end)
+	assert(empty ~= nil and next(empty.byId) == nil)
+	none.expectOnly(0)
+
+	-- The per-refresh budget with the auto-land read: hub-f's pages, merged, threads, checks and auto-land.
+	local refreshClient, refreshFake = fixtureClient()
+	local refreshed = first(function(done) refreshClient.refresh({ added = {}, previous = {} }, done) end)
+	local total = RawChecks.data.rateLimit.cost + parsed.rateLimit.cost
+	for _, rate in refreshed.calls do total += rate.cost end
+	assert(#refreshFake.calls > 0 and total <= COST_LIMIT, "a refresh with auto-land costs " .. total .. " points, the limit is " .. COST_LIMIT)
+end
+
 -- A bot's body-only COMMENTED review is feedback; a person's comment review is never a requested change.
 local function testDetailsBotReviews()
 	local pr = byKey["acme/api#119"]
@@ -582,6 +646,7 @@ return function()
 	assert(#ids(Cases.prs) > 0)
 	testDetailsBotReviews()
 	testCommands()
+	testAutoLand()
 	testParsers()
 	testParsersNeverThrow()
 	testSearchesAndAliases()
