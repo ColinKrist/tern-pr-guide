@@ -12,6 +12,8 @@ local Buildkite = require("../ci/buildkite")
 local Details = require("./details")
 local Fetch = require("../fetch")
 local Fields = require("../text-field")
+local CheckFilter = require("./check-filter")
+local FilterStore = require("./filter-store")
 local Fixes = require("./fixes")
 local FixesPage = require("../view/hub/fixes")
 local Github = require("../github")
@@ -168,7 +170,12 @@ local function pickRow(b: Block, cx: BlockCx, index: number, ACTIONS: { [string]
 	end
 	if s.menu == "merge" then return chooseMergeRow(b, cx, index) end
 	local menu = s.menu
+	local picked = State.menuRows(s)[index]
 	State.menuPick(s, index)
+	if s.filterEdit and s.filterEdit.typing then frameLater(cx, { { "focus", Paths.filterField } }) end
+	if s.menu == "check-filter" and s.filterEdit then CheckFilter.read(b, cx, s.filterEdit.repo) end
+	if menu == "check-filter" then CheckFilter.read(b, cx, nil) end
+	if picked and (menu == "repositories" or menu == "check-filter" or ((menu == "filters" or menu == "title-filter") and picked.kind == "clear")) then FilterStore.save(b, cx) end
 	if menu == "settings" then keepAgentChoice(b) end
 end
 
@@ -276,9 +283,33 @@ end
 ACTIONS["hub-menu-enter"] = function(b, cx)
 	local s = b.s
 	local row = State.menuRows(s)[s.menuCursor]
-	if s.menu == "repositories" and not (row and row.kind == "clear") then return closeMenu(b) end
+	if s.menu == "repositories" and not (row and row.kind == "clear") then return State.openMenu(s, "filters") end
 	pickRow(b, cx, s.menuCursor, ACTIONS)
 end
+-- Filter rule controls share their click and keyboard actions.
+ACTIONS["hub-filter-toggle"] = function(b, cx, index)
+	local number = tonumber(index) or 0
+	State.toggleFilter(b.s, number)
+	FilterStore.save(b, cx)
+	if number > #b.s.titleRules + 1 then CheckFilter.read(b, cx, nil) end
+end
+ACTIONS["hub-filter-back"] = function(b)
+	State.openMenu(b.s, "filters")
+end
+ACTIONS["hub-filter-focus"] = function(b, cx, value)
+	local edit = b.s.filterEdit
+	if not edit then return end
+	edit.typing = if value == "input" then true else not edit.typing
+	if edit.typing then frameLater(cx, { { "focus", Paths.filterField } }) end
+end
+ACTIONS["hub-filter-save"] = function(b, cx)
+	local check = b.s.menu == "check-filter"
+	if State.saveFilter(b.s) then
+		FilterStore.save(b, cx)
+		if check then CheckFilter.read(b, cx, nil) end
+	end
+end
+
 ACTIONS["hub-menu-effort"] = function(b, cx, delta)
 	State.stepEffort(b.s, tonumber(delta) or 0)
 	keepAgentChoice(b)
@@ -670,6 +701,8 @@ local block: BlockDef<Block> = {
 			sample.models = table.clone(SAMPLE_AGENT.models)
 			s.agent = sample
 		elseif live then
+			if cache then FilterStore.load(b, cx, cache.viewer); CheckFilter.read(b, cx, nil) end
+			if b.closed then return b end
 			-- How each repo merges is known from the first frame, before any refresh.
 			loadMerges(b)
 			loadAgent(b, cx)
@@ -723,6 +756,11 @@ local block: BlockDef<Block> = {
 		end
 		if s.mode == "link" then
 			Fields.key(s.link, key)
+			return true
+		end
+		if s.mode == "menu" and s.filterEdit and s.filterEdit.typing then
+			s.keyed = true
+			Fields.key(s.filterEdit.field, key)
 			return true
 		end
 		if s.mode == "menu" and s.methodEdit then

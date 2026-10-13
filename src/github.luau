@@ -26,7 +26,7 @@ export type Out = { status: number, stdout: string, stderr: string, timed_out: b
 export type Runner = (argv: { string }, opts: { cwd: string?, stdin: string?, timeout_ms: number? }, done: (out: Out) -> ()) -> ()
 export type Decode = (text: string) -> any
 
-export type RefreshRequest = { added: { PRRef }, previous: { HubPR } }
+export type RefreshRequest = { added: { PRRef }, previous: { HubPR }, checkNames: { [string]: boolean }? }
 export type Probe = { changed: boolean, lastModified: string?, pollSeconds: number? }
 export type ChecksUpdate = { byId: { [string]: { headOid: string, checks: Checks } }, rateLimit: RateLimit }
 export type Command = { argv: { string }, stdin: string? }
@@ -41,6 +41,7 @@ export type RepoHistory = { base: string, byWorkflow: { [string]: { failed: numb
 export type Client = {
 	refresh: (req: RefreshRequest, done: (value: Refresh?, err: Error?) -> ()) -> (),
 	probe: (since: string?, done: (value: Probe?, err: Error?) -> ()) -> (),
+	checkNames: (ids: { string }, done: (value: ChecksUpdate?, err: Error?) -> ()) -> (),
 	checks: (ids: { string }, done: (value: ChecksUpdate?, err: Error?) -> ()) -> (),
 	details: (pr: HubPR, done: (value: FixDetails?, err: Error?) -> ()) -> (),
 	detect: (repo: string, done: (value: Detected?, err: Error?) -> ()) -> (),
@@ -108,6 +109,23 @@ local CHECKS_QUERY = [=[
 query Checks($ids: [ID!]!) {
   rateLimit { cost remaining limit resetAt }
   nodes(ids: $ids) { ... on PullRequest { id number headRefOid commits(last: 1) { nodes { commit { statusCheckRollup { state contexts(first: 0) { checkRunCountsByState { state count } statusContextCountsByState { state count } } } } } } } }
+}]=]
+
+local CHECK_NAMES_QUERY = [=[
+query CheckNames($ids: [ID!]!) {
+  rateLimit { cost remaining limit resetAt }
+  nodes(ids: $ids) { ... on PullRequest { id number headRefOid commits(last: 1) { nodes { commit { statusCheckRollup {
+    state
+    contexts(first: 100) {
+      checkRunCountsByState { state count }
+      statusContextCountsByState { state count }
+      nodes {
+        __typename
+        ... on CheckRun { name conclusion }
+        ... on StatusContext { context state }
+      }
+    }
+  } } } } } }
 }]=]
 
 -- These three mirror docs/hub/queries/merge-detect.graphql, merge-failure.graphql and details.graphql the same way.
@@ -262,7 +280,16 @@ local function checksOf(commits: any): Checks
 	if state == nil then
 		state = if failing > 0 then "failing" elseif pending > 0 then "pending" elseif passing > 0 then "passing" else "none"
 	end
-	return { state = state, passing = passing, failing = failing, pending = pending }
+	local failedNames: { string }? = nil
+	if type(contexts.nodes) == "table" then
+		failedNames = {}
+		for _, node in contexts.nodes do
+			local name = if node.__typename == "CheckRun" and FAILING_RUNS[str(node.conclusion) or ""] then str(node.name)
+				elseif node.__typename == "StatusContext" and FAILING_STATUSES[str(node.state) or ""] then str(node.context) else nil
+			if name then table.insert(failedNames, name) end
+		end
+	end
+	return { state = state, passing = passing, failing = failing, pending = pending, failedNames = failedNames }
 end
 
 -- hub-f
@@ -997,6 +1024,7 @@ function M.client(run: Runner, decode: Decode): Client
 		attempt()
 	end
 
+
 	local HUB_OP, HUB_WHAT = "gh api graphql: hub", "refresh pull requests"
 
 	-- One search of hub-f, page after page up to SEARCH_MAX. `done` gets the search as `{ nodes, pageInfo }`, the
@@ -1077,7 +1105,60 @@ function M.client(run: Runner, decode: Decode): Client
 		return out
 	end
 
-	local function refresh(req: RefreshRequest, done: (value: Refresh?, err: Error?) -> ())
+	local function checkNames(ids: { string }, done: (value: ChecksUpdate?, err: Error?) -> ())
+		local combined: ChecksUpdate = { byId = {}, rateLimit = NO_LIMIT }
+		local offset = 1
+		local function page()
+			if offset > #ids then return done(combined, nil) end
+			local batch: { string } = {}
+			local last = math.min(offset + 9, #ids)
+			for i = offset, last do table.insert(batch, ids[i]) end
+			graphql(CHECK_NAMES_QUERY, idArgs(batch), "gh api graphql: check names", "read check names", function(doc, err)
+				if err then return done(nil, err) end
+				local update = M.parseChecks(doc)
+				if not update then return done(nil, failure("gh api graphql: check names", "read check names", "GitHub sent a response without nodes", nil)) end
+				for id, result in update.byId do combined.byId[id] = result end
+				local cost = combined.rateLimit.cost + update.rateLimit.cost
+				combined.rateLimit = table.clone(update.rateLimit)
+				combined.rateLimit.cost = cost
+				offset = last + 1
+				page()
+			end)
+		end
+		page()
+	end
+
+	local function refresh(req: RefreshRequest, callback: (value: Refresh?, err: Error?) -> ())
+		-- The ordinary refresh stays count-only. Named checks cost extra only for configured repositories.
+		local function done(value: Refresh?, err: Error?)
+			local wanted = req.checkNames
+			if not value or not wanted or next(wanted) == nil then return callback(value, err) end
+			local selected: { HubPR } = {}
+			for _, pr in value.prs do
+				if wanted[string.lower(pr.repo)] and pr.checks.state == "failing" then table.insert(selected, pr) end
+			end
+			local offset = 1
+			local function page()
+				if offset > #selected then return callback(value, err) end
+				local ids: { string } = {}
+				local last = math.min(offset + 9, #selected)
+				for i = offset, last do table.insert(ids, selected[i].id) end
+				checkNames(ids, function(update, namesErr)
+					if update then
+						for i = offset, last do
+							local pr = selected[i]
+							local result = update.byId[pr.id]
+							if result and result.headOid == pr.headOid then pr.checks = result.checks end
+						end
+						table.insert(value.calls, update.rateLimit)
+						value.rateLimit = update.rateLimit
+					elseif namesErr then value.partial = value.partial or namesErr end
+					offset = last + 1
+					page()
+				end)
+			end
+			page()
+		end
 		local calls: { RateLimit } = {}
 		local merged: { Model.Opened }? = nil
 		local function searched(doc: any)
@@ -1219,6 +1300,7 @@ function M.client(run: Runner, decode: Decode): Client
 		end)
 	end
 
+
 	local function details(pr: HubPR, done: (value: FixDetails?, err: Error?) -> ())
 		local operation, what = "gh api graphql: details", "read what needs fixing in " .. pr.key
 		graphql(DETAILS_QUERY, { "-f", "id=" .. pr.id }, operation, what, function(doc, err)
@@ -1294,7 +1376,7 @@ function M.client(run: Runner, decode: Decode): Client
 		end)
 	end
 
-	return { refresh = refresh, probe = probe, checks = checks, details = details, detect = detect, history = history, runs = runs, run = runCommand }
+	return { refresh = refresh, probe = probe, checks = checks, checkNames = checkNames, details = details, detect = detect, history = history, runs = runs, run = runCommand }
 end
 
 return M

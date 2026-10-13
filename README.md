@@ -67,6 +67,24 @@ flashes. Failed merges, failing checks and feedback from a person also show a to
 don't, because they arrive in bursts when other PRs merge. The segment stays visible while the hub
 is open and shows how many PRs need fixes or review.
 
+**Filtering.** Open **Filter** (`F`) to choose repositories or add title conditions: contains,
+does not contain, starts with or does not start with. Title matching ignores case and treats text
+literally. Conditions combine, and saved filters also narrow Next up. Search stays a temporary
+way to find a PR.
+
+Press ⏎ on a saved rule to edit it, or Space to switch it off without losing its value. The
+checkbox does the same. **Filter · N** counts enabled rules, and the menu shows how many PRs are
+hidden. In the editor, Tab switches between the text field and options; ⏎ applies the text and
+Esc returns without saving. **Clear filters** removes the saved rules. Filters are remembered
+for each GitHub account, including when the hub pane is closed and reopened.
+
+**Ignoring checks.** In Filter, choose **Ignore a check…**, select its repository and type the
+exact check name. Currently failing check names are also offered when available. For example,
+a failing approval check can keep a PR in **In review** rather than **Needs fixes**. The rule
+only changes that classification: the check stays visible and failing, and it still prevents
+**Ready to merge**. Other failed checks, review feedback, conflicts and failed merges still count.
+Missing check-name data keeps failures actionable until their names can be read.
+
 **Merging.** Each repository has one merge setting: squash, merge commit, rebase, merge queue, a
 comment command such as `/aviator merge`, or a label. PR Guide reads it from the repository's
 config, or learns it from how recent PRs were merged and asks you once to confirm. Merge one PR,
@@ -230,7 +248,10 @@ Press `?` on any PR Guide page for the keys that apply there.
 | `⇧⏎` | Open and start a guided review |
 | `T` | Switch between your PRs and review requests |
 | `/` | Search |
-| `F` | Filter by repository |
+| `F` | Filter by repository or title; ignore named checks |
+| `Tab` in a filter editor | Switch between text and options |
+| `⏎` / `Space` in Filter | Edit / enable or disable a saved rule |
+| `⏎` / `Esc` in a filter editor | Apply / return without saving |
 | `S` | Sort |
 | `I` | Show or hide inactive PRs, on either tab |
 | `⇧T` | Show or hide team review requests |

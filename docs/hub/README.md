@@ -38,9 +38,34 @@ Two Tern tabs, one board each. `T` switches between them.
   - Running checks: amber.
 - **Header:**
   - Title, search, then "Updated 40s ago" and the Settings button (`⇧S`, also `⇧M`): the agent's models with the highlighted one's effort levels, then an "Open links in" toggle, Tern or Default browser (`L`; kv key `links`, read by the guide too).
-  - The tab row holds the tabs, then **All repositories ▾** (`F`, multi-select) and **Sort ▾** (`S`).
+  - The tab row holds the tabs, then **Filter ▾** (`F`, repository selection, title conditions and ignored checks) and **Sort ▾** (`S`).
   - Sort options: Repository (the default, with Priority order inside each repo), Priority, Newest first, Oldest first, Smallest first.
 - **Kept out on purpose:** counts in the header, inline keycaps on the tab-row controls (the hint bar lists the keys), and filler notes such as "Nothing needed from you".
+
+### Personal filters
+
+- Filter reuses the existing tab-row menu placement. Repository is one rule with multi-select values;
+  title rules support contains, does not contain, starts with and does not start with (literal,
+  case-insensitive text). Enabled visibility rules combine with AND across both tabs and row folds.
+- Filter · N counts enabled rules. Its menu shows the hidden PR count for the current tab. Space or
+  the checkbox pauses a saved rule; ⏎ or its row edits. Tab switches the editor between text and
+  options, ⏎ applies, Esc returns without saving; a click outside closes. Clear filters removes
+  all rules. Repository choices retain the existing Space-to-toggle and ⏎-to-finish behavior.
+- Ignore a check… chooses a repository, then accepts an exact check name or a currently failing
+  suggestion. Each ignored check is independently enabled. It suppresses only the checks reason
+  from Needs fixes. Raw check counts and state, Ready to merge and merge guards remain unchanged.
+  Conflicts, human feedback and failed merges still count. Unknown failures remain actionable.
+- Named failures are optional `Checks.failedNames` evidence for the current head. Ordinary hub-f
+  stays count-only. A configured repository's failing PRs receive CheckNames reads in batches of
+  10, up to 100 contexts per PR; unlisted failures still count. Refresh replaces this evidence,
+  checks polling reads names when ignore rules are active, and late on-demand answers are rejected
+  if the PR, head or check snapshot was replaced. A failed read cannot waive failures.
+- Durable visibility rules narrow Next up across both tabs. Temporary search keeps its existing
+  global queue behavior; walking clears only search when needed. Showing a PR explicitly by link
+  pauses title rules hiding it, retaining their values.
+- Preferences live in `hub.filters.<lowercase viewer>` (schema 1) and in the pane's saved state.
+  The account record contains repositories, repositoriesEnabled, titleRules and ignoredChecks;
+  navigation is pane-local. The shared PR cache and global status counts retain raw GitHub facts.
 
 ### Which column a PR is in
 
@@ -48,7 +73,7 @@ Each PR appears exactly once.
 
 - **Needs fixes:** your PR had activity in the last 7 days and has at least one of the following. Each reason shows as its own red chip.
   - **Merge failed:** the merge queue rejected it. It sorts first.
-  - **A failing check.**
+  - **A failing check that has not been ignored by an enabled repository-scoped rule.**
   - **Feedback from a person:** the reviewer's latest review requested changes, or a thread is unresolved and its author's latest review isn't an approval. Plain comments ("LGTM"), threads whose author later approved, bots and your own comments never count. An approval doesn't clear a failing check or a conflict.
   - **A merge conflict.**
 - **In review:** everything else that's waiting on someone else: waiting on review, on one more approval, on checks, or on Tandem. A PR Tandem is working on stays here.
@@ -186,7 +211,7 @@ To review has its own field: "Paste a pull request link to review" (`N`, from ei
 | ⇧T | Show or hide Team requests (Review requests) |
 | A | Show or hide Approved (Review requests; no Review requests card uses A) |
 | R | Show or hide Recently merged (Your pull requests) or Recently opened (Review requests) |
-| F / S | Repository filter / Sort menu (menus: j/k, ⏎ or Space, Esc) |
+| F / S | Filter / Sort menu (menus: j/k, ⏎ or Space, Esc) |
 | ⇧S, ⇧M | Settings (↑↓ model, ←→ effort, L where links open) |
 | N | Add a PR by link |
 | / | Search |
@@ -213,6 +238,7 @@ To review has its own field: "Paste a pull request link to review" (`N`, from ei
 
 - **Don't** put thread authors inside the search query. Measured at **159 points** per call.
 - **Pages, not one query.** GitHub stops a GraphQL query at about 10 s and answers HTTP 502. Measured 2026-10-12 on busy repos (vscode, next.js): the three searches at 50 each in one query got 502 after about 11 s every time, and so did a single search at 50; a 20-PR page took 4.4–6.6 s. A page that fails with a 502, 503 or 504, GitHub's "Something went wrong" timeout body, or the 30 s client timeout is asked again with half the PRs, down to 5; later pages of that search keep the smaller size. Every other GraphQL read retries those failures once; writes never retry.
+- **Opt-in check names:** `check-names.graphql` reads names and aggregate counts for failing PRs in configured repositories. It adds calls beyond the ordinary budget below; live cost has not been measured. The default refresh budget is unchanged.
 - **Per refresh:** hub-f 4 (40 PRs) + merged 1 + threads 5 + checks 1 = 11, under the 18-point limit the tests hold. A cost depends on the connections a query selects times the PRs it can return (`first:` on a connection under a search doesn't change it), so a page's `$n` sets its cost and an added connection is paid 20 times per page. Alias-added PRs ride on the first `mine` page.
 - **Budget:** about 140 pts/hr while the hub block exists (12 refreshes at 11, plus checks). Even the 30 s debounce ceiling (about 2,200/hr at the 18-point limit) fits the 5,000/hr GraphQL budget, which Tandem's pr-watch shares.
 - **Latency is the real cost.** Always render from the kv cache first, then refresh in the background.
@@ -294,7 +320,7 @@ export type Reason = "merge_failed" | "feedback" | "checks" | "conflict"   -- in
 export type Sort = "repository" | "priority" | "newest" | "oldest" | "smallest"
 
 export type CheckState = "none" | "pending" | "passing" | "failing"
-export type Checks = { state: CheckState, passing: number, failing: number, pending: number }
+export type Checks = { state: CheckState, passing: number, failing: number, pending: number, failedNames: { string }? }
 
 export type Verdict = "approved" | "changes_requested" | "commented" | "dismissed"
 -- A reviewer's latest review (hub-f's `latestReviews`).
@@ -355,9 +381,9 @@ export type Refresh = {
 
 function M.epoch(iso: string): number?                  -- picker.luau:271, moved
 function M.ago(iso: string, now: number): string        -- "2h ago" (picker.luau:290), moved
-function M.reasons(pr: HubPR, now: number): { Reason }
-function M.placement(pr: HubPR, now: number): Placement
-function M.classify(pr: HubPR, now: number): Column     -- placement(pr, now).column
+function M.reasons(pr: HubPR, now: number, ignored: { IgnoredCheck }?): { Reason }
+function M.placement(pr: HubPR, now: number, ignored: { IgnoredCheck }?): Placement
+function M.classify(pr: HubPR, now: number, ignored: { IgnoredCheck }?): Column     -- placement(pr, now).column
 function M.botFeedback(pr: HubPR): boolean              -- a bot's latest review or unresolved thread, for Fix bot comments
 function M.mergeable(pr: HubPR): boolean                -- ready, not behind, nothing pending: the cards Space may select
 function M.selectGroup(pr: HubPR, now: number): ("ready" | "inactive")?, string?   -- the group Space may select it in, or nil and why not; the viewer's Inactive rows (drafts too) always qualify, review requests never do
@@ -365,15 +391,18 @@ function M.stale(pr: HubPR, now: number): boolean       -- Inactive for 7+ days 
 function M.confirmList(prs: { HubPR }): { shown: { HubPR }, more: number }   -- the first CONFIRM_TITLES (5), then the count left
 function M.methodLines(methods: { MergeMethod }): { string }                 -- one line per distinct method: "Squash and merge", "Comments /merge"
 function M.size(pr: HubPR): number                      -- additions + deletions
-export type Filter = { repositories: { [string]: boolean }?, search: string }   -- nil repositories = all
+export type TitleOperator = "contains" | "not_contains" | "starts" | "not_starts"
+export type TitleRule = { operator: TitleOperator, value: string, enabled: boolean }
+export type IgnoredCheck = { repo: string, name: string, enabled: boolean }
+export type Filter = { repositories: { [string]: boolean }?, search: string, titles: { TitleRule }? }   -- nil repositories = all
 function M.visible(pr: HubPR, filter: Filter): boolean  -- search matches "#n", title, author, repo, base branch
-function M.order(prs: { HubPR }, column: Column, sort: Sort, now: number): { HubPR }
+function M.order(prs: { HubPR }, column: Column, sort: Sort, now: number, ignored: { IgnoredCheck }?): { HubPR }
 
 -- Next up
 export type NextItem = { key: string, tab: Tab, column: Column, reason: Reason? }
 export type NextUp = { item: NextItem, index: number, total: number }
-function M.queue(prs: { HubPR }, now: number): { NextItem }    -- everything that needs the viewer, both tabs, most urgent first
-function M.nextUp(prs: { HubPR }, now: number, after: string?): NextUp?  -- the item after `after`; the first when nil or no longer queued; wraps; nil when none. `index` is the returned item's place (the banner's "n of N")
+function M.queue(prs: { HubPR }, now: number, ignored: { IgnoredCheck }?): { NextItem }    -- everything that needs the viewer, both tabs, most urgent first
+function M.nextUp(prs: { HubPR }, now: number, after: string?, ignored: { IgnoredCheck }?): NextUp?  -- the item after `after`; the first when nil or no longer queued; wraps; nil when none. `index` is the returned item's place (the banner's "n of N")
 
 -- Flakes. Evidence is fetched by github.luau; the verdict is a rule.
 export type FlakeEvidence = {
@@ -475,7 +504,7 @@ function M.logUrl(check: FailingCheck, repo: string): string    -- the run's pag
 export type Out = { status: number, stdout: string, stderr: string, timed_out: boolean }
 export type Runner = (argv: { string }, opts: { cwd: string?, stdin: string?, timeout_ms: number? }, done: (out: Out) -> ()) -> ()
 
-export type RefreshRequest = { added: { PRRef }, previous: { HubPR } }   -- previous supplies cached threads when `lastActivityAt` is unchanged
+export type RefreshRequest = { added: { PRRef }, previous: { HubPR }, checkNames: { [string]: boolean }? }   -- previous supplies cached threads when `lastActivityAt` is unchanged
 export type Probe = { changed: boolean, lastModified: string?, pollSeconds: number? }   -- REST /notifications
 export type ChecksUpdate = { byId: { [string]: { headOid: string, checks: Checks } }, rateLimit: RateLimit }
 export type RunRow = { id: number, workflow: string, sha: string, conclusion: string }   -- one Actions run, REST `workflow_runs[]`
@@ -488,6 +517,7 @@ export type Client = {
 	refresh: (req: RefreshRequest, done: (value: Refresh?, err: Error?) -> ()) -> (),
 	probe: (since: string?, done: (value: Probe?, err: Error?) -> ()) -> (),
 	checks: (ids: { string }, done: (value: ChecksUpdate?, err: Error?) -> ()) -> (),
+	checkNames: (ids: { string }, done: (value: ChecksUpdate?, err: Error?) -> ()) -> (),
 	details: (pr: HubPR, done: (value: FixDetails?, err: Error?) -> ()) -> (),
 	history: (repo: string, base: string, done: (value: RepoHistory?, err: Error?) -> ()) -> (),   -- gh api repos/<r>/actions/runs?branch=<base>&status=completed&per_page=100; keyed by workflow, not check, because the runs API has no job names
 	runs: (repo: string, sha: string, done: (value: { RunRow }?, err: Error?) -> ()) -> (),   -- gh api repos/<r>/actions/runs?head_sha=<sha>&status=completed&per_page=50 (the "passed earlier on this commit" basis)
@@ -571,7 +601,7 @@ export type Changes = {
 	good: { string },                 -- entered ready or approved: the green wash
 	toast: { text: string, sub: string? }?,   -- one per refresh: "#396 needs fixes: merge failed", or "3 pull requests need fixes"
 }
-function M.diff(old: Cache?, fresh: { HubPR }, now: number, suppressed: { [string]: boolean }): Changes
+function M.diff(old: Cache?, fresh: { HubPR }, now: number, suppressed: { [string]: boolean }, ignored: { Model.IgnoredCheck }?): Changes
 	-- `suppressed` holds the keys the viewer just acted on. Inactive PRs never arrive.
 export type Alerts = { toast: { text: string, sub: string? }?, rings: { string }, good: { string } }
 function M.alerts(changes: Changes): Alerts   -- what the block shows: the one toast, the keys to ring red, the keys to wash green
@@ -692,8 +722,9 @@ function M.plan(command: string, model: string, effort: string?, prompt: string)
 ### `src/hub/state.luau` (interaction state and the prepared board)
 
 ```luau
+export type FilterEdit = { index: number?, operator: Model.TitleOperator, repo: string?, field: Fields.Field, typing: boolean }
 export type Mode = "board" | "search" | "link" | "menu" | "confirm" | "help" | "fixes" | "reply" | "review-fix"
-export type MenuId = "repositories" | "sort" | "agent" | "merge" | "actions"
+export type MenuId = "filters" | "title-filter" | "check-repository" | "check-filter" | "repositories" | "sort" | "settings" | "merge" | "actions"
 export type CardAction = { act: string, value: string?, label: string, key: string?, confirm: boolean }
 
 export type AgentFixState =
@@ -735,6 +766,7 @@ export type BoardData = {
 	repositories: { RepoOption },
 	open: { recent: boolean },                          -- whether Recently opened shows its rows (a card fold carries its own `open`; a search opens every fold with matches)
 	nextUp: NextUp?,
+	hidden: number, -- current tab PRs excluded by saved visibility rules
 	empty: boolean,
 }
 
@@ -747,7 +779,8 @@ export type State = {
 	board: BoardData,                 -- rebuilt by State.project after any input below changes
 	tab: Tab,
 	selected: string?, marked: { [string]: boolean },
-	repositories: { [string]: boolean }?,
+	repositories: { [string]: boolean }?, repositoriesEnabled: boolean,
+	titleRules: { Model.TitleRule }, ignoredChecks: { Model.IgnoredCheck }, filterEdit: FilterEdit?,
 	sort: Sort,
 	search: Fields.Field, link: Fields.Field,
 	mode: Mode, menu: MenuId?, menuCursor: number,
@@ -827,7 +860,7 @@ function M.openLink(s: State) / M.closeLink(s: State, clear: boolean)   -- N: Re
 function M.show(s: State, key: string): boolean          -- selects a PR, clearing a search or filter that hides it and opening its fold
 function M.fold(s: State, column: Column): CardFold?      -- the tab's Inactive, Team requests or Approved fold
 function M.isFold(column: Column): boolean               -- "inactive" and "team" show in folds, not columns
-function M.walk(s: State): boolean                       -- `.` and the banner: selects BoardData.nextUp's item, switching tab, clearing a search or filter only if it hides it; sets `walking`. Any other selection clears `walking`
+function M.walk(s: State): boolean                       -- `.` and the banner: selects BoardData.nextUp's item, switching tab, clearing only a temporary search that hides it; durable filters narrow the queue; sets `walking`. Any other selection clears `walking`
 function M.nextCard(s: State): Card?                      -- the banner's item as a Card (its chip), whichever tab it sits on
 function M.withAdded(added, ref): (Added?, string?)      -- hub.added with `ref`, or why not (the 50 cap)
 function M.canonicalAdded(added, prs): (Added, boolean)  -- keys an added PR by the repo's own spelling
@@ -940,6 +973,7 @@ No read, route entry or agent completion pushes automatically.
 
 | Key | Holds | Cap |
 |---|---|---|
+| `hub.filters.<viewer>` | schema 1: repositories, repositoriesEnabled, titleRules and ignoredChecks; personal preferences read and written through Fetch |
 | `hub.cache` | `Sync.Cache`, schema 1: normalized records only | at most 50 PRs per search query; the serialized value at most 1 MiB, evicting the oldest `lastActivityAt` first; if the write still fails the block keeps its in-memory state and shows the error |
 | `hub.status` | `{ refreshedAt, counts = { toReview, needFixes, flashAt? } }`, written with every `hub.cache` write; what the status segment reads | a few bytes |
 | `hub.recent` | `{ Opened }`, migrated from the picker's `recent` key | 8 entries |
@@ -1001,7 +1035,7 @@ Tern's clipboard is plain text: `cx:copy(text)` (`tern.d.luau:1136-1137`, and `W
 ```
 tests/run.luau              runs every test module; any failed assert makes it exit non-zero
 tests/model_test.luau       tests/links_test.luau     tests/github_test.luau
-tests/sync_test.luau        tests/state_test.luau     tests/agent_fix_test.luau
+tests/sync_test.luau        tests/state_test.luau       tests/filter_test.luau     tests/agent_fix_test.luau
 tests/fake-runner.luau      a scripted `Github.Runner`
 tests/conflicts.sh          the `tools/conflicts` tests: throwaway git repos with conflicts, the five commands run for real (a shell script because `luau` has no process API)
 fixtures/hub/…              see the fixture plan

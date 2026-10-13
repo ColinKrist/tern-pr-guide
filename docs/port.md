@@ -28,6 +28,25 @@ The port keeps these features:
 - Agent fixes: an agent resolves merge conflicts or bot feedback in a worktree, the reviewer checks the result, and the app pushes it.
 - Feedback summaries (Summarize, one read-only `omp` call).
 
+Personal filter preferences are stored per GitHub viewer in `hub.filters.<lowercase login>`:
+`{ schema: 1, repositories?: string[], repositoriesEnabled: boolean, titleRules: TitleRule[], ignoredChecks: IgnoredCheck[] }`.
+The plugin boundary is `Fetch.hubFilters(viewer)` / `Fetch.saveHubFilters(viewer, value)`; replace
+these with viewer-scoped browser or server preferences. `hub/filter-store` owns loading/saving;
+`hub/check-filter` owns on-demand named-check reads. Port both orchestration modules over these seams.
+
+`GithubClient.refresh` accepts optional `checkNames: Record<string, boolean>` (lowercase repository
+names). `GithubClient.checkNames(ids)` uses `docs/hub/queries/check-names.graphql` and returns the
+same envelope as `checks(ids)`, with optional `Checks.failedNames: string[]`. Read up to 100 contexts
+for each of at most 10 PRs per request. Partial or missing names never suppress unknown failures.
+The checks snapshot's head must match before applying it; a replaced snapshot rejects an on-demand
+answer. This feature adds opt-in GraphQL calls; the ordinary count-only refresh is unchanged.
+
+`TitleRule` is `{ operator: 'contains' | 'not_contains' | 'starts' | 'not_starts', value: string, enabled: boolean }`.
+`IgnoredCheck` is `{ repo: string, name: string, enabled: boolean }`. Pass ignored rules to model
+placement/order/queue functions. They suppress only the Needs fixes checks reason, preserving
+raw check counts, merge gates and shared-cache facts. Durable visibility filters narrow Next up;
+search stays temporary. `State.saved` includes both rule types and repositoriesEnabled.
+
 ## How the code splits
 
 Every module falls into one of two kinds. Pure modules hold the rules, read no clock, file or network, and have tests that run under plain `luau`. Host modules run commands, read the key/value store, set timers or draw. The refactor on branch `hub-seams` made that split clean.
@@ -165,6 +184,8 @@ Each module's one job comes from its header comment. A verdict says what the por
 | Module | One job | Verdict | Tests |
 |---|---|---|---|
 | `src/hub/model.luau` | The hub's rules: which column a PR is in, in what order, and what needs the viewer next. | Port 1:1 with its tests, minus the Tandem rule and parsers. | `model_test`, and via others |
+| `src/hub/filter-store.luau` | Personal filter preferences by viewer. | Port with a viewer-scoped preference store. | `filter_test` |
+| `src/hub/check-filter.luau` | Read named check failures on demand, rejecting stale answers. | Port with `GithubClient.checkNames`. | `filter_test` |
 | `src/hub/state.luau` | The hub's interaction state (tab, selection, filter, sort, search, open menus) and the board built from it. | Port 1:1 with its tests, minus Tandem actions. | `state_test`, `selection_test`, `merge_test`, `rereview_test`, `flake_test`, `agent_state_test`, `review_fix_test` |
 | `src/hub/sync.luau` | The pure sync decisions: the cache's shape, the merge-method record, the recent store, what changed between two refreshes, and when each poll is due. | Port 1:1 with its tests, minus `Local.tandem`. | `sync_test`, `merge_test` |
 | `src/hub/fixes.luau` | What the fixes page shows: the details model, the noise filter, the steps, the code excerpts, and the readers of local git output. | Port 1:1 with its tests. The git readers (`parseMergeTree`) matter only with a worker. | `fixes_test` |
@@ -670,7 +691,11 @@ Port the table as is, as a `Record<string, (b, cx, value) => void>` and one `dis
 | `hub-menu-move` | `State.menuMove` |
 | `hub-menu-close` | `closeMenu` |
 | `hub-menu-pick`, `hub-menu-select` | `pickRow`, which runs the row's own action, or `chooseMergeRow` (`Lookups.setUserMethod`, `State.beginMethodEdit`), or in Settings remembers the review model (`AgentHost.saveReviewModel`) |
-| `hub-menu-enter` | `pickRow`, except in the repository list, where it closes |
+| `hub-menu-enter` | `pickRow`, except in the repository list, where it returns to Filter |
+| `hub-filter-toggle` | `State.toggleFilter`: pause a saved rule, keeping its values; persist personal preferences |
+| `hub-filter-back` | `State.openMenu(s, "filters")`: cancel the draft |
+| `hub-filter-focus` | Switch filter text editing on or off; focus `Paths.filterField` when typing |
+| `hub-filter-save` | `State.saveFilter`, `FilterStore.save`, `CheckFilter.read` |
 | `hub-menu-effort` | `State.stepEffort`, `AgentHost.saveReviewModel` |
 | `hub-menu-effort-set` | `State.setEffort`, `AgentHost.saveReviewModel` |
 | `hub-links` | `State.setLinks`, `Fetch.saveLinkTarget`: where GitHub links open (Settings) |
@@ -737,8 +762,8 @@ The guide page has its own `ACTIONS` table in `src/block.luau`, with the same `d
 
 | Mode | Keys |
 |---|---|
-| `board` | `?` help. `/` search. ⌘R or Ctrl+R refresh. Esc `hub-escape`. ⏎ `hub-open`, ⇧⏎ `hub-open-generate`. Space `hub-mark`. ⇧X `hub-mark-stale` on the mine tab. With marks, M `hub-batch-merge` and X `hub-batch-close`. h j k l and the arrows `hub-move`. `.` `hub-next`. T `hub-tab`. I `hub-fold inactive`. R `hub-fold merged` on the mine tab and `hub-fold recent` on the review tab (`State.ROW_FOLD`). ⇧T `hub-fold team` and A `hub-fold approved` on the review tab. F `hub-menu repositories`. S `hub-menu sort`. ⇧S or ⇧M `hub-menu settings`. N `hub-link`. Any other letter runs the selected card's main or alternative action whose `key` matches (⇧A also runs a main `card-summarize`). |
-| `menu` | j k and the arrows `hub-menu-move`. ⏎ `hub-menu-enter`. Space `hub-menu-select`. Esc `hub-menu-close`. In Settings, left and right step the effort and L sends `hub-links`. While a merge method is typed, ⏎ `hub-method-save` and Esc `hub-method-cancel`. |
+| `board` | `?` help. `/` search. ⌘R or Ctrl+R refresh. Esc `hub-escape`. ⏎ `hub-open`, ⇧⏎ `hub-open-generate`. Space `hub-mark`. ⇧X `hub-mark-stale` on the mine tab. With marks, M `hub-batch-merge` and X `hub-batch-close`. h j k l and the arrows `hub-move`. `.` `hub-next`. T `hub-tab`. I `hub-fold inactive`. R `hub-fold merged` on the mine tab and `hub-fold recent` on the review tab (`State.ROW_FOLD`). ⇧T `hub-fold team` and A `hub-fold approved` on the review tab. F `hub-menu filters`. S `hub-menu sort`. ⇧S or ⇧M `hub-menu settings`. N `hub-link`. Any other letter runs the selected card's main or alternative action whose `key` matches (⇧A also runs a main `card-summarize`). |
+| `menu` | j k and the arrows `hub-menu-move`. ⏎ `hub-menu-enter`. Space `hub-menu-select`. Esc `hub-menu-close`. In Settings, left and right step the effort and L sends `hub-links`. In Filter, Space toggles a rule and Enter edits it. In filter editors, Tab switches text/options, Enter applies text and Esc returns without saving; ordinary letters type. While a merge method is typed, ⏎ `hub-method-save` and Esc `hub-method-cancel`. |
 | `search` | ⏎ `hub-search-done`. Esc `hub-search-clear`. Up and down `hub-move`. Other keys type, and a change sends `hub-searched` (`Keys.hubAfterTyping`). |
 | `link` | ⏎ `hub-link-add`. ⇧⏎ `hub-link-open`. Esc `hub-link-clear`. Other keys type. |
 | `confirm` | ⌘⏎ `hub-confirm`. Esc `hub-confirm-cancel`. |

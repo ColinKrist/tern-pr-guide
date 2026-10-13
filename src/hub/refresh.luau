@@ -2,6 +2,8 @@
 -- The board's live data: the probe, refresh and checks timers armed from `Sync.schedule` (`rearm`), each answer laid onto
 -- the newest shared cache there is before it is stored, a refresh asked for now (`refetch`), and the sample board's ⌘R,
 -- which steps through recorded refreshes instead.
+local FilterStore = require("./filter-store")
+local CheckFilter = require("./check-filter")
 local Host = require("../host")
 local HubTandem = require("./tandem")
 local Lookups = require("./lookups")
@@ -121,7 +123,7 @@ startRefresh = function(b: Block, cx: BlockCx)
 	if b.closed then return end
 	local refs: { Model.PRRef } = {}
 	for _, ref in readLocal().added do table.insert(refs, ref) end
-	b.github.refresh({ added = refs, previous = b.s.prs }, function(fresh, err)
+	b.github.refresh({ added = refs, previous = b.s.prs, checkNames = State.ignoredRepositories(b.s) }, function(fresh, err)
 		b.flights.refresh = false
 		if b.closed then return end
 		local now = Host.time()
@@ -176,6 +178,7 @@ startRefresh = function(b: Block, cx: BlockCx)
 			cache.lastModified = b.sched.lastModified
 			local stamped: any = cache
 			stamped.sinceAt = requested
+			FilterStore.load(b, cx, fresh.viewer)
 			announce(b, cx, b.cache, cache.prs, now)
 			b.cache = cache
 			b.sched.probeChanged, b.sched.focusedAt = false, nil
@@ -194,6 +197,7 @@ startRefresh = function(b: Block, cx: BlockCx)
 			loadMerges(b)
 			detectMerges(b, cx)
 			loadFlakes(b, cx)
+			if not b.closed then CheckFilter.read(b, cx, nil) end
 		end
 		if b.refetch then
 			b.refetch = false
@@ -232,7 +236,8 @@ onChecks = function(b, cx)
 	local ids = running(b)
 	if #ids == 0 then return rearm(b, cx) end
 	b.flights.checks = true
-	b.github.checks(ids, function(update, err)
+	local readChecks = if next(State.ignoredRepositories(b.s)) ~= nil then b.github.checkNames else b.github.checks
+	readChecks(ids, function(update, err)
 		b.flights.checks = false
 		if b.closed then return end
 		b.sched.checksAt = Host.time()

@@ -53,6 +53,7 @@ export type Block = {
 	agentFlight: AgentFlight?, -- lookup, engine and retained lease; never serialized
 	botKeys: { [string]: boolean }, -- retains the bot input kind across clone/stop/retry, never saved
 	github: Github.Client, timers: Timers,
+	filterViewer: string?, filtersDirty: boolean?, -- account whose personal filters were loaded; edits made before its first refresh
 	ci: { Log.Provider }, -- who reads a failing check's log: Buildkite, then GitHub Actions
 	flights: { refresh: boolean, checks: boolean, probe: boolean, flake: boolean, tandem: boolean }, -- one call of each kind at a time
 	watched: { [string]: boolean }, -- the PRs Tandem watches (lowercase "owner/repo#123"): the cache's flags until a read of Tandem succeeds, then that read
@@ -194,7 +195,7 @@ local RING_HOLD_MS, RING_FADE_MS = 1400, 360
 -- the ring. The viewer's own actions (`s.acted`) are skipped and then forgotten. Call before `State.replace`.
 local function announce(b: Block, cx: BlockCx, old: Sync.Cache?, fresh: { Model.HubPR }, now: number)
 	local s = b.s
-	local alerts = Sync.alerts(Sync.diff(old, fresh, now, s.acted))
+	local alerts = Sync.alerts(Sync.diff(old, fresh, now, s.acted, s.ignoredChecks))
 	s.acted = {}
 	if alerts.toast then cx:toast("error", alerts.toast.text, alerts.toast.sub) end
 	if #alerts.rings + #alerts.good == 0 then return end

@@ -67,6 +67,15 @@ end
 -- A PR the rules can place without raising.
 local function validPr(pr: any): boolean
 	if not fieldsOk(pr, PR_FIELDS) or not fieldsOk(pr.checks, CHECK_FIELDS) or not fieldsOk(pr.reviews, REVIEW_FIELDS) then return false end
+	if pr.checks.failedNames ~= nil then
+		if type(pr.checks.failedNames) ~= "table" or #pr.checks.failedNames > pr.checks.failing then return false end
+		local count = 0
+		for key, name in pr.checks.failedNames do
+			count += 1
+			if type(key) ~= "number" or key < 1 or key > #pr.checks.failedNames or key % 1 ~= 0 or type(name) ~= "string" then return false end
+		end
+		if count ~= #pr.checks.failedNames then return false end
+	end
 	return pr.role == "mine" or pr.role == "review"
 end
 
@@ -251,7 +260,7 @@ local REASON_TEXT: { [Reason]: string } = {
 
 -- What `fresh` changed against `old`. A PR missing from `old` (new, or evicted by the cap) never arrives, since
 -- nothing says where it came from. `suppressed` holds the keys the viewer just acted on.
-function M.diff(old: Cache?, fresh: { HubPR }, now: number, suppressed: { [string]: boolean }): Changes
+function M.diff(old: Cache?, fresh: { HubPR }, now: number, suppressed: { [string]: boolean }, ignored: { Model.IgnoredCheck }?): Changes
 	local changes: Changes = { firstLoad = old == nil, arrivals = {}, good = {}, toast = nil }
 	if not old then return changes end
 	local before: { [string]: HubPR } = {}
@@ -260,8 +269,8 @@ function M.diff(old: Cache?, fresh: { HubPR }, now: number, suppressed: { [strin
 	for _, pr in fresh do
 		local was = before[pr.key]
 		if was then
-			local placement = Model.placement(pr, now)
-			local from = Model.classify(was, now)
+			local placement = Model.placement(pr, now, ignored)
+			local from = Model.classify(was, now, ignored)
 			if placement.column == "needs_fixes" and from ~= "needs_fixes" and not suppressed[pr.key] then
 				local toast = false
 				for _, reason in placement.reasons do

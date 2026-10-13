@@ -1064,6 +1064,7 @@
 .gp-hub-ctls { display: flex; gap: 4px; align-items: center; align-self: center; }
 .gp-hub-ctl { display: flex; gap: 6px; align-items: center; flex-shrink: 0; padding: 3px 6px 3px 9px; border: 1px solid transparent; border-radius: var(--r-ctl); font-family: var(--sans); font-size: 12.5px; color: var(--t2); white-space: nowrap; cursor: pointer; transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, transform var(--gp-dur-press) var(--gp-ease-out); }
 .gp-hub-ctl:active { transform: scale(0.97); }
+.gp-hub:not(.gp-soft) .gp-hub-ctl { transition: none; }
 .gp-hub-ctl:hover { background: var(--l1); color: var(--t1); }
 .gp-hub-ctl-open, .gp-hub-ctl-open:hover { background: var(--l1); border-color: var(--l3); color: var(--t1); }
 .gp-hub-ctl-act, .gp-hub-ctl-act:hover { background: var(--chip-bg); border-color: var(--l2); color: var(--t1); }
@@ -1242,7 +1243,7 @@
 .gp-hub-rc-when { width: 64px; flex-shrink: 0; text-align: right; font-size: 12.5px; color: var(--t3); font-variant-numeric: tabular-nums; }
 
 /* the menus and the key panel: Tern overlays holding rows like the model menu's */
-[data-role='gp.hubmenu'] .sf-ov-body, [data-role='gp.hubsettings'] .sf-ov-body, [data-role='gp.hubhelp'] .sf-ov-body { padding: 0; gap: 0; }
+[data-role='gp.hubfilter'] .sf-ov-body, [data-role='gp.hubmenu'] .sf-ov-body, [data-role='gp.hubsettings'] .sf-ov-body, [data-role='gp.hubhelp'] .sf-ov-body { padding: 0; gap: 0; }
 .gp-hm-head { padding: 10px 14px 0; font-family: var(--sans); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--t3); }
 .gp-hm-list { max-height: 360px; }
 .gp-hm-row { font-size: 13px; white-space: nowrap; }
@@ -1259,19 +1260,32 @@
 .gp-hm-edit > * { flex-shrink: 0; }
 .gp-hm-field { flex: 1 1 0; min-width: 0; overflow: hidden; padding: 4px 8px; }
 .gp-hm-field, .gp-hm-field * { font-size: 13px; }
+/* Filter rules keep the condition and value together; long prefixes and full repository names wrap. */
+.gp-hf-rule { display: flex; flex-direction: column; gap: 2px; flex: 1 1 0; min-width: 0; }
+.gp-hf-rule .gp-hm-label { white-space: normal; }
+.gp-hf-value, .gp-hf-scope { font-family: var(--sans); white-space: normal; overflow-wrap: anywhere; }
+.gp-hf-value { color: var(--t2); font-size: 13px; }
+.gp-hf-scope { color: var(--t3); font-size: 12px; }
+.gp-hf-row { align-items: center; white-space: normal; }
+.gp-hf-row > .gp-hm-label { flex-shrink: 1; min-width: 0; overflow-wrap: anywhere; }
+.gp-hf-row > .sf-icon, .gp-hf-row > .ico { width: 12px; height: 12px; flex-shrink: 0; color: var(--t3); }
+.gp-hf-edit .gp-hm-field { flex: none; width: 100%; }
+.gp-hf-edit .gp-btn { display: flex; align-items: center; gap: 6px; }
+.gp-hf-edit .gp-md-label { overflow-wrap: anywhere; }
 .gp-hh { display: flex; flex-wrap: wrap; gap: 18px 28px; padding: 18px 22px 16px; background: var(--card); }
 .gp-hh .gp-keycol { flex: 1 1 240px; min-width: 240px; }
 .gp-hh .gp-keyrow { gap: 10px; align-items: flex-start; }
 .gp-hh .gp-keylabel { white-space: normal; min-width: 0; }
 .gp-hh-keys { display: flex; flex-direction: column; gap: 3px; flex-shrink: 0; width: 76px; }
 /* menus and the key panel are opaque cards, so the board never shows through; the menus are narrow */
-.sf-overlay[data-role='gp.hubmenu'] .sf-ov-card, .sf-overlay[data-role='gp.hubsettings'] .sf-ov-card, .sf-overlay[data-role='gp.hubhelp'] .sf-ov-card { background: var(--card); }
+.sf-overlay[data-role='gp.hubfilter'] .sf-ov-card, .sf-overlay[data-role='gp.hubmenu'] .sf-ov-card, .sf-overlay[data-role='gp.hubsettings'] .sf-ov-card, .sf-overlay[data-role='gp.hubhelp'] .sf-ov-card { background: var(--card); }
 .sf-overlay[data-role='gp.hubmenu'], .sf-overlay[data-role='gp.hubmenu'] .sf-ov-card { width: 260px; }
+.sf-overlay[data-role='gp.hubfilter'], .sf-overlay[data-role='gp.hubfilter'] .sf-ov-card { width: 320px; max-width: 100%; }
 /* Settings is wider: full model names, every effort level and the links toggle on one line each */
 .sf-overlay[data-role='gp.hubsettings'], .sf-overlay[data-role='gp.hubsettings'] .sf-ov-card { width: 400px; max-width: 100%; }
-.sf-overlay[data-role='gp.hubmenu'] .sf-ov-body, .sf-overlay[data-role='gp.hubsettings'] .sf-ov-body { width: 100%; max-width: none; padding: 0; }
+.sf-overlay[data-role='gp.hubfilter'] .sf-ov-body, .sf-overlay[data-role='gp.hubmenu'] .sf-ov-body, .sf-overlay[data-role='gp.hubsettings'] .sf-ov-body { width: 100%; max-width: none; padding: 0; }
 /* Tern's gradient edge draws at the card's default width, a stray line inside a resized card; its 1px ring stays */
-.sf-overlay[data-role='gp.hubmenu'] .sf-ov-card::after, .sf-overlay[data-role='gp.hubsettings'] .sf-ov-card::after { display: none; }
+.sf-overlay[data-role='gp.hubfilter'] .sf-ov-card::after, .sf-overlay[data-role='gp.hubmenu'] .sf-ov-card::after, .sf-overlay[data-role='gp.hubsettings'] .sf-ov-card::after { display: none; }
 .gp-hs-models { padding-top: 4px; }
 .gp-hs-row { display: flex; flex-direction: column; gap: 6px; padding: 8px 14px 12px; border-top: 1px solid var(--l2); }
 .gp-hs-row > * { flex-shrink: 0; }

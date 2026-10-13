@@ -350,6 +350,18 @@ local function kvGet(key: string): any
  return if ok then saved else nil
 end
 
+-- Personal hub rules survive closing a pane; GitHub logins have separate preferences.
+function M.hubFilters(viewer: string): (any, string?)
+ local ok, value = pcall(Host.kv.get, "hub.filters." .. string.lower(viewer))
+ if not ok then return nil, tostring(value) end
+ return value, nil
+end
+
+function M.saveHubFilters(viewer: string, value: any): string?
+ local ok, why = pcall(Host.kv.set, "hub.filters." .. string.lower(viewer), value)
+ return if ok then nil else tostring(why)
+end
+
 function M.recentPrs(): { Sync.Opened }
  local saved = kvGet(RECENT_KEY)
  if saved == nil then saved = kvGet(LEGACY_RECENT_KEY) end

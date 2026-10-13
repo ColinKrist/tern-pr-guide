@@ -18,6 +18,9 @@ local M = {}
 
 function M.view(s: State.State): Node
 	local fixed = FIXED[s.mode]
+	if s.filterEdit then fixed = { title = "Filtering", keys = { { "Tab", "Text or options" }, { "⏎", if s.filterEdit.typing then "Apply" else "Choose" }, { "esc", "Back" } } }
+	elseif s.menu == "filters" then fixed = { title = "Filtering", keys = { { "j k", "Move" }, { "⏎", "Edit" }, { "Space", "Enable or disable" }, { "esc", "Close" } } }
+	elseif s.menu == "repositories" then fixed = { title = "Filtering", keys = { { "j k", "Move" }, { "Space", "Choose" }, { "⏎", "Done" }, { "esc", "Back" } } } end
 	local title, keys = "Pick a pull request", { { "h j k l", "Move" }, { "⏎", "Open" } }
 	if fixed then
 		title, keys = fixed.title, fixed.keys
