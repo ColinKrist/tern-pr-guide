@@ -23,12 +23,11 @@ export type Head = {
 
 -- How a block marks its steps: the entries of the step you are on, which are highlighted (and
 -- pulse with `pulse` after a jump to it), and for a block of several steps where each starts, so
--- its number sits in the gutter there, and the entries its code runs break at.
+-- its number sits in the gutter there.
 export type Marks = {
  on: Diff.Interval?,
  pulse: string?,
  starts: { [number]: Start }?,
- breaks: { [number]: boolean }?,
 }
 export type Start = { n: number, position: number, here: boolean }
 
@@ -144,10 +143,9 @@ end
 
 -- The rows of block `blockId` on `fd` showing `show`, uncolored when `plain`, and their estimated
 -- height. Each unbroken run of lines scrolls sideways on its own, so long lines can be read while
--- comment cards and gap bars keep the block's width. `marks` is how a step block marks its steps;
--- the runs of a shared block break where its steps start and end, so each step's first run can be
--- scrolled to.
-function M.rows(s: State.State, fd: Diff.FileDiff, blockId: string, show: Diff.Show, plain: boolean, cards: Comments.Cards, marks: Marks?): ({ Node }, number)
+-- comment cards and gap bars keep the block's width. `starts` says which run each line is in (see
+-- State.runStarts), and `marks` is how a step block marks its steps.
+function M.rows(s: State.State, fd: Diff.FileDiff, blockId: string, show: Diff.Show, plain: boolean, cards: Comments.Cards, starts: { [number]: number }, marks: Marks?): ({ Node }, number)
  local path = fd.file.path
  if fd.file.binary then
   return { el("div", { class = "gp-gap", key = "binary" }, { span("gp-gap-count", "Binary file, not shown") }) }, GAP_H
@@ -159,7 +157,7 @@ function M.rows(s: State.State, fd: Diff.FileDiff, blockId: string, show: Diff.S
  local lines: { Node }, firstLine = {}, 0
  local function flush()
   if #lines == 0 then return end
-  table.insert(rows, el("div", { class = "gp-hscroll", key = "h" .. firstLine }, { el("div", { class = "gp-hlines" }, lines) }))
+  table.insert(rows, el("div", { class = "gp-hscroll", key = "h" .. firstLine }, { el("div", { class = "gp-hlines", key = "l" }, lines) }))
   lines = {}
  end
  for _, segment in segments do
@@ -167,8 +165,8 @@ function M.rows(s: State.State, fd: Diff.FileDiff, blockId: string, show: Diff.S
    for i = segment.first, segment.last do
     local line = fd.entries[i].row.new
     local selected = c ~= nil and line ~= nil and line >= c.from and line <= c.to
-    if marks and marks.breaks and marks.breaks[i] then flush() end
-    if #lines == 0 then firstLine = i end
+    if starts[i] ~= firstLine then flush() end
+    firstLine = starts[i]
     local moved = fd.entries[i].moved
     if moved and (moved.start or i == segment.first) then
      table.insert(lines, movedLabel(fd, i, marks))
@@ -225,15 +223,14 @@ local function marksOf(s: State.State, block: Guide.Block, current: Guide.Step?)
   if marks.on and s.flashStep == current.key then marks.pulse = "gp-pulse" .. (s.flashCount % 2) end
  end
  if #block.steps > 1 then
-  local starts, breaks = {}, {}
+  local starts = {}
   for _, step in block.steps do
    local span = s.spans[step]
    if span then
-    breaks[span.first], breaks[span.last + 1] = true, true
     starts[span.first] = starts[span.first] or { n = step.index, position = step.position, here = step == current }
    end
   end
-  marks.starts, marks.breaks = starts, breaks
+  marks.starts = starts
  end
  return marks
 end
@@ -275,7 +272,8 @@ function M.block(s: State.State, motion: Ui.Motion, plan: State.Plan, block: Gui
  end
  local show = State.show(s, block.file, id, block.steps)
  local marks = if r.guide.guided then marksOf(s, block, current) else nil
- local rows, height = M.rows(s, fd, id, show, plan.plain[id] == true, Comments.forBlock(s, motion, block.file, id, true), marks)
+ local starts = State.runStarts(s, block.file, id, block.steps, show)
+ local rows, height = M.rows(s, fd, id, show, plan.plain[id] == true, Comments.forBlock(s, motion, block.file, id, true), starts, marks)
  return el("div", { class = class, key = id }, { head, Ui.body(motion, "x:" .. id, s.closing["peek:" .. id] == true, height, rows) })
 end
 

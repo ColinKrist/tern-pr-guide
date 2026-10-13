@@ -329,6 +329,7 @@ Press `?` for shortcuts that apply to the current page. In the hub, the panel fo
 | `/` | Search steps, files, comments and code |
 | `s` | Show supporting changes |
 | `o` | Open all supporting files and unfold Tests; generated files stay as they are |
+| `⇧S` | Mark all supporting files reviewed |
 | `c` | Comment on the current step |
 | `a` `d` | Keep or dismiss a suggested comment |
 | `i` | Show the PR description |

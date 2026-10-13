@@ -262,6 +262,23 @@ return function()
 	layout = Diff.layout(fd, { spans = nil, whole = true, annotated = {}, hit = nil, reveals = {} })
 	assert(shape(layout) == "1-23", shape(layout))
 
+	-- A line's run starts at the first line of its segment, at a step break, and after a line with a
+	-- comment card; a gap starts a new run, and a hidden line is in none.
+	lines = concat(body("", 40))
+	fd = Diff.analyze(fileOf(lines, { 5, 30 }))
+	local hidden = { kind = "gap" } :: any -- the runs don't read a gap's fields
+	local segments: { Diff.Segment } = {
+		{ kind = "rows", first = 1, last = 6 } :: Diff.Rows, hidden,
+		{ kind = "rows", first = 10, last = 20 } :: Diff.Rows, hidden,
+		{ kind = "rows", first = 25, last = 32 } :: Diff.Rows,
+	}
+	-- A file with its source has an entry per line, so the card under line 12 sits under entry 12.
+	local starts = Diff.runStarts(fd, segments, { [15] = true }, { [12] = true })
+	local want = { [1] = 1, [6] = 1, [10] = 10, [12] = 10, [13] = 13, [14] = 13, [15] = 15, [20] = 15, [25] = 25, [32] = 25 }
+	for entry, first in want do assert(starts[entry] == first, "entry " .. entry .. " starts in " .. tostring(starts[entry]) .. ", not " .. first) end
+	assert(starts[7] == nil and starts[21] == nil, "hidden entries are in no run")
+	assert(Diff.runStarts(fd, segments, {}, {})[14] == 10, "no break or card keeps one run")
+
 	-- Each language colors its own keywords, comments and strings; an unknown extension stays plain.
 	assert(colored("a.js", "const s = 'x' // y") == "kw:const plain:s punct:= str:'x' com:// y", colored("a.js", "const s = 'x' // y"))
 	assert(colored("a.tsx", "return <A/>") == "kw:return punct:< type:A punct:/ punct:>", colored("a.tsx", "return <A/>"))

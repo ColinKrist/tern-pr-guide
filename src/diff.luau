@@ -663,6 +663,26 @@ function M.layout(fd: FileDiff, show: Show): Layout
  return layout
 end
 
+-- The run of lines each shown entry is drawn in, as the entry the run starts at. A run starts at the
+-- first line of a rows segment, at an entry in `breaks` (where a shared block's steps start and
+-- end), and on the line after one a comment card hangs under (`carded`, by new-side line). The page
+-- draws its runs from this and names a line's node from it, so the two can't disagree.
+function M.runStarts(fd: FileDiff, segments: { Segment }, breaks: { [number]: boolean }, carded: { [number]: boolean }): { [number]: number }
+ local starts = {}
+ for _, segment in segments do
+  if segment.kind ~= "rows" then continue end
+  local first = segment.first
+  for i = segment.first, segment.last do
+   if i > segment.first then
+    local above = fd.entries[i - 1].row.new
+    if breaks[i] or (above ~= nil and carded[above]) then first = i end
+   end
+   starts[i] = first
+  end
+ end
+ return starts
+end
+
 -- The text of entries first..last, joined once per run.
 function M.runText(fd: FileDiff, first: number, last: number): string
  local key = first .. "-" .. last

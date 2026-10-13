@@ -61,25 +61,25 @@ local function onThePage()
 	local draft = Guide.parseDraft({ schema = 1, author = "opus-5", summary = "Drafted.", comments = { comment("r1", 3) } }, p)
 	assert(draft)
 
-	local s = State.new(p, guide, {})
+	local s = State.new(p, guide, { root = "main" })
 	State.mergeDraft(s, draft)
 	assert(s.review.summary.text == "Drafted.", "an untouched summary takes the drafted one")
 	assert(ids(s.review.guide.comments) == "r1" and Review.counts(s.review).waiting == 1, "the comments wait for the reader")
 	State.switchView(s, "files")
 	assert(ids(s.review.guide.comments) == "r1", "the file view has them too")
 
-	local edited = State.new(p, guide, {})
+	local edited = State.new(p, guide, { root = "main" })
 	edited.review.summary.text = "My own words."
 	State.mergeDraft(edited, draft)
 	assert(edited.review.summary.text == "My own words.", "a summary the reader edited is kept")
 	assert(ids(edited.review.guide.comments) == "r1")
 
-	local typing = State.new(p, guide, {})
+	local typing = State.new(p, guide, { root = "main" })
 	typing.editingSummary = true
 	State.mergeDraft(typing, draft)
 	assert(typing.review.summary.text == "", "a summary being edited is kept")
 
-	local plain = State.new(p, Guide.defaultGuide(p), {})
+	local plain = State.new(p, Guide.defaultGuide(p), { root = "main" })
 	State.mergeDraft(plain, draft)
 	assert(ids(plain.review.guide.comments) == "r1" and plain.review.summary.text == "Drafted.", "the default walkthrough takes a review too")
 end
@@ -89,13 +89,13 @@ local function carriedOver()
 	local p = pr()
 	local guide = Guide.parse({ schema = 1, summary = "Drafted.", changes = { { title = "Do it", steps = { { file = "src/a.ts", from = 1, to = 2, title = "Step", note = "" } } } } }, p)
 	assert(guide)
-	local before = State.new(p, Guide.defaultGuide(p), {})
+	local before = State.new(p, Guide.defaultGuide(p), { root = "main" })
 	Review.addOwn(before.review, "src/a.ts", 2, 2, "Mine.")
-	local after = State.new(p, guide, {})
+	local after = State.new(p, guide, { root = "main" })
 	State.carryOver(before, after)
 	assert(#after.review.own == 1 and after.review.summary.text == "Drafted.", "an untouched summary takes the new guide's")
 	before.review.summary.text = "Edited."
-	local again = State.new(p, guide, {})
+	local again = State.new(p, guide, { root = "main" })
 	State.carryOver(before, again)
 	assert(again.review.summary.text == "Edited.", "an edited summary is kept")
 end

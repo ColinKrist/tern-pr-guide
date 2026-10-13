@@ -22,7 +22,7 @@ function M.view(box: State.SearchBox, guided: boolean, enter: string): Node
  end
  return el("div", { class = "gp-panel gp-search " .. enter, key = "search" }, {
   el("div", { class = "gp-sr-box", key = "box" }, { span("gp-sr-slash", "/"), Ui.field(box.field, "field", "Search this PR…") }),
-  el("div", { class = "gp-sr-list" }, rows),
+  el("div", { class = "gp-sr-list", key = "list" }, rows),
  })
 end
 
