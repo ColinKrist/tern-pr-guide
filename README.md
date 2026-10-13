@@ -114,6 +114,12 @@ Below the board, four folded lists keep the rest out of the way. Opening one scr
   the tab's number or Next up.
 - **Recently opened:** any PR you opened before stays one key away, even after it closes.
 
+To have guides ready before you open a PR, turn on **Prepare AI guides in the background** in
+Settings (`⇧S`, then `⇧G`). After each refresh, the hub has OMP explain each review request whose
+guide is missing or out of date, one at a time, the same way Generate guide does. It never drafts
+review comments, and a PR it couldn't explain isn't tried again until it has new commits or the hub
+reopens. The setting is off by default, since each guide is an OMP run.
+
 ## Fix what's blocking
 
 Open a Needs fixes card to go straight to the problems: requested changes, comments, failing checks
@@ -274,7 +280,7 @@ Press `?` for shortcuts that apply to the current page. In the hub, the panel fo
 | `A` | Show or hide approved PRs, on Review requests |
 | `R` | Show or hide recently merged PRs, or recently opened PRs on Review requests |
 | `N` | Add a PR by link |
-| `⇧S` | Settings: the explanation and review models, their effort and the lens, in the same menu as the review page, and whether GitHub links open in Tern or the default browser (`L` switches while the search field is empty). `⇧M` opens it too |
+| `⇧S` | Settings: the explanation and review models, their effort and the lens, in the same menu as the review page, and whether GitHub links open in Tern or the default browser (`L` switches while the search field is empty), and whether AI guides are prepared in the background (`⇧G` switches while the search field is empty). `⇧M` opens it too |
 | `A` | Run the selected card's main action, on your PRs |
 | `⇧A` | Summarize feedback or return a retained worktree |
 | `C` | Copy the PR title and link |

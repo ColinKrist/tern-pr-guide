@@ -1370,6 +1370,7 @@
 .gp-hs-row { display: flex; flex-direction: column; gap: 6px; padding: 8px 14px 12px; border-top: 1px solid var(--l2); }
 .gp-hs-row > * { flex-shrink: 0; }
 .gp-hs-top { display: flex; align-items: center; min-height: 20px; }
+.gp-hs-toggle { gap: 8px; font-size: 13px; white-space: nowrap; cursor: pointer; }
 /* the toggles fill the row, each side as wide as its word needs and sharing what is left */
 .gp-hs-segs > .gp-md-seg { flex: 1 1 auto; padding: 4px 6px; text-align: center; }
 /* the key panel is wider than Tern's lg overlay: three columns that wrap to fewer in a narrower pane */

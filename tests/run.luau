@@ -1,7 +1,7 @@
 --!strict
 -- Runs every test module. A failed assert names its module and exits non-zero.
 -- Tests require pure modules. summary_test, tandem_test and fold_test also load block (summary_test and
--- tandem_test fetch too), with the Host table's fields stubbed and every process effect a recorded callback; no
+-- tandem_test fetch too), and prepare_test loads hub/prepare with fetch, prdata and agent-host, with the Host table's fields stubbed and every process effect a recorded callback; no
 -- other test touches a host module.
 
 local modules: { { name: string, run: () -> () } } = {
@@ -33,6 +33,7 @@ local modules: { { name: string, run: () -> () } } = {
 	{ name = "passes_test", run = require("./passes_test") },
 	{ name = "model_menu_test", run = require("./model_menu_test") },
 	{ name = "hub_settings_test", run = require("./hub_settings_test") },
+	{ name = "prepare_test", run = require("./prepare_test") },
 }
 
 local failed = 0

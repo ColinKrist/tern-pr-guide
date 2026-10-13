@@ -196,6 +196,7 @@ Each module's one job comes from its header comment. A verdict says what the por
 | `src/hub/runtime.luau` | The hub block's runtime record (`Block`) and what every hub module does to the window through it: `draw`, `stop`, frame ops, arrival alerts, fixtures. | Rewrite for the web host. | via `tandem_test`, `summary_test` |
 | `src/hub/store.luau` | The shared cache (`hub.cache`), write ids, edit replay, adoption, and the Tandem ownership guard. Also `hub.added` and `hub.status`. | Rewrite for the web host, minus Tandem. Keep the write-id and replay rules. | `tandem_test` (cache scenarios), `summary_test` |
 | `src/hub/lookups.luau` | How each repo merges (`hub.merge.<owner>/<repo>`, else GitHub's answer) and flake evidence for a failing check. | Port the logic. Swap `Host.kv` for the store. | `merge_test`, `flake_test` (pure parts) |
+| `src/hub/prepare.luau` | Background guides (Settings, off by default): after each refresh and once on start, review requests of the viewer whose saved guide is missing or for another head are explained one at a time, through the `hub.preparing` lease so two windows don't take the same PR. Explanation only. | Rewrite as a worker job queued after a refresh; the lease becomes a job lock. | `prepare_test` |
 | `src/hub/refresh.luau` | The probe, refresh and checks timers armed from `Sync.schedule`, each answer laid onto the newest shared cache, `refetch`, and the sample board's ⌘R. | Rewrite for the web host. Keep `Sync.schedule` as the only timing rule. | via `tandem_test` |
 | `src/hub/details.luau` | Reading what a PR's pages show: feedback details, the fixes page's details, local git and failed-check logs (`readLogs`, through `b.ci`), the review fix page's files. | Rewrite for the web host. The log reads go to the server ([B.3.1](#b31-ci-logs)). | via `summary_test` |
 | `src/hub/agent-run.luau` | An agent fix's flight: clone lookup (asking for a folder when there is none), refs, engine start, settle, stop, retry, open worktree. | Rewrite for the web host. The folder prompt (`osascript`) and `open` drop. The flight becomes a worker job. | via `tandem_test`, `summary_test` |
@@ -581,6 +582,8 @@ The store is the `Host.kv` keys the plugin writes. Every window of a Tern sessio
 | `runSeconds` | number: the last explanation's seconds | `Fetch.saveSeconds("explain")` | one |
 | `reviewSeconds` | number: the last review's seconds | `Fetch.saveSeconds("review")` | one |
 | `links` | `"tern" \| "browser"`: where GitHub links open | `Fetch.saveLinkTarget` (Settings, `hub-links`) | one. Drop: a web app opens links in a new tab. |
+| `hub.prepare` | boolean: prepare AI guides for review requests in the background; missing means off | `Fetch.savePrepareGuides` (Settings, `hub-guides`) | one |
+| `hub.preparing` | `{ key: "owner/repo#n@<head>", at: seconds }`: the PR a window is preparing a guide for; another window passes that PR by until it is returned or 20 minutes old | `Prepare` (`src/hub/prepare.luau`) | one |
 | `recent` | legacy list, deleted by `Fetch.migrateRecent` | none | Drop. |
 
 ```ts
@@ -702,6 +705,7 @@ Port the table as is, as a `Record<string, (b, cx, value) => void>` and one `dis
 | `models-slot`, `models-filter`, `models-move`, `models-top`, `models-effort`, `models-pick`, `model-row`, `model-effort`, `models-lens`, `model-lens` | Settings' model and lens menu: `ModelBox.act` on `s.agent`, the same as the review page's entries; `AgentHost.saveChoice` when it says to save (never on a sample board), `State.closeMenu` when it says to close |
 | `edit-lenses` | `Fetch.prepareLensFolder`, closes Settings and opens the folder |
 | `hub-links` | `State.setLinks`, `Fetch.saveLinkTarget`: where GitHub links open (Settings) |
+| `hub-guides` | `State.setPrepareGuides`, `Fetch.savePrepareGuides`, then `Prepare.run`: whether AI guides are prepared in the background (Settings) |
 | `hub-help`, `hub-help-close` | `State.openHelp`, `State.closeHelp` |
 | `card-agent` | `AgentRun.beginAgent(b, cx, key, "fix")` |
 | `card-agent-clone` | `AgentRun.beginAgent(..., "clone")` |
@@ -766,7 +770,7 @@ The guide page has its own `ACTIONS` table in `src/block.luau`, with the same `d
 | Mode | Keys |
 |---|---|
 | `board` | `?` help. `/` search. ⌘R or Ctrl+R refresh. Esc `hub-escape`. ⏎ `hub-open`, ⇧⏎ `hub-open-generate`. Space `hub-mark`. ⇧X `hub-mark-stale` on the mine tab. With marks, M `hub-batch-merge` and X `hub-batch-close`. h j k l and the arrows `hub-move`. `.` `hub-next`. T `hub-tab`. I `hub-fold inactive`. R `hub-fold merged` on the mine tab and `hub-fold recent` on the review tab (`State.ROW_FOLD`). ⇧T `hub-fold team` and A `hub-fold approved` on the review tab. F `hub-menu filters`. S `hub-menu sort`. ⇧S or ⇧M `hub-menu settings`. N `hub-link`. Any other letter runs the selected card's main or alternative action whose `key` matches (⇧A also runs a main `card-summarize`). |
-| `menu` | j k and the arrows `hub-menu-move`. ⏎ `hub-menu-enter`. Space `hub-menu-select`. Esc `hub-menu-close`. In Settings, the review page's model menu keys (`Keys` `modelsKey`: ↑↓ `models-move`, ←→ `models-effort`, ⇧←→ `models-lens`, Tab `models-slot`, ⏎ `models-pick`, ⌃E `edit-lenses`), other keys type into its search field (`models-filter`), and L sends `hub-links` while that field is empty. In Filter, Space toggles a saved rule and Enter edits it. In filter editors, Tab switches text/options, Enter applies text and Esc returns without saving; ordinary letters type. While a merge method is typed, ⏎ `hub-method-save` and Esc `hub-method-cancel`. |
+| `menu` | j k and the arrows `hub-menu-move`. ⏎ `hub-menu-enter`. Space `hub-menu-select`. Esc `hub-menu-close`. In Settings, the review page's model menu keys (`Keys` `modelsKey`: ↑↓ `models-move`, ←→ `models-effort`, ⇧←→ `models-lens`, Tab `models-slot`, ⏎ `models-pick`, ⌃E `edit-lenses`), other keys type into its search field (`models-filter`), and L sends `hub-links` and ⇧G `hub-guides` while that field is empty. In Filter, Space toggles a saved rule and Enter edits it. In filter editors, Tab switches text/options, Enter applies text and Esc returns without saving; ordinary letters type. While a merge method is typed, ⏎ `hub-method-save` and Esc `hub-method-cancel`. |
 | `search` | ⏎ `hub-search-done`. Esc `hub-search-clear`. Up and down `hub-move`. Other keys type, and a change sends `hub-searched` (`Keys.hubAfterTyping`). |
 | `link` | ⏎ `hub-link-add`. ⇧⏎ `hub-link-open`. Esc `hub-link-clear`. Other keys type. |
 | `confirm` | ⌘⏎ `hub-confirm`. Esc `hub-confirm-cancel`. |
@@ -808,6 +812,7 @@ Run all of them with `/opt/homebrew/bin/luau tests/run.luau`. `tests/run.luau` l
 | `tests/ci_log_test.luau` | `ci/actions`, `ci/buildkite`, `ci/log` | The log contract and both CI modules on recorded output (`fixtures/hub/ci-logs.luau`): which checks each owns, the exact commands and env, the cut, failures, and `Log.refs`. |
 | `tests/summary_test.luau` | the real `hub/block` and `agent-host`, `Host` stubbed | Summarize and bot fixes end to end through `ACTIONS`: stale refs, edited comments, timeouts, a closed block, duplicate callbacks. |
 | `tests/tandem_test.luau` | the real `hub/block`, `agent-host`, `tandem`, `Host` stubbed | Tandem ownership, and the shared cache rules it exercises. |
+| `tests/prepare_test.luau` | the real `hub/prepare`, `Fetch`, `Prdata` and `AgentHost` functions and `Host` stubbed; `keys`, `hub/state` | Which PRs want a background guide, one at a time, explanation only, a failure not retried at its head, stopping when turned off or closed, the `hub.preparing` lease, and ⇧G in Settings (plain g types into its search). |
 
 `tests/conflicts.sh` drives `tools/conflicts` on throwaway local repos. It is not in `tests/run.luau`.
 
