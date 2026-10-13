@@ -952,12 +952,9 @@
 .gp-ai-model-role { color: var(--t3); }
 .gp-ai-model:hover .gp-ai-model-effort, .gp-ai-model-open .gp-ai-model-effort { color: var(--t3); }
 .gp-status-lens { color: var(--t3); }
-.gp-md-lens { flex-direction: column; align-items: stretch; gap: 8px; }
-.gp-md-lens-row { display: flex; gap: 12px; align-items: flex-start; }
-.gp-md-lens-row > .gp-md-label { padding-top: 5px; }
-.gp-md-lens-row > .sf-kbd { margin-top: 3px; flex-shrink: 0; }
-.gp-md-segs-wrap { flex-wrap: wrap; flex-grow: 1; min-width: 0; }
-.gp-md-lens-desc { flex-grow: 1; min-width: 0; font-size: 12.5px; line-height: 1.4; color: var(--t3); }
+.gp-md-lens-item { align-items: flex-start; }
+.gp-md-lens-text { display: flex; flex-direction: column; gap: 2px; flex-grow: 1; min-width: 0; }
+.gp-md-lens-desc { font-size: 12.5px; line-height: 1.4; color: var(--t3); }
 .gp-md-edit { display: flex; gap: 6px; align-items: center; flex-shrink: 0; padding: 2px 6px; margin: -2px -6px; border-radius: var(--r-chip); font-size: 12.5px; color: var(--gp-blue); cursor: pointer; transition: background-color 120ms ease; }
 .gp-md-edit:hover { background: var(--gp-blue-wash); }
 /* the AI writing a guide: a rare, minutes-long wait, so it gets some life */

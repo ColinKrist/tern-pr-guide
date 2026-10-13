@@ -104,6 +104,7 @@ local function modelLabel(pass: string, choice: Agent.Choice, key: string): Node
 end
 
 -- What a run will use, left to right as the menu lists it: the explanation's model, then the review's.
+-- The lens has its own button beside it.
 local function modelButton(agent: Agent.Agent, open: boolean): Node
  return el("span", { class = "gp-ai-model" .. (if open then " gp-ai-model-open" else ""), key = "model", actions = { click = "toggle-models" } }, {
   modelLabel("Explain", agent.explain, "explain"),
@@ -111,6 +112,16 @@ local function modelButton(agent: Agent.Agent, open: boolean): Node
   modelLabel("Review", Agent.choiceFor(agent, "review"), "review"),
   Ui.icon("chev"),
   Ui.keys("⇧M"),
+ })
+end
+
+-- The lens the review reads through, opening the menu on its Lens slot.
+local function lensButton(agent: Agent.Agent, open: boolean): Node
+ return el("span", { class = "gp-ai-model" .. (if open then " gp-ai-model-open" else ""), key = "lens", actions = { click = "toggle-lenses" } }, {
+  span("gp-ai-model-role", "Lens"),
+  span("gp-ai-model-name", Agent.currentLens(agent).name),
+  Ui.icon("chev"),
+  Ui.keys("⇧L"),
  })
 end
 
@@ -125,7 +136,7 @@ end
 -- the models they will use (a button opening the model overlay, which Page.layer draws under it)
 -- and why the last explanation failed. While the explanation runs with nothing new to read, the row
 -- is its progress; while the review runs, the review's quiet progress takes its button's place.
-local function aiRow(run: Agent.Run, open: boolean, hasGuide: boolean): Node
+local function aiRow(run: Agent.Run, open: string?, hasGuide: boolean): Node
  if run.explaining then return explainingRow(run) end
  local kids = {}
  if not hasGuide then table.insert(kids, aiButton("Generate AI guide", "⇧G", "generate-guide", true)) end
@@ -133,7 +144,8 @@ local function aiRow(run: Agent.Run, open: boolean, hasGuide: boolean): Node
   table.insert(kids, reviewing(run))
  else
   table.insert(kids, aiButton("Generate LLM review", "⇧R", "draft-review", false))
-  table.insert(kids, modelButton(run.agent, open))
+  table.insert(kids, modelButton(run.agent, open ~= nil and open ~= "lens"))
+  table.insert(kids, lensButton(run.agent, open == "lens"))
  end
  if run.error then table.insert(kids, span("gp-ai-error", "Couldn't explain the changes: " .. run.error)) end
  return el("div", { class = "gp-ai", key = "ai" }, kids)
@@ -191,7 +203,7 @@ function M.view(s: State.State, motion: Ui.Motion): Node
   el("div", { class = "gp-title", key = "title" }, title),
   status(s, counts),
  }
- if s.ai then table.insert(parts, aiRow(s.ai, s.models ~= nil, s.review.guide.guided or State.switchable(s))) end
+ if s.ai then table.insert(parts, aiRow(s.ai, s.models and s.models.slot, s.review.guide.guided or State.switchable(s))) end
  if s.search then table.insert(parts, SearchPanel.view(s.search, s.review.guide.guided, Ui.entering(motion, "p:search", "gp-enter-panel"))) end
  if s.helpOpen then table.insert(parts, Help.view(s.closing.help == true, { guided = s.review.guide.guided, switch = State.switchable(s), hosted = s.hosted }, Ui.entering(motion, "p:help", "gp-enter-panel"))) end
  if s.reviewOpen then table.insert(parts, ReviewPanel.view(s, motion)) end

@@ -98,13 +98,4 @@ function M.pick(lenses: { Lens }, name: string): Lens
  return lenses[1] or FALLBACK
 end
 
--- The lens after (`delta` 1) or before (-1) the one called `name`, wrapping round.
-function M.step(lenses: { Lens }, name: string, delta: number): Lens
- local at = 1
- for i, lens in lenses do
-  if lens.name == name then at = i end
- end
- return lenses[(at - 1 + delta) % math.max(#lenses, 1) + 1] or FALLBACK
-end
-
 return M

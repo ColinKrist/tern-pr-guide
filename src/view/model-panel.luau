@@ -1,17 +1,18 @@
 --!strict
--- The model and lens menu: an Explanation | Review switch with a hint for the slot shown, a filter,
--- the slot's models matching it grouped by provider, the efforts the highlighted model takes as one
--- segmented control, and on Review the lens. The review page shows it as Tern's overlay under the
--- model button; the PR hub's Settings puts it in its own overlay.
+-- The model and lens menu: an Explanation | Review | Lens switch with a hint for the slot shown, a
+-- filter, and the slot's models matching it grouped by provider with the efforts the highlighted model
+-- takes as one segmented control, or on Lens the lenses with their descriptions. The review page shows
+-- it as Tern's overlay under the model button; the PR hub's Settings puts it in its own overlay.
 local Agent = require("../agent")
 local ModelBox = require("../model-box")
 local Ui = require("./ui")
 
 local el, span = Ui.el, Ui.span
 
-local SLOTS: { { id: Agent.Pass, label: string, hint: string } } = {
+local SLOTS: { { id: ModelBox.Slot, label: string, hint: string } } = {
  { id = "explain", label = "Explanation", hint = "Explains what the PR changes, step by step. A fast model at low effort is enough." },
  { id = "review", label = "Review", hint = "Drafts comments on problems and questions. Use a strong model; higher effort finds more." },
+ { id = "lens", label = "Lens", hint = "What the review comments pay attention to." },
 }
 
 local M = {}
@@ -65,40 +66,46 @@ local function efforts(box: ModelBox.ModelBox, model: Agent.Model?): Node?
  })
 end
 
--- The review lens control: every lens as a segment, the chosen one's description under them, and
--- the way to the folder of the reader's own lenses.
-local function lenses(agent: Agent.Agent): Node
- local current = Agent.currentLens(agent)
- local segments = {}
- for n, lens in agent.lenses do
-  table.insert(segments, el("span", {
-   class = "gp-md-seg" .. (if lens.name == current.name then " gp-md-seg-on" else ""),
-   key = "l" .. n,
-   text = lens.name,
-   actions = { click = "model-lens=" .. n },
+-- The Lens slot's list: each lens matching the filter with its description, a check on the one in
+-- use, and under them the way to the folder of the reader's own lenses.
+local function lenses(box: ModelBox.ModelBox, agent: Agent.Agent): { Node }
+ local current = Agent.currentLens(agent).name
+ local rows = {}
+ for n, lens in ModelBox.lensChoices(box, agent) do
+  local check = el("span", { class = "gp-md-check" }, if lens.name == current then { Ui.icon("check") } else nil)
+  table.insert(rows, el("div", { class = "gp-md-row gp-md-lens-item" .. (if n == box.selected then " gp-md-row-on" else ""), key = "l" .. n, actions = { click = "model-row=" .. n } }, {
+   el("div", { class = "gp-md-lens-text" }, { span("gp-md-name", lens.name), span("gp-md-lens-desc", lens.description) }),
+   check,
   }))
  end
- return el("div", { class = "gp-md-foot gp-md-lens", key = "lenses" }, {
-  el("div", { class = "gp-md-lens-row", key = "pick" }, {
-   span("gp-md-label", "Lens"),
-   el("div", { class = "gp-md-segs gp-md-segs-wrap", key = "segs" }, segments),
-   Ui.keys("⇧← →"),
-  }),
-  el("div", { class = "gp-md-lens-row", key = "about" }, {
-   span("gp-md-lens-desc", current.description),
+ if #rows == 0 then table.insert(rows, span("gp-md-empty", "Nothing matches “" .. box.field.text .. "”")) end
+ return {
+  el("div", { class = "gp-md-list", key = "lenslist" }, rows),
+  el("div", { class = "gp-md-foot", key = "lenses" }, {
+   Ui.spacer(),
    el("span", { class = "gp-md-edit", key = "edit", actions = { click = "edit-lenses" } }, {
     span("gp-md-edit-label", "Edit lenses…"),
     Ui.keys("⌃E"),
    }),
   }),
- })
+ }
 end
 
--- The menu's parts, top to bottom, keyed "slots", "box" (its field "field"), the list, "efforts"
--- and "lenses". The list starts at row `box.top`, under a row offering the ones above it. Its key
--- changes with `top` and the slot, so the list draws as a fresh scroller at its own start and the
--- wheel scrolls it freely.
+local function search(box: ModelBox.ModelBox): Node
+ return el("div", { class = "gp-md-search", key = "box" }, { Ui.icon("search"), Ui.field(box.field, "field", if box.slot == "lens" then "Search lenses" else "Search models") })
+end
+
+-- The menu's parts, top to bottom, keyed "slots", "box" (its field "field"), the list, and "efforts",
+-- or on Lens "lenslist" and "lenses". The model list starts at row `box.top`, under a row offering the
+-- ones above it. Its key changes with `top` and the slot, so the list draws as a fresh scroller at its
+-- own start and the wheel scrolls it freely.
 function M.parts(box: ModelBox.ModelBox, agent: Agent.Agent): { Node }
+ if box.slot == "lens" then
+  local kids = { slots(box), search(box) }
+  for _, node in lenses(box, agent) do table.insert(kids, node) end
+  return kids
+ end
+ local pass = box.slot :: Agent.Pass
  local choices = ModelBox.choices(box, agent)
  local rows, group = {}, nil
  if box.top > 1 then
@@ -111,7 +118,7 @@ function M.parts(box: ModelBox.ModelBox, agent: Agent.Agent): { Node }
    group = name
    table.insert(rows, el("div", { class = "gp-md-group", key = "g-" .. name, text = name }))
   end
-  local check = el("span", { class = "gp-md-check" }, if ModelBox.inUse(agent, box.slot, model) then { Ui.icon("check") } else nil)
+  local check = el("span", { class = "gp-md-check" }, if ModelBox.inUse(agent, pass, model) then { Ui.icon("check") } else nil)
   table.insert(rows, el("div", { class = "gp-md-row" .. (if n == box.selected then " gp-md-row-on" else ""), key = "m" .. n, actions = { click = "model-row=" .. n } }, {
    span("gp-md-name", model.name), Ui.spacer(), check,
   }))
@@ -123,12 +130,11 @@ function M.parts(box: ModelBox.ModelBox, agent: Agent.Agent): { Node }
  end
  local kids = {
   slots(box),
-  el("div", { class = "gp-md-search", key = "box" }, { Ui.icon("search"), Ui.field(box.field, "field", "Search models") }),
+  search(box),
   el("div", { class = "gp-md-list", key = box.slot .. "list" .. box.top }, rows),
  }
  local foot = efforts(box, choices[box.selected])
  if foot then table.insert(kids, foot) end
- if ModelBox.showsLens(box) then table.insert(kids, lenses(agent)) end
  return kids
 end
 

@@ -57,18 +57,22 @@ local function drawn()
 		s.models = ModelBox.open(a, "explain")
 		local explain = texts(ModelPanel.view(s.models :: ModelBox.ModelBox, a, "anchor", false))
 		assert(string.find(explain, "Explains what the PR changes, step by step.", 1, true) and string.find(explain, "[tab]", 1, true), explain)
-		assert(not string.find(explain, "Lens", 1, true), "Explanation has no lens")
+		assert(not string.find(explain, "Edit lenses", 1, true), "Explanation has no lenses")
 		s.models = ModelBox.open(a, "review")
 		local review = texts(ModelPanel.view(s.models :: ModelBox.ModelBox, a, "anchor", false))
-		assert(string.find(review, "anthropic|Haiku 4||Opus 5", 1, true) and string.find(review, "Lens", 1, true), review)
+		assert(string.find(review, "anthropic|Haiku 4||Opus 5", 1, true) and not string.find(review, "Edit lenses", 1, true), review)
 		assert(not string.find(review, "Off", 1, true), "Review has no Off row: " .. review)
+		s.models = ModelBox.open(a, "lens")
+		local lens = texts(ModelPanel.view(s.models :: ModelBox.ModelBox, a, "anchor", false))
+		assert(string.find(lens, "Balanced|The comments worth making.", 1, true) and string.find(lens, "Edit lenses…|[ctrl+E]", 1, true), "Lens lists each lens with its description: " .. lens)
+		assert(not string.find(lens, "Haiku 4", 1, true), "and no models: " .. lens)
 
 		local motion = { born = {}, next = {}, booted = true, animate = false }
 		s.models = nil
 		a.explain = { model = "anthropic/haiku-4", effort = "low" }
 		s.ai = Agent.idle(a)
 		local idle = texts(Header.view(s, motion))
-		assert(string.find(idle, "Generate AI guide|[shift+G]|Generate LLM review|[shift+R]|Explain|haiku-4|low|·|Review|opus-5|high", 1, true), idle)
+		assert(string.find(idle, "Generate AI guide|[shift+G]|Generate LLM review|[shift+R]|Explain|haiku-4|low|·|Review|opus-5|high|[shift+M]|Lens|Balanced|[shift+L]", 1, true), idle)
 		local run = s.ai :: Agent.Run
 		Agent.start(run, "explain", 60)
 		local explaining = texts(Header.view(s, motion))
@@ -105,7 +109,6 @@ return function()
 	local box = s.models :: ModelBox.ModelBox
 	assert(names(box, a) == "Haiku 4,Opus 5", names(box, a))
 	assert(box.selected == 2 and box.effort == "medium", "the explanation starts on the review model it defaults to, at medium")
-	assert(not ModelBox.showsLens(box), "no lens on the Explanation slot")
 	box.selected, box.effort = 1, "low"
 	assert(ModelBox.choose(box, a))
 	assert(a.explain.model == "anthropic/haiku-4" and a.explain.effort == "low" and a.explainPicked, "picking on Explanation sets the explanation")
@@ -114,15 +117,38 @@ return function()
 	assert(Keys.action(s, key("tab")).act == "models-slot" and Keys.action(s, key("tab")).value == "review", "Tab goes to Review")
 	s.models = ModelBox.open(a, "review")
 	box = s.models :: ModelBox.ModelBox
-	assert(Keys.action(s, key("tab")).value == "explain", "Tab comes back to Explanation")
+	assert(Keys.action(s, key("tab")).value == "lens", "Tab goes on to Lens")
 	assert(names(box, a) == "Haiku 4,Opus 5", "Review lists the same models: " .. names(box, a))
-	assert(box.selected == 2 and ModelBox.showsLens(box), "Review highlights its model and shows the lens")
+	assert(box.selected == 2, "Review highlights its model")
 	box.selected = 1
 	assert(ModelBox.choose(box, a))
 	assert(a.model == "anthropic/haiku-4" and a.effort == "high", "picking on Review sets the review model")
 	assert(a.explain.model == "anthropic/haiku-4" and a.explain.effort == "low", "and leaves the explanation")
 	box.field = Fields.create("nothing")
 	assert(not ModelBox.choose(box, a), "a filter that matches nothing picks nothing")
+
+	-- The Lens slot: it highlights the lens in use, arrows move, choosing sets the lens and nothing else,
+	-- and Tab wraps back to Explanation.
+	a.lenses = {
+		{ name = "Balanced", description = "", instructions = "" },
+		{ name = "Security", description = "", instructions = "" },
+		{ name = "Quick skim", description = "", instructions = "" },
+	}
+	a.lens = "Security"
+	s.models = ModelBox.open(a, "lens")
+	box = s.models :: ModelBox.ModelBox
+	assert(box.selected == 2, "Lens highlights the lens in use")
+	assert(Keys.action(s, key("tab")).value == "explain", "Tab wraps to Explanation")
+	assert(Keys.action(s, key("right")).act == "models-effort", "← → stay the effort keys")
+	ModelBox.stepEffort(box, a, 1)
+	ModelBox.move(box, a, 5)
+	assert(box.selected == 3, "arrows stop at the last lens")
+	assert(ModelBox.choose(box, a) and a.lens == "Quick skim" and a.model == "anthropic/haiku-4", "choosing sets the lens and leaves the models")
+	box.field = Fields.create("sec")
+	box.selected = 1
+	assert(ModelBox.choose(box, a) and a.lens == "Security", "the filter narrows the lenses")
+	s.models = nil
+	assert(Keys.action(s, key("l", true)).act == "toggle-lenses", "⇧L opens the menu on Lens")
 
 	-- Arrowing down a list where every model has its own provider heading keeps the highlighted row
 	-- within the lines the list fits, headings and the "more" row counted.

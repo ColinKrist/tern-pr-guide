@@ -41,8 +41,9 @@ local function groups(kind: Kind): { Group }
    if not kind.switch then table.insert(keys, { "⇧ G", "generate AI guide" }) end
    if kind.hosted then table.insert(keys, { "esc", "back to the board" }) end
    table.insert(keys, { "⇧ R", "generate LLM review" })
-   table.insert(keys, { "⇧ M", "AI models, effort and lens" })
-   table.insert(keys, { "tab", "in that menu: explanation / review model" })
+   table.insert(keys, { "⇧ M", "AI models and effort" })
+   table.insert(keys, { "⇧ L", "review lens" })
+   table.insert(keys, { "tab", "in that menu: explanation / review / lens" })
    table.insert(keys, { "⌃ E", "in that menu: edit lenses" })
   elseif group.title == "2  React" and kind.switch and not kind.guided then
    table.insert(keys, { "a  d", "add / dismiss suggestion" })

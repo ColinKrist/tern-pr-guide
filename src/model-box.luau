@@ -5,10 +5,13 @@ local Agent = require("./agent")
 local Fields = require("./text-field")
 local Lens = require("./lens")
 
--- The menu: the pass it picks for, its filter and the text the list was last filtered by, the
--- highlighted row (an index into `choices`), the effort the next pick gets, and the first row its
--- list shows.
-export type ModelBox = { slot: Agent.Pass, field: Fields.Field, query: string, selected: number, effort: string?, top: number }
+-- What the menu picks: a pass's model, or the review's lens.
+export type Slot = Agent.Pass | "lens"
+
+-- The menu: what it picks, its filter and the text the list was last filtered by, the highlighted
+-- row (an index into `choices`, or `lensChoices` on the Lens slot), the effort the next pick gets,
+-- and the first row its list shows.
+export type ModelBox = { slot: Slot, field: Fields.Field, query: string, selected: number, effort: string?, top: number }
 
 local M = {}
 
@@ -25,11 +28,35 @@ function M.choices(box: ModelBox, agent: Agent.Agent): { Agent.Model }
  return Agent.matching(agent.models, box.field.text)
 end
 
--- The menu on `slot`, highlighting what that pass uses.
-function M.open(agent: Agent.Agent, slot: Agent.Pass): ModelBox
- local box: ModelBox = { slot = slot, field = Fields.create(), query = "", selected = 1, effort = Agent.choiceFor(agent, slot).effort, top = 1 }
+-- The lenses matching the filter.
+function M.lensChoices(box: ModelBox, agent: Agent.Agent): { Lens.Lens }
+ local needle = string.lower(box.field.text)
+ if needle == "" then return agent.lenses end
+ local found = {}
+ for _, lens in agent.lenses do
+  if string.find(string.lower(lens.name), needle, 1, true) then table.insert(found, lens) end
+ end
+ return found
+end
+
+-- The slot Tab goes to from `slot`.
+function M.nextSlot(slot: Slot): Slot
+ return if slot == "explain" then "review" elseif slot == "review" then "lens" else "explain"
+end
+
+-- The menu on `slot`, highlighting what that pass uses, or the lens in use.
+function M.open(agent: Agent.Agent, slot: Slot): ModelBox
+ if slot == "lens" then
+  local box: ModelBox = { slot = slot, field = Fields.create(), query = "", selected = 1, top = 1 }
+  for i, lens in agent.lenses do
+   if lens.name == Agent.currentLens(agent).name then box.selected = i end
+  end
+  return box
+ end
+ local pass = slot :: Agent.Pass
+ local box: ModelBox = { slot = slot, field = Fields.create(), query = "", selected = 1, effort = Agent.choiceFor(agent, pass).effort, top = 1 }
  for i, model in M.choices(box, agent) do
-  if M.inUse(agent, slot, model) then box.selected = i end
+  if M.inUse(agent, pass, model) then box.selected = i end
  end
  box.top = math.max(1, box.selected - 3)
  return box
@@ -64,6 +91,10 @@ local function keepShown(box: ModelBox, choices: { Agent.Model })
 end
 
 function M.move(box: ModelBox, agent: Agent.Agent, delta: number)
+ if box.slot == "lens" then
+  box.selected = math.clamp(box.selected + delta, 1, math.max(1, #M.lensChoices(box, agent)))
+  return
+ end
  local choices = M.choices(box, agent)
  box.selected = math.clamp(box.selected + delta, 1, math.max(1, #choices))
  keepShown(box, choices)
@@ -71,15 +102,21 @@ end
 
 -- Steps the effort the highlighted model will get through the levels it takes.
 function M.stepEffort(box: ModelBox, agent: Agent.Agent, delta: number)
+ if box.slot == "lens" then return end
  local model = M.choices(box, agent)[box.selected]
  if not model or #model.efforts == 0 then return end
  local at = table.find(model.efforts, Agent.effortFor(model, box.effort) :: string) :: number
  box.effort = model.efforts[(at - 1 + delta) % #model.efforts + 1]
 end
 
--- Makes the highlighted model, with the effort it can take, the one the slot's pass runs with;
--- false when the filter matches nothing.
+-- Makes the highlighted model, with the effort it can take, the one the slot's pass runs with, or
+-- the highlighted lens the review's; false when the filter matches nothing.
 function M.choose(box: ModelBox, agent: Agent.Agent): boolean
+ if box.slot == "lens" then
+  local lens = M.lensChoices(box, agent)[box.selected]
+  if lens then agent.lens = lens.name end
+  return lens ~= nil
+ end
  local model = M.choices(box, agent)[box.selected]
  if not model then return false end
  local effort = Agent.effortFor(model, box.effort)
@@ -92,23 +129,18 @@ function M.choose(box: ModelBox, agent: Agent.Agent): boolean
  return true
 end
 
--- Whether the menu offers the lens: on the Review slot.
-function M.showsLens(box: ModelBox): boolean
- return box.slot == "review"
-end
-
 -- What a menu action left behind: the box to show (a fresh one when the slot switched), whether the
 -- agent's picks changed and want saving, and whether the menu closes.
 export type Outcome = { box: ModelBox, save: boolean, close: boolean }
 
 -- Runs the menu action `act` with `value` on `box`. A key steps or chooses; ⏎ (`models-pick`) chooses
--- and closes; a click on a model, an effort or a lens chooses it and leaves the menu open for the rest.
--- The lens acts only where it shows. Nil for an action the menu doesn't know.
+-- and closes; a click on a row or an effort chooses it and leaves the menu open for the rest. Nil for
+-- an action the menu doesn't know.
 function M.act(box: ModelBox, agent: Agent.Agent, act: string, value: string): Outcome?
  local function stay(save: boolean): Outcome return { box = box, save = save, close = false } end
  if act == "models-slot" then
-  if value == box.slot or (value ~= "explain" and value ~= "review") then return stay(false) end
-  return { box = M.open(agent, value :: Agent.Pass), save = false, close = false }
+  if value == box.slot or (value ~= "explain" and value ~= "review" and value ~= "lens") then return stay(false) end
+  return { box = M.open(agent, value :: Slot), save = false, close = false }
  elseif act == "models-filter" then
   if box.field.text ~= box.query then box.query, box.selected, box.top = box.field.text, 1, 1 end
   return stay(false)
@@ -130,15 +162,6 @@ function M.act(box: ModelBox, agent: Agent.Agent, act: string, value: string): O
  elseif act == "model-effort" then
   box.effort = value
   return stay(M.choose(box, agent))
- elseif act == "models-lens" then
-  if not M.showsLens(box) then return stay(false) end
-  agent.lens = Lens.step(agent.lenses, agent.lens, tonumber(value) :: number).name
-  return stay(true)
- elseif act == "model-lens" then
-  local lens = agent.lenses[tonumber(value) :: number]
-  if not M.showsLens(box) or not lens then return stay(false) end
-  agent.lens = lens.name
-  return stay(true)
  end
  return nil
 end
