@@ -256,7 +256,7 @@ Flat by default. Depth comes from two places only, both Tern's. Pinned surfaces 
 
 ## Shapes
 
-Gently rounded and consistent with Tern: `--r-chip` (6px) for chips, keycaps and small hover targets; `--r-ctl` (8px) for buttons, rows and fields; `--r-card` (12px) for panels, cards and the diagram. Smaller literal radii are reserved for marks: 2px for word highlights and meter cells, 4px for checkboxes and diagram counters. Avatars and step markers are full circles. Borders are 1px hairlines; the only thicker line is the current step's 3px inset bar, which is a state mark, not decoration.
+Gently rounded and consistent with Tern: `--r-chip` (6px) for chips, keycaps and small hover targets; `--r-ctl` (8px) for buttons, rows and fields; `--r-card` (12px) for panels, cards and the diagram. Smaller literal radii are reserved for marks: 2px for word highlights and meter cells, 4px for checkboxes. Avatars and step markers are full circles. Borders are 1px hairlines; the only thicker line is the current step's 3px inset bar, which is a state mark, not decoration.
 
 ## Components
 
@@ -287,7 +287,7 @@ A file block: a glass sticky header (caret, dimmed directory plus bold file name
 The left column's list of steps: a circle tick, the number, and the title. The current step sits in a Review Blue wash box with its note under it. Steps in a shared block also show a 15px numbered marker in the code gutter, filled Review Blue for the current one.
 
 ### Before / after diagram
-A card of boxes joined by labeled arrows, in the terminal font. A box's state is its wash and line color: Added Green, Changed Amber, or Removed Red with strike-through text. Unchanged boxes are card-colored. A two-digit counter links each box to its change.
+A full-width card under the overview: one run through the code, a column per stage, with a Before row above an After row. Stage headings and row names use the Label style. Each box holds a name in the terminal font and a short note in the sans. Unchanged stages are one plain box across both rows. Changed and added boxes take their wash and line color (Changed Amber, Added Green); a removed box has a Removed Red sign and a dashed Removed Red line on a plain fill, without strike-through. A side that didn't exist shows a muted word instead of a box. The marked box ends its note with "Change N ›", which opens that change. Below the stages, a "Check" line in full-contrast sans names the consequence to confirm, and that stage is the diagram's one focal point: its heading carries Tern's `warn` icon and its marked box a full-contrast line. Text in the diagram clears 4.5:1 and its lines 3:1 against the surface they sit on, washes included. A wide diagram scrolls sideways.
 
 ### Review panel
 A two-column card. On the left, comments grouped under file names: one row per comment with a tick, avatar, kind label, line link and text, and unticked rows at 50% opacity. On the right, a shade side card with the summary field, three verdict rows (Comment, Approve, Request changes, each with a colored circle icon and a keycap), and the Submit button. Chosen verdicts take their meaning color as a wash plus hairline.

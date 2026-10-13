@@ -92,12 +92,22 @@ groups. Generated files aren't in the diff an agent reads, so a step or comment 
 
 ## Flow diagram
 
-`flow` is `{ "title", "subtitle", "rows" }`. Each row is a list read left to right:
+`flow` is `{ "title", "stages", "check", "arrows" }`: one run through the code, drawn as a column per
+stage with the code before the PR above the code after it.
 
-- a box: `{ "text": "launchAgent()", "kind": "added" | "changed" | "removed", "change": 3, "note": "owner check" }`,
-  where `kind`, `change` (the change number it belongs to) and `note` are optional;
-- an arrow: `{ "edge": "tool call" }` (the label may be empty);
-- a fork: `{ "branch": [ { "edge": "all closed", "text": "report accepted" }, ... ] }`.
+- A stage: `{ "label": "Launch", "before": "launchAgent()", "beforeNote": "any coordinator",
+  "after": "launchAgent()", "note": "claim owner only", "change": 3 }`. `before` and `after` are a
+  name or a list of up to two; leave a side out where that point didn't exist. `change` is the
+  change number that touched the stage. Every field but `label` and one side is optional.
+- How a stage is drawn comes from `change` and which sides it has, never from the names: with no
+  `change` it is unchanged and drawn once across both rows; with one it is changed, or added when it
+  has no `before`, or removed when it has no `after`.
+- `check` (optional): `{ "text": "...", "stage": 4 }`, the consequence a reviewer should confirm,
+  shown under the diagram, with that stage's heading marked. A plain string is the text alone.
+- `arrows` (optional): `false` for stages that are a list, such as a model's fields, not a run.
+
+A diagram needs 2-6 stages and at least one with a `change`; otherwise the page shows none. Names
+are cut at 28 characters and notes at 32.
 
 ## Without a guide
 

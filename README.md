@@ -135,7 +135,9 @@ come last, under their own folding rows.
 **Guided** is an AI walkthrough inspired by Linear Diffs. You see the overall shape of the change
 first, then go through it in small steps:
 
-- A plain-language overview and, for some PRs, a before-and-after diagram.
+- A plain-language overview and, for some PRs, a before-and-after diagram: one run through the
+  code, with what each stage did before the PR above what it does now, the changed parts linked to
+  their changes, and a "Check" line naming the consequence to confirm.
 - The PR split into a few changes, and each change into steps pinned to their lines.
 - Code blocks that start at the enclosing function, method or class, so a step reads in context. When
   that line is far above the change, the block keeps a few lines of context and the hidden lines

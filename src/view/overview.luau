@@ -1,5 +1,5 @@
 --!strict
--- The PR in plain words, then how one run flows through the code with the changed parts marked.
+-- The PR in plain words, then one run through the code before and after it, with the changed parts marked.
 local Guide = require("../guide")
 local Review = require("../review")
 local State = require("../state")
@@ -8,55 +8,97 @@ local Ui = require("./ui")
 local el, span = Ui.el, Ui.span
 
 local SIGNS: { [Guide.Tone]: string } = { added = "+", removed = "−", changed = "~" }
+local LEGEND: { Guide.Tone } = { "added", "changed", "removed" }
+local NAMES: { [Guide.Tone]: string } = { added = "Added", changed = "Changed", removed = "Removed" }
 -- Estimated height of the open diagram, for its unroll animation.
-local FLOW_H = 220
+local FLOW_H = 240
 
 local M = {}
 
-local function box(r: Review.Review, item: Guide.Box): Node
- local main = {}
- if item.kind then table.insert(main, span("gp-fn-sign", SIGNS[item.kind])) end
- table.insert(main, span("gp-fn-text", item.text))
- if item.change then table.insert(main, span("gp-fn-num", string.format("%02d", item.change))) end
- local kids = { el("div", { class = "gp-fn-main" }, main) }
- if item.note then table.insert(kids, span("gp-fn-note", item.note)) end
- local action = if item.change then { click = "goto-step=" .. Review.firstStep(r, item.change) } else nil
- return el("div", { class = "gp-fn gp-fn-" .. (item.kind or "same"), actions = action }, kids)
+-- A name that isn't code (it has a space) is set in the UI font.
+local function name(text: string): Node
+ return span(if string.find(text, " ") then "gp-fb-name gp-fb-prose" else "gp-fb-name", text)
 end
 
-local function edge(label: string): Node
- return el("div", { class = "gp-fe" }, { span("gp-fe-label", label), span("gp-fe-arrow", "────›") })
-end
-
-local function flowRow(r: Review.Review, row: { Guide.FlowItem }, n: number): Node
- local items = {}
- for _, item in row do
-  if item.type == "fork" then
-   local arms = {}
-   for _, arm in item.arms do
-    table.insert(arms, el("div", { class = "gp-flow-arm" }, { edge(arm.label), box(r, { type = "box", text = arm.text }) }))
-   end
-   table.insert(items, el("div", { class = "gp-flow-branch" }, arms))
-  elseif item.type == "edge" then
-   table.insert(items, edge(item.label))
-  else
-   table.insert(items, box(r, item))
-  end
+-- One box holding one name, or two alternatives joined by "or" (stacked in the taller unchanged box).
+-- `tone` marks the side that carries the change; `go` is the step a click opens.
+local function box(names: { string }, tone: Guide.Tone?, note: string?, change: number?, go: number?, stacked: boolean?): Node
+ local top = {}
+ if tone then table.insert(top, span("gp-fb-sign", SIGNS[tone])) end
+ table.insert(top, name(names[1]))
+ if names[2] then table.insert(top, span("gp-fb-or", "or")); table.insert(top, name(names[2])) end
+ local kids = { el("div", { class = "gp-fb-top" .. (if stacked and names[2] then " gp-fb-alts" else "") }, top) }
+ if note or go then
+  local row = {}
+  if note then table.insert(row, span("gp-fb-note-text", note)) end
+  if go then table.insert(row, span("gp-fb-go", "Change " .. tostring(change) .. " ›")) end
+  table.insert(kids, el("div", { class = "gp-fb-note" }, row))
  end
- return el("div", { class = "gp-flow-row" .. (if n > 1 then " gp-flow-cont" else ""), key = "r" .. n }, items)
+ return el("div", {
+  class = "gp-fb gp-fb-" .. (tone or "plain") .. (if go then " gp-fb-link" else ""),
+  actions = if go then { click = "goto-step=" .. go } else nil,
+ }, kids)
+end
+
+-- One lane of a touched stage: its box, or a muted word where that side has nothing.
+local function cell(names: { string }, empty: string, tone: Guide.Tone?, note: string?, change: number?, go: number?): Node
+ if #names == 0 then return el("div", { class = "gp-fc gp-fc-none" }, { span("gp-fc-empty", empty) }) end
+ return el("div", { class = "gp-fc" }, { box(names, tone, note, change, go) })
+end
+
+local function stage(r: Review.Review, st: Guide.Stage, n: number, flagged: boolean): Node
+ local head = { span("gp-fl-h-text", st.label) }
+ if flagged then table.insert(head, 1, Ui.icon("warn")) end
+ local kids = { el("div", { class = "gp-fl-h" .. (if flagged then " gp-fl-flag" else "") }, head) }
+ if not st.tone then
+  -- Unchanged: one box across both lanes, with whichever side the stage names.
+  local names = if #st.after > 0 then st.after else st.before
+  table.insert(kids, el("div", { class = "gp-fc gp-fc-span" }, { box(names, nil, st.note or st.beforeNote, nil, nil, true) }))
+ else
+  local go = if st.change then Review.firstStep(r, st.change) else nil
+  local removed = st.tone == "removed"
+  table.insert(kids, cell(st.before, "Didn't exist", if removed then "removed" else nil, st.beforeNote, st.change, if removed then go else nil))
+  table.insert(kids, el("div", { class = "gp-fl-gap" }))
+  table.insert(kids, cell(st.after, "Removed", if removed then nil else st.tone, st.note, st.change, if removed then nil else go))
+ end
+ return el("div", { class = "gp-fs" .. (if st.tone then "" else " gp-fs-same") .. (if flagged then " gp-fs-flag" else ""), key = "s" .. n }, kids)
+end
+
+local function arrows(on: boolean): Node
+ if not on then return el("div", { class = "gp-fa gp-fa-off" }) end
+ return el("div", { class = "gp-fa" }, {
+  el("div", { class = "gp-fl-h" }), span("gp-fa-c", "→"), el("div", { class = "gp-fl-gap" }), span("gp-fa-c", "→"),
+ })
 end
 
 local function flow(s: State.State, motion: Ui.Motion, diagram: Guide.Flow): Node
+ local present: { [string]: boolean } = {}
+ for _, st in diagram.stages do if st.tone then present[st.tone] = true end end
+ local legend = {}
+ for _, tone in LEGEND do
+  if present[tone] then
+   table.insert(legend, el("span", { class = "gp-flow-key gp-flow-key-" .. tone }, { span("gp-fb-sign", SIGNS[tone]), span("gp-flow-key-text", NAMES[tone]) }))
+  end
+ end
  local kids = { el("div", { class = "gp-flow-head", key = "head", actions = { click = "toggle-flow" } }, {
   Ui.caret(s.flowOpen),
   span("gp-flow-title", diagram.title),
   Ui.spacer(),
-  span("gp-flow-legend", "+ added   ~ changed   − removed"),
+  el("div", { class = "gp-flow-legend" }, legend),
  }) }
  if s.flowOpen or s.closing.flow then
-  local rows = { span("gp-flow-sub", diagram.subtitle) }
-  for n, row in diagram.rows do table.insert(rows, flowRow(s.review, row, n)) end
-  table.insert(kids, Ui.body(motion, "flow", s.closing.flow == true, FLOW_H, rows))
+  local lanes = { el("div", { class = "gp-fl-gutter" }, {
+   el("div", { class = "gp-fl-h" }), span("gp-fl-lane", "Before"), el("div", { class = "gp-fl-gap" }), span("gp-fl-lane", "After"),
+  }) }
+  for n, st in diagram.stages do
+   if n > 1 then table.insert(lanes, arrows(diagram.arrows)) end
+   table.insert(lanes, stage(s.review, st, n, diagram.checkStage == n))
+  end
+  local body = { el("div", { class = "gp-hscroll" }, { el("div", { class = "gp-fl-lanes" }, lanes) }) }
+  if diagram.check then
+   table.insert(body, el("div", { class = "gp-flow-check" }, { span("gp-flow-check-k", "Check"), el("div", { class = "gp-flow-check-t" }, { Ui.rich(diagram.check) }) }))
+  end
+  table.insert(kids, Ui.body(motion, "flow", s.closing.flow == true, FLOW_H, body))
  end
  return el("div", { class = "gp-flow", key = "flow" }, kids)
 end
