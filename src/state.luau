@@ -62,7 +62,9 @@ export type Place = {
 -- Code blocks are keyed by block id: the key of the first step of a run of steps on one file (see
 -- Guide.Step.block), or "f:<path>" for a supporting file. What
 -- `Place` lists belongs to the view shown; the other view's is parked in `other`.
-export type Hosted = { fixes: boolean }
+-- What a host (the PR hub) tells the page it shows. `pr`: the host has a Pull request menu for the page's PR (⇧P),
+-- and `prOpen`: that menu or its question is open.
+export type Hosted = { fixes: boolean, pr: boolean, prOpen: boolean }
 
 export type State = {
  -- The node path the page sits under in its host's view; every frame op and path starts there.
@@ -122,7 +124,7 @@ export type State = {
  -- switches view nothing arrives ("still"): a switch is instant.
  arrival: "load" | "guide" | "still",
  -- Set when a host (the PR hub) shows the page: `fixes` is whether a Fixes view sits beside it. The page then
- -- shows a Fixes tab, and its `t` is the host's, and an Esc hint.
+ -- shows a Fixes tab, and its `t` is the host's, an Esc hint, and with `pr` a Pull request button.
  hosted: Hosted?,
 }
 

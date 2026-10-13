@@ -73,14 +73,14 @@ return {
 	autoMerge = { ["acme/web"] = true, ["acme/api"] = false, ["acme/aviator"] = false },
 	-- Each case's card text, main action and the entries behind the ▾.
 	expect = {
-		["acme/web#201"] = { column = "in_review", chip = "Waiting on @maria-k to re-review", main = "card-rerequest", more = "card-copy,card-auto" },
+		["acme/web#201"] = { column = "in_review", chip = "Waiting on @maria-k to re-review", main = "card-rerequest", more = "card-copy,card-auto,card-close" },
 		["acme/web#202"] = { column = "needs_fixes" },
 		["acme/web#203"] = { column = "ready" },
-		["acme/web#204"] = { column = "in_review", chip = "Waiting on @maria-k to re-review", main = "card-rerequest", more = "card-copy,card-auto" },
+		["acme/web#204"] = { column = "in_review", chip = "Waiting on @maria-k to re-review", main = "card-rerequest", more = "card-copy,card-auto,card-close" },
 		["acme/web#205"] = { column = "in_review", chip = "Waiting on review", note = "Merges when ready", main = "card-copy", more = "card-cancel" },
-		["acme/api#206"] = { column = "in_review", chip = "Waiting on review", main = "card-copy", more = "" },
-		["acme/aviator#207"] = { column = "in_review", chip = "Waiting on review", main = "card-copy", more = "card-auto,card-autoland" },
-		["acme/web#208"] = { column = "in_review", chip = "Waiting on @maria-k to re-review", main = "card-copy", more = "card-auto" },
-		["acme/web#209"] = { column = "in_review", chip = "Waiting on @maria-k and 2 others to re-review", main = "card-rerequest", more = "card-copy,card-auto" },
+		["acme/api#206"] = { column = "in_review", chip = "Waiting on review", main = "card-copy", more = "card-close" },
+		["acme/aviator#207"] = { column = "in_review", chip = "Waiting on review", main = "card-copy", more = "card-auto,card-autoland,card-close" },
+		["acme/web#208"] = { column = "in_review", chip = "Waiting on @maria-k to re-review", main = "card-copy", more = "card-auto,card-close" },
+		["acme/web#209"] = { column = "in_review", chip = "Waiting on @maria-k and 2 others to re-review", main = "card-rerequest", more = "card-copy,card-auto,card-close" },
 	},
 }

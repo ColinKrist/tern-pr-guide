@@ -358,12 +358,12 @@ local function testCards()
 
 	-- A GitHub method asks first, a comment runs at once, a learned one asks once.
 	local ready = State.card(s, "acme/api#109") :: State.Card
-	assert(ready.main ~= nil and ready.main.act == "card-merge" and State.mergeStep(s, ready.pr) == "confirm")
+	assert(ready.main ~= nil and ready.main.act == "card-merge" and State.ask(s, "acme/api#109", "merge") and s.confirm ~= nil and s.confirm.kind == "merge")
+	State.cancelConfirm(s)
 	resolve({ declared = { kind = "comment", command = "/aviator merge", cancel = "/aviator cancel" } })
-	assert(State.mergeStep(s, ready.pr) == "run")
+	assert(not State.ask(s, "acme/api#109", "merge") and s.confirm == nil, "a comment runs at once")
 	resolve({ learned = { kind = "comment", command = "/merge" } })
-	assert(State.mergeStep(s, ready.pr) == "ask")
-	State.askMerge(s, "acme/api#109")
+	assert(State.ask(s, "acme/api#109", "merge"))
 	assert(s.confirm ~= nil and s.confirm.kind == "learned")
 	assert((State.card(s, "acme/api#109") :: State.Card).asking == "Comment /merge, as this repository usually does?")
 	State.cancelConfirm(s)

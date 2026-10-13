@@ -110,29 +110,26 @@ local function options(args: { string }): ({ generate: boolean, fixture: string?
 	return out, nil
 end
 
--- Opens PR `number` of `slug` ("owner/repo") in a Tern pane of its own, the way ⌘⏎ does: the block can't open
--- blocks, so Pages.plan finds a checkout of the repo and the link it opens is routed to the guide. With no
--- checkout and no copy to make, it says why and opens nothing. A card's other open actions use this too.
+-- Opens PR `number` of `slug` ("owner/repo") in a Tern pane of its own, as the add-by-link field's ⇧⏎ does: the block
+-- can't open blocks, so Pages.plan finds a checkout of the repo and the link it opens is routed to the guide. With no
+-- checkout and no copy to make, it says why and opens nothing.
 local function openPr(b: Block, cx: BlockCx, slug: string, number: number, generate: boolean)
 	Pages.plan(b, cx, slug, number, generate, function(url)
 		if url then cx:open(url) end
 	end)
 end
 
--- ⏎ and a click open the row in the hub's own pane; ⇧⏎ (or a hub opened for AI guides) starts the AI guide too, and
--- ⌘⏎ (`pane`) opens the PR in a pane of its own.
-local function openRow(b: Block, cx: BlockCx, value: string, withGuide: boolean, pane: boolean?)
+-- ⏎ and a click open the row in the hub's own pane; ⇧⏎ (or a hub opened for AI guides) starts the AI guide too.
+local function openRow(b: Block, cx: BlockCx, value: string, withGuide: boolean)
 	local s = b.s
 	if value ~= "" then State.select(s, value) end
 	local generate = withGuide or b.generate
 	local recent = State.selectedRecent(s)
 	if recent then
-		if pane then return openPr(b, cx, recent.repo, recent.number, generate) end
 		return Pages.open(b, cx, { slug = recent.repo, number = recent.number, cardKey = nil, generate = generate, view = nil })
 	end
 	local card = State.selectedCard(s)
 	if card == nil then return end
-	if pane then return openPr(b, cx, card.pr.repo, card.pr.number, generate) end
 	if card.agent and card.agent.kind == "ready" then return openReviewFix(b, cx, card.pr.key) end
 	-- A Needs fixes card opens at what needs fixing; the AI guide still opens the whole pull request, with Fixes a tab away.
 	if card.column == "needs_fixes" and not generate then return openFixes(b, cx, card.pr.key) end
@@ -171,7 +168,7 @@ local chooseMergeRow: (b: Block, cx: BlockCx, index: number) -> ()
 -- Chooses the highlighted row: a card's other action runs.
 local function pickRow(b: Block, cx: BlockCx, index: number, ACTIONS: { [string]: Handler })
 	local s = b.s
-	if s.menu == "actions" then
+	if s.menu == "actions" or s.menu == "pr" then
 		local more = State.actionAt(s, index)
 		local card = State.selectedCard(s)
 		State.closeMenu(s)
@@ -214,9 +211,6 @@ ACTIONS["hub-open-generate"] = function(b, cx, value)
 	openRow(b, cx, value, true)
 end
 ACTIONS["open"] = openCard
-ACTIONS["hub-open-pane"] = function(b, cx, value)
-	openRow(b, cx, value, false, true)
-end
 -- The PR's views (Fixes, Guided, Files): `t` cycles them, a tab shows one, Esc at the page's rest returns to the board.
 ACTIONS["pages-cycle"] = Pages.cycle
 ACTIONS["pages-view"] = Pages.go
@@ -435,10 +429,20 @@ ACTIONS["card-copy"] = function(b, cx, key)
 	cx:toast("success", "Copied link")
 end
 
-ACTIONS["card-merge"] = Ops.mergeCard
-ACTIONS["card-cancel"] = Ops.cancelMerge
-ACTIONS["card-auto"] = Ops.autoMerge
-ACTIONS["card-rerequest"] = Ops.rerequest
+-- The pull request actions (PrActions): Merge, Merge when ready, Cancel merge, Update branch, Re-request review and
+-- Close, from a card's key or button, or the Pull request menu on its page.
+for id, act in State.ACT_OF do
+	ACTIONS[act] = function(b, cx, key) Ops.act(b, cx, id, key) end
+end
+-- ⇧P or the Pull request button on a PR's review page or fixes page: its pull request actions, in a menu.
+ACTIONS["hub-pr-menu"] = function(b, cx, value)
+	local s = b.s
+	local key = if value ~= "" then value else Pages.cardKey(b)
+	if s.menu == "pr" then return closeMenu(b) end
+	if not key or #State.prMenu(s, key) == 0 then return end
+	State.select(s, key)
+	State.openMenu(s, "pr")
+end
 ACTIONS["card-autoland"] = function(b, cx, key)
 	AutoLandRun.toggle(b, cx, if key ~= "" then key else b.s.selected or "", Refresh.refetchSoon)
 end
@@ -513,7 +517,6 @@ end
 
 ACTIONS["hub-confirm-cancel"] = Ops.confirmCancel
 ACTIONS["hub-confirm"] = Ops.confirm
-ACTIONS["card-update"] = Ops.updateBranch
 ACTIONS["card-rerun"] = Ops.rerun
 
 -- Add by link (N) ---------------------------------------------------------------------------------------
@@ -637,7 +640,7 @@ ACTIONS["fixes-update"] = function(b, cx)
 	if route == nil then return end
 	local action = State.branchAction(b.s, route.key)
 	if action and action.kind == "empty" then return State.fixAsk(b.s, true) end
-	Ops.updateBranch(b, cx, route.key)
+	Ops.act(b, cx, "update", route.key)
 end
 ACTIONS["fixes-empty-confirm"] = function(b, cx)
 	local route = b.s.route
@@ -845,12 +848,16 @@ local block: BlockDef<Block> = {
 	end,
 	view = function(b: Block): BlockView
 		local s = b.s
-		if b.pages.shown and Pages.shown(b) then return Pages.view(b) end
+		if b.pages.shown and Pages.shown(b) then
+			local page = Pages.view(b)
+			-- The Pull request menu and its question hang under the page's Pull request button.
+			return { main = page.main, layer = page.layer or Board.layer(s, Pages.prButton(b)) }
+		end
 		local motion = { born = s.born, next = {}, booted = s.booted, animate = not s.keyed }
 		if s.route then
 			local page = if s.route.kind == "review-fix" then ReviewFixPage.view(s, motion) else FixesPage.view(s, motion, Pages.fixesTabs(b))
 			s.born, s.booted = motion.next, true
-			return { main = page, layer = Board.layer(s) }
+			return { main = page, layer = Board.layer(s, if s.route.kind == "fixes" then Paths.fixesPrButton else nil) }
 		end
 		local main = Board.view(s, motion)
 		s.born, s.booted = motion.next, true
@@ -874,6 +881,8 @@ local block: BlockDef<Block> = {
 		local s = b.s
 		if Pages.shown(b) then
 			local action = Pages.action(b, key)
+			-- The hub's menu or question over the page swallows the keys it doesn't use.
+			if not action and Pages.covered(b) then return true end
 			if not action then return Pages.key(b, key, cx) end
 			s.keyed = true
 			dispatch(b, cx, action)

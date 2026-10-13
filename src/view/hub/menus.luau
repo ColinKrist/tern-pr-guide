@@ -1,5 +1,5 @@
 --!strict
--- The hub's menus (filters, repositories, sort, a card's other actions) and Settings (the review page's model and lens
+-- The hub's menus (filters, repositories, sort, a card's other actions, a PR page's Pull request menu) and Settings (the review page's model and lens
 -- menu, then where links open and background guides) as Tern overlays under their buttons. A menu opened by a
 -- key draws without animation: Tern's overlay pops only for the mouse.
 local ModelPanel = require("../model-panel")
@@ -20,10 +20,12 @@ local TITLES: { [string]: string } = {
 	sort = "Sort by",
 	settings = "Settings",
 	actions = "More actions",
+	pr = "Pull request",
 	merge = "Merge method",
 }
 
-local function anchorOf(s: State.State): string
+local function anchorOf(s: State.State, pr: string?): string
+	if s.menu == "pr" and pr then return pr end
 	if s.menu == "filters" or s.menu == "repositories" or s.menu == "check-repository" or s.filterEdit then return Paths.repositoriesButton end
 	if s.menu == "sort" then return Paths.sortButton end
 	if s.menu == "settings" then return Paths.settingsButton end
@@ -169,7 +171,8 @@ local function filterFoot(s: State.State): Node?
 	return el("div", { class = "gp-hs-row", key = "foot" }, { span("gp-md-label", s.board.hidden .. " pull requests hidden") })
 end
 
-function M.view(s: State.State): Node
+-- `pr`: the Pull request button of the page the menu opens over.
+function M.view(s: State.State, pr: string?): Node
 	local kids: { Node }
 	if s.menu == "settings" then
 		kids = settings(s)
@@ -185,7 +188,7 @@ function M.view(s: State.State): Node
 	end
 	local body = el("div", { class = "gp-md gp-hm" .. (if s.keyed or s.filterEdit then "" else " gp-soft"), key = "body" }, kids)
 	local role = if s.menu == "settings" then "gp.hubsettings" elseif s.menu == "filters" or s.menu == "title-filter" or s.menu == "check-filter" or s.menu == "check-repository" then "gp.hubfilter" else "gp.hubmenu"
-	return { k = "overlay", p = { key = "menu", role = role, aria = TITLES[s.menu :: string], anchor = { node = anchorOf(s), side = "below" }, size = "md" }, c = { body } } :: any
+	return { k = "overlay", p = { key = "menu", role = role, aria = TITLES[s.menu :: string], anchor = { node = anchorOf(s, pr), side = "below" }, size = "md" }, c = { body } } :: any
 end
 
 return M

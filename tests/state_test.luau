@@ -265,12 +265,12 @@ return function()
 	assert(mainOf("acme/api#122") == "none" and mainOf("acme/web#306", "review") == "none")
 	assert(State.card(fresh(), "acme/api#103") == nil)
 	local fixes = State.card(fresh(), "acme/web#103") :: State.Card
-	assert(fixes.main and fixes.main.label == "Fix with agent" and fixes.main.key == "A" and #fixes.more == 1
-		and fixes.more[1].label == "Summarize" and fixes.more[1].key == "⇧A", "a requested change: A fixes, ⇧A summarizes")
+	assert(fixes.main and fixes.main.label == "Fix with agent" and fixes.main.key == "A" and #fixes.more == 2
+		and fixes.more[1].label == "Summarize" and fixes.more[1].key == "⇧A" and fixes.more[2].act == "card-close" and fixes.more[2].key == "X", "a requested change: A fixes, ⇧A summarizes")
 	local comments = State.card(fresh(), "acme/api#119") :: State.Card
-	assert(comments.main and comments.main.label == "Summarize" and comments.main.key == "A" and #comments.more == 0, "comments alone: A summarizes")
+	assert(comments.main and comments.main.label == "Summarize" and comments.main.key == "A" and #comments.more == 1, "comments alone: A summarizes")
 	local both = State.card(fresh(), "acme/api#116") :: State.Card
-	assert(both.main and both.main.label == "Fix with agent" and #both.more == 2 and both.more[1].key == "⇧A" and both.more[2].label == "Re-run failed checks" and both.more[2].key == "⇧R")
+	assert(both.main and both.main.label == "Fix with agent" and #both.more == 3 and both.more[1].key == "⇧A" and both.more[2].label == "Re-run failed checks" and both.more[2].key == "⇧R")
 	local added = State.card(fresh({ tab = "review" }), "acme/web#303") :: State.Card
 	assert(added.main and added.main.label == "Review" and #added.more == 1 and added.more[1].label == "Remove from Review requests")
 
@@ -365,22 +365,41 @@ return function()
 
 	-- Card actions: Merge asks first, naming the repo's method; ⌘⏎ is the block's, Esc cancels.
 	local ms = fresh()
-	assert(State.mergeMethodFor(ms, byKey(ms, "acme/api#110")) == "squash", "no detected method: squash")
-	assert(State.askMerge(ms, "acme/api#110") and ms.mode == "confirm" and ms.selected == "acme/api#110")
+	assert(State.ask(ms, "acme/api#110", "merge") and ms.mode == "confirm" and ms.selected == "acme/api#110")
 	local asked = State.card(ms, "acme/api#110") :: State.Card
 	assert(asked.asking == "Squash and merge #110?" and State.card(ms, "acme/api#108") :: any and (State.card(ms, "acme/api#108") :: State.Card).asking == nil)
 	State.cancelConfirm(ms)
 	assert(ms.mode == "board" and ms.confirm == nil and (State.card(ms, "acme/api#110") :: State.Card).asking == nil)
 	ms.merges["acme/api"] = { method = { kind = "rebase" }, source = "user", ask = false }
-	State.askMerge(ms, "acme/api#110")
+	State.ask(ms, "acme/api#110", "merge")
 	assert((State.card(ms, "acme/api#110") :: State.Card).asking == "Rebase and merge #110?")
 	State.select(ms, "acme/api#108")
 	assert(ms.confirm == nil and ms.mode == "board", "choosing another card drops the question")
 	ms.merges["acme/api"] = { method = { kind = "queue" }, source = "user", ask = false }
-	assert(State.mergeMethodFor(ms, byKey(ms, "acme/api#110")) == "squash", "a queue method is not merged by GitHub's merge")
-	assert(not State.askMerge(ms, "acme/web#103"), "only Merge cards ask")
+	State.project(ms)
+	assert(not State.ask(ms, "acme/api#110", "merge") and ms.confirm == nil, "a queue merges at once: no question")
+	ms.merges["acme/api"] = nil
+	State.project(ms)
+	assert(not State.ask(ms, "acme/web#103", "merge"), "only Merge cards ask")
+	-- Close (X): any card of the viewer's own asks "Close #n?"; review requests and pending merges don't offer it.
+	local cs = fresh()
+	assert(State.ask(cs, "acme/web#103", "close") and cs.mode == "confirm" and cs.selected == "acme/web#103")
+	assert((State.card(cs, "acme/web#103") :: State.Card).asking == "Close #103?")
+	State.cancelConfirm(cs)
+	assert(cs.mode == "board" and (State.card(cs, "acme/web#103") :: State.Card).asking == nil)
+	for _, pr in cs.prs do
+		if pr.role == "review" then
+			State.setTab(cs, "review")
+			assert(not State.ask(cs, pr.key, "close"), "review requests can't be closed")
+			break
+		end
+	end
+	State.setTab(cs, "mine")
+	byKey(cs, "acme/web#103").pending = { method = "queue", at = "" }
+	State.project(cs)
+	assert(not State.ask(cs, "acme/web#103", "close"), "a pending merge comes first")
 	State.setBusy(ms, "acme/api#110", "Merging…")
-	assert(not State.askMerge(ms, "acme/api#110") and (State.card(ms, "acme/api#110") :: State.Card).busy == "Merging…")
+	assert(not State.ask(ms, "acme/api#110", "merge") and (State.card(ms, "acme/api#110") :: State.Card).busy == "Merging…")
 	State.dropPr(ms, "acme/api#110")
 	assert(State.card(ms, "acme/api#110") == nil and ms.busy["acme/api#110"] == nil)
 

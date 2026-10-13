@@ -48,14 +48,14 @@ return function()
 		for mod, on in mods or {} do key[mod] = on end
 		return key
 	end
-	local rest = { rest = true, reading = true, fixes = true }
+	local rest = { rest = true, reading = true, fixes = true, pr = false }
 	local act = Keys.hubPageAction(press("escape"), rest)
 	assert(act and act.act == "pages-back")
-	assert(Keys.hubPageAction(press("escape"), { rest = false, reading = false, fixes = true }) == nil)
+	assert(Keys.hubPageAction(press("escape"), { rest = false, reading = false, fixes = true, pr = false }) == nil)
 	act = Keys.hubPageAction(press("t"), rest)
 	assert(act and act.act == "pages-cycle")
-	assert(Keys.hubPageAction(press("t"), { rest = true, reading = true, fixes = false }) == nil)
-	assert(Keys.hubPageAction(press("t"), { rest = false, reading = false, fixes = true }) == nil)
+	assert(Keys.hubPageAction(press("t"), { rest = true, reading = true, fixes = false, pr = false }) == nil)
+	assert(Keys.hubPageAction(press("t"), { rest = false, reading = false, fixes = true, pr = false }) == nil)
 	assert(Keys.hubPageAction(press("t", { meta = true }), rest) == nil)
 	assert(Keys.hubPageAction(press("j"), rest) == nil)
 end

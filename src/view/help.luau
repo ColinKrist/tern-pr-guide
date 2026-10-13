@@ -40,6 +40,7 @@ local function groups(kind: Kind): { Group }
    end
    if not kind.switch then table.insert(keys, { "⇧ G", "generate AI guide" }) end
    if kind.hosted then table.insert(keys, { "esc", "back to the board" }) end
+   if kind.hosted and kind.hosted.pr then table.insert(keys, { "⇧ P", "pull request: merge, close and more" }) end
    table.insert(keys, { "⇧ R", "generate LLM review" })
    table.insert(keys, { "⇧ M", "settings: AI models, effort and lens" })
    table.insert(keys, { "⇧ L", "review lens" })

@@ -6,6 +6,7 @@
 -- `ownershipChecked`) stops an agent fix still being set up for a PR Tandem has taken. Also `hub.added` and `hub.status`.
 local Host = require("../host")
 local Model = require("./model")
+local PrActions = require("../pr-actions")
 local Runtime = require("./runtime")
 local State = require("./state")
 local Sync = require("./sync")
@@ -229,8 +230,8 @@ end
 -- recounts. It is read-only toward everything else (no flight is touched, nothing drawn or persisted) so `carryOn` can
 -- call it. A sample board stays wholly local. Returns whether a PR moved, and whether the store could be read: when it could
 -- not, no other window's ownership was checked, and a guard must not let an effect on a branch begin or go on.
-local UNCHECKED = "Tandem's ownership couldn't be checked"
-local TANDEM_OWNS = "Tandem watches this pull request" -- why a push or merge on its branch is refused
+local UNCHECKED = PrActions.UNCHECKED
+local TANDEM_OWNS = PrActions.TANDEM_OWNS -- why a push or merge on its branch is refused
 
 local function joinOwned(b: Block): (boolean, boolean)
 	if b.fixture or b.closed then return false, true end
