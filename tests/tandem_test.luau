@@ -6,6 +6,9 @@ local Cases: any = require("../fixtures/hub/cases")
 local AgentFix = require("../src/hub/agent-fix")
 local AgentHost: any = require("../src/agent-host")
 local Tandem: any = require("../src/tandem")
+-- Loading the board's PRs in the background reads checkouts; prdata_test covers what it loads.
+local Preload: any = require("../src/hub/preload")
+Preload.run = function() end
 local Model = require("../src/hub/model")
 local State = require("../src/hub/state")
 local Sync = require("../src/hub/sync")

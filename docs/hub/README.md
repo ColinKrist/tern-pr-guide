@@ -326,7 +326,7 @@ Every issue builds against these types and signatures. An issue that needs a cha
 | `src/keys.luau` | `src/hub/state.luau`, plus what it requires today minus `picker` |
 | `src/view/hub/*.luau` | `state`, `model`, `fixes`, `checks`, `src/view/ui.luau`, `src/text.luau`. Never `sync` or `github`. |
 | `src/fetch.luau`, `src/prdata.luau`, `src/agent-host.luau`, `src/tandem.luau` | `model` and `fixes` for types, `github` for the `Runner` type, `review-fix` for validated command plans, `src/links.luau`, `src/hub/sync.luau` (the recent store), plus what it requires today minus `picker`. prdata, agent-host and tandem run commands through fetch's runners. |
-| `src/hub/runtime.luau`, `store`, `lookups`, `tandem`, `prepare`, `auto-land-run`, `refresh`, `details`, `agent-run`, `ops`, `block` | everything above, in that require order; `src/hub/block.luau` is the glue that wires them, and no module requires it |
+| `src/hub/runtime.luau`, `store`, `lookups`, `tandem`, `prepare`, `preload`, `auto-land-run`, `refresh`, `details`, `agent-run`, `ops`, `block` | everything above, in that require order; `src/hub/block.luau` is the glue that wires them, and no module requires it |
 | `tools/conflicts` | nothing (a standalone script) |
 
 ### `src/links.luau` (pure; the picker's link parsing, moved, and the way in's decisions)

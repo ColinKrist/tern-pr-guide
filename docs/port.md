@@ -202,6 +202,7 @@ Each module's one job comes from its header comment. A verdict says what the por
 | `src/hub/auto-land.luau` | Auto-land's state machine and the registry of merge kinds it knows (`label`, `comment`, `queue`), plus the kv codecs for its records and settings. Pure. | Port 1:1 with its tests. | `auto_land_test` |
 | `src/hub/auto-land-run.luau` | Runs auto-land while a hub block is open: owns `hub.autoland` and `hub.autoland.settings`, steps every record after a refresh and a checks update, and carries out the effect (queue with the repo's method, rebase or empty commit, read, stop). | Rewrite as a server job after each refresh; the revision check becomes a conditional write. Keep the order of each effect's guards. | `auto_land_block_test` |
 | `src/hub/prepare.luau` | Background guides (Settings, off by default): after each refresh and once on start, review requests of the viewer whose saved guide is missing or for another head are explained one at a time, through the `hub.preparing` lease so two windows don't take the same PR. Explanation only. | Rewrite as a worker job queued after a refresh; the lease becomes a job lock. | `prepare_test` |
+| `src/hub/preload.luau` | Loads the board's pull requests in the background after each refresh: the first six cards that open the review page, one at a time, from a checkout or a saved copy already set up, so a click shows the diff at once. | Drop or fetch ahead: in a web app, start the click's API reads on hover or selection and keep them in the client cache. | none (`tandem_test` stubs it) |
 | `src/hub/refresh.luau` | The probe, refresh and checks timers armed from `Sync.schedule`, each answer laid onto the newest shared cache, `refetch`, the sample board's ⌘R, and `loadCheckList` (a PR's check list, read again on the checks timer while the popover is open and a check is unfinished). | Rewrite for the web host. Keep `Sync.schedule` as the only timing rule. | via `tandem_test` |
 | `src/hub/details.luau` | Reading what a PR's pages show: feedback details, the fixes page's details, local git and failed-check logs (`readLogs`, through `b.ci`), the review fix page's files. | Rewrite for the web host. The log reads go to the server ([B.3.1](#b31-ci-logs)). | via `summary_test` |
 | `src/hub/agent-run.luau` | An agent fix's flight: clone lookup (asking for a folder when there is none), refs, engine start, settle, stop, retry, open worktree. | Rewrite for the web host. The folder prompt (`osascript`) and `open` drop. The flight becomes a worker job. | via `tandem_test`, `summary_test` |
@@ -550,7 +551,9 @@ From `src/prdata.luau`. The guide page calls `openPr` and `submitReview`. The hu
 ```ts
 // Today: a PR string (number, URL or branch), a checkout root, and the slug of a saved copy.
 // The port names the PR by repo and number.
-type Target = { repo: string; number: number }
+// The hub also passes the head it knows, so a PR kept from an earlier load at another head loads again,
+// and the base branch, so the commits are fetched while GitHub is read.
+type Target = { repo: string; number: number; head?: string; base?: string }
 type Destination = { repo?: string; dryRunPath?: string } // no repo: the bundled sample, nothing to post
 
 type ReviewPayload = {
@@ -584,6 +587,8 @@ interface PrData {
 | `submitReview` post | `gh api --method POST repos/<repo>/pulls/<n>/reviews --input -`, reading `html_url`. | `POST /repos/{o}/{r}/pulls/{n}/reviews` with the same payload. |
 | `submitReview` dry run | Writes the payload to `dryRunPath`. | Keep a dry-run mode. Tests and `post=false` use it. |
 | `readFixes` | `git merge-tree`, `git show <tree>:<path>`, `git log -1 --format=%H%x09%an%x09%s <mergeBase>..<base> -- <path>`, `git show <head>:<path>` | No API for merge-tree. Worker only, or rebuild per option 2. The annotated `files` can come from the contents API. |
+
+`openPr` keeps the last 12 PRs it loaded for 10 minutes, by checkout and number, and an open of a PR already loading waits for that load, so the hub's background loads (`hub/preload.luau`) make a click instant. A saved copy fetches commits without trees, then both commits' whole trees in one fetch by id, since `git diff` would fetch them a directory at a time.
 
 `openPr` reports these stages through `progress`: "Reading the PR from GitHub", a fetch stage, "Reading the changes" and "Reading the changed files". `src/view/notice.luau` lists them. Keep stage strings that match the work the port does.
 
@@ -921,6 +926,7 @@ Run all of them with `/opt/homebrew/bin/luau tests/run.luau`. `tests/run.luau` l
 | `tests/summary_test.luau` | the real `hub/block` and `agent-host`, `Host` stubbed | Summarize and bot fixes end to end through `ACTIONS`: stale refs, edited comments, timeouts, a closed block, duplicate callbacks. |
 | `tests/tandem_test.luau` | the real `hub/block`, `agent-host`, `tandem`, `Host` stubbed | Tandem ownership, and the shared cache rules it exercises. |
 | `tests/prepare_test.luau` | the real `hub/prepare`, `Fetch`, `Prdata` and `AgentHost` functions and `Host` stubbed; `keys`, `hub/state` | Which PRs want a background guide, one at a time, explanation only, a failure not retried at its head, stopping when turned off or closed, the `hub.preparing` lease, and ⇧G in Settings (plain g types into its search). |
+| `tests/prdata_test.luau` | the real `prdata` and `fetch`, `Host` stubbed | Kept PRs and loads joined, reading GitHub while fetching when the base is known, and a saved copy's one tree fetch. |
 
 `tests/conflicts.sh` drives `tools/conflicts` on throwaway local repos. It is not in `tests/run.luau`.
 

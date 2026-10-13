@@ -10,14 +10,17 @@ local Fixes = require("./hub/fixes")
 local Github = require("./github")
 local GitOutput = require("./git-output")
 local Host = require("./host")
+local Links = require("./links")
 local Model = require("./hub/model")
 local Pr = require("./pr")
 local Review = require("./review")
 local Text = require("./text")
 
 -- A PR as the reader named it (number, URL or branch), the root of its repository's checkout, and
--- the repo's "owner/repo" when that checkout is PR Guide's own saved copy.
-export type Target = { pr: string, repo: string, cache: string? }
+-- the repo's "owner/repo" when that checkout is PR Guide's own saved copy. A caller that already
+-- knows the PR (the PR hub) gives its head commit, so a PR kept from an earlier load at another head
+-- is loaded again, and its base branch, so its commits are fetched while GitHub is read.
+export type Target = { pr: string, repo: string, cache: string?, head: string?, base: string? }
 
 -- Where a submitted review goes: in a dry run, the file at `dryRunPath`; otherwise GitHub. Without
 -- a `repo` (the bundled sample) there is no PR to check or post to.
@@ -42,30 +45,47 @@ local function refPrefix(number: number): string
  return "refs/prguide/" .. number
 end
 
--- Fetches the PR's head and base into refs/prguide/<n>/*, leaving branches and the working tree
--- alone; hands on the head commit and where it branched from the base. Once a PR is merged with a
--- merge commit, its head is part of the base and the two meet at the head itself, which would show
--- no changes; it branched from where the merge commit's first parent meets the head instead.
-local function fetchRefs(job: Job, meta: Meta, ok: (head: string, mergeBase: string) -> ())
- local prefix = refPrefix(meta.number)
+-- Fetches PR `number`'s head and base branch `base` into refs/prguide/<n>/*, leaving branches and
+-- the working tree alone.
+local function fetchRefs(job: Job, number: number, base: string, ok: () -> ())
+ local prefix = refPrefix(number)
  local fetch = {
   "fetch", "--no-tags", "--no-write-fetch-head", "origin",
-  "+refs/pull/" .. meta.number .. "/head:" .. prefix .. "/head",
-  "+refs/heads/" .. meta.baseRefName .. ":" .. prefix .. "/base",
+  "+refs/pull/" .. number .. "/head:" .. prefix .. "/head",
+  "+refs/heads/" .. base .. ":" .. prefix .. "/base",
  }
  -- Commits only: a saved copy reads the trees and files a PR changes in one batch, later.
  if job.partial then table.insert(fetch, 2, "--filter=tree:0") end
- git(job, "git fetch", fetch, nil, function()
-  git(job, "git rev-parse", { "rev-parse", prefix .. "/head" }, nil, function(head)
-   git(job, "git merge-base", { "merge-base", prefix .. "/head", prefix .. "/base" }, nil, function(mergeBase)
-    head, mergeBase = Text.trimEnd(head), Text.trimEnd(mergeBase)
-    local merge = if type(meta.mergeCommit) == "table" then meta.mergeCommit.oid else nil
-    if mergeBase ~= head or not merge or merge == head then return ok(head, mergeBase) end
-    git(job, "git merge-base", { "merge-base", head, merge .. "^1" }, nil, function(before)
-     ok(head, Text.trimEnd(before))
-    end)
+ git(job, "git fetch", fetch, nil, function() ok() end)
+end
+
+-- The fetched head commit and where it branched from the base. Once a PR is merged with a merge
+-- commit, its head is part of the base and the two meet at the head itself, which would show no
+-- changes; it branched from where the merge commit's first parent meets the head instead.
+local function branchPoint(job: Job, meta: Meta, ok: (head: string, mergeBase: string) -> ())
+ local prefix = refPrefix(meta.number)
+ git(job, "git rev-parse", { "rev-parse", prefix .. "/head" }, nil, function(head)
+  git(job, "git merge-base", { "merge-base", prefix .. "/head", prefix .. "/base" }, nil, function(mergeBase)
+   head, mergeBase = Text.trimEnd(head), Text.trimEnd(mergeBase)
+   local merge = if type(meta.mergeCommit) == "table" then meta.mergeCommit.oid else nil
+   if mergeBase ~= head or not merge or merge == head then return ok(head, mergeBase) end
+   git(job, "git merge-base", { "merge-base", head, merge .. "^1" }, nil, function(before)
+    ok(head, Text.trimEnd(before))
    end)
   end)
+ end)
+end
+
+-- What a saved copy fetches by object id, in one request: no negotiation, since it names exact objects.
+local FETCH_IDS = { "-c", "fetch.negotiationAlgorithm=noop", "fetch", "--no-tags", "--no-write-fetch-head", "--recurse-submodules=no", "--filter=blob:none", "--stdin", "origin" }
+
+-- Fetches the whole trees of `head` and `mergeBase` (no file contents) that a saved copy lacks, in one request.
+-- Its commits came without trees, and `git diff` would fetch them a directory at a time, each a round trip.
+local function prefetchTrees(job: Job, head: string, mergeBase: string, ok: () -> ())
+ if not job.partial then return ok() end
+ -- `log` reads the tree ids from the commits; `rev-parse <commit>^{tree}` would fetch each tree on its own.
+ git(job, "git log", { "log", "--no-walk", "--format=%T", head, mergeBase }, nil, function(trees)
+  git(job, "git fetch", FETCH_IDS, trees, function() ok() end)
  end)
 end
 
@@ -125,8 +145,7 @@ local function prefetchSources(job: Job, head: string, paths: { string }, ok: ()
    local missing = {}
    for oid in string.gmatch(checked, "(%x+) missing") do table.insert(missing, oid) end
    if #missing == 0 then return ok() end
-   local fetch = { "-c", "fetch.negotiationAlgorithm=noop", "fetch", "--no-tags", "--no-write-fetch-head", "--recurse-submodules=no", "--filter=blob:none", "--stdin", "origin" }
-   git(job, "git fetch", fetch, table.concat(missing, "\n") .. "\n", function() ok() end)
+   git(job, "git fetch", FETCH_IDS, table.concat(missing, "\n") .. "\n", function() ok() end)
   end)
  end)
 end
@@ -213,6 +232,35 @@ local function fetchStage(target: Target): string
  return "Downloading " .. slug .. " (first time only)"
 end
 
+-- Reads the PR from GitHub and fetches its commits: at once when the caller knows its number and base
+-- branch, else the one after the other. A base changed since the caller read it is fetched again.
+local function readAndFetch(job: Job, target: Target, progress: (stage: string) -> (), ok: (meta: Meta) -> ())
+ local number, base = Links.named(target.pr), target.base
+ if not number or not base then
+  progress("Reading the PR from GitHub")
+  return readMeta(job, target.pr, function(meta)
+   progress(fetchStage(target))
+   fetchRefs(job, meta.number, meta.baseRefName, function() ok(meta) end)
+  end)
+ end
+ progress(fetchStage(target))
+ local read: Meta?, fetched = nil, false
+ local function both()
+  local meta = read
+  if not meta or not fetched then return end
+  if meta.baseRefName == base then return ok(meta) end
+  fetchRefs(job, meta.number, meta.baseRefName, function() ok(meta) end)
+ end
+ readMeta(job, target.pr, function(meta)
+  read = meta
+  both()
+ end)
+ fetchRefs(job, number, base, function()
+  fetched = true
+  both()
+ end)
+end
+
 local M = {}
 
 function M.dryRunPath(number: number): string
@@ -224,30 +272,34 @@ M.refPrefix = refPrefix
 -- Loads `target` from GitHub and its checkout, reporting each stage as it starts. Calls `done`
 -- once, with the PR or with what failed. A saved copy is set up first if need be, and held while
 -- its commits are fetched, so that PRs of one repo opening together take turns.
-function M.openPr(target: Target, progress: (stage: string) -> (), done: (pr: Pr.PR?, err: string?) -> ())
+local function load(target: Target, progress: (stage: string) -> (), done: (pr: Pr.PR?, err: string?) -> ())
  local function open(release: () -> ())
+  local failed = false
   local job: Job = {
    repo = target.repo,
+   -- Reading GitHub and fetching run at once, and both may fail.
    fail = function(message: string)
+    if failed then return end
+    failed = true
     release()
     done(nil, message)
    end,
    partial = target.cache ~= nil,
   }
-  progress("Reading the PR from GitHub")
-  readMeta(job, target.pr, function(meta)
-   progress(fetchStage(target))
-   fetchRefs(job, meta, function(head, mergeBase)
+  readAndFetch(job, target, progress, function(meta)
+   branchPoint(job, meta, function(head, mergeBase)
     if target.cache then pcall(Host.fs.write, target.repo .. DOWNLOADED, "") end
     release()
     progress("Reading the changes")
-    listChanges(job, mergeBase, head, function(changes)
-     readPatches(job, mergeBase, head, changes, function(patches)
-      progress("Reading the changed files")
-      local paths = GitOutput.textPaths(changes, patches)
-      prefetchSources(job, head, paths, function()
-       readSources(job, head, paths, function(blobs)
-        done(prOf(meta, head, GitOutput.files(changes, patches, blobs)), nil)
+    prefetchTrees(job, head, mergeBase, function()
+     listChanges(job, mergeBase, head, function(changes)
+      readPatches(job, mergeBase, head, changes, function(patches)
+       progress("Reading the changed files")
+       local paths = GitOutput.textPaths(changes, patches)
+       prefetchSources(job, head, paths, function()
+        readSources(job, head, paths, function(blobs)
+         done(prOf(meta, head, GitOutput.files(changes, patches, blobs)), nil)
+        end)
        end)
       end)
      end)
@@ -267,6 +319,56 @@ function M.openPr(target: Target, progress: (stage: string) -> (), done: (pr: Pr
     open(release)
    end
   end)
+ end)
+end
+
+-- PRs loaded lately, by checkout and number, so a PR the hub loaded in the background opens at once;
+-- the most kept and for how long, since a kept PR's title and description may since have changed.
+type Kept = { pr: Pr.PR, at: number }
+local kept: { [string]: Kept } = {}
+local KEEP_PRS, KEEP_MS = 12, 10 * 60_000
+
+-- Loads under way, by the same key: an open of a PR already loading waits for that load.
+type Waiter = { progress: (stage: string) -> (), done: (pr: Pr.PR?, err: string?) -> () }
+type Loading = { stage: string?, waiters: { Waiter } }
+local loading: { [string]: Loading } = {}
+
+local function keep(key: string, pr: Pr.PR)
+ kept[key] = { pr = pr, at = Host.now() }
+ local count, oldest = 0, nil :: string?
+ for k, entry in kept do
+  count += 1
+  if not oldest or entry.at < kept[oldest].at then oldest = k end
+ end
+ if count > KEEP_PRS and oldest then kept[oldest] = nil end
+end
+
+-- Opens `target` as `load` does, from a PR kept from a recent load when there is one at the head the
+-- caller knows, or by waiting for a load of it already under way.
+function M.openPr(target: Target, progress: (stage: string) -> (), done: (pr: Pr.PR?, err: string?) -> ())
+ local number = Links.named(target.pr)
+ if not number then return load(target, progress, done) end
+ local key = target.repo .. "#" .. number
+ local entry = kept[key]
+ if entry and Host.now() - entry.at < KEEP_MS and (target.head == nil or target.head == entry.pr.head) then
+  return done(entry.pr, nil)
+ end
+ local waiter: Waiter = { progress = progress, done = done }
+ local under = loading[key]
+ if under then
+  if under.stage then progress(under.stage) end
+  table.insert(under.waiters, waiter)
+  return
+ end
+ local this: Loading = { stage = nil, waiters = { waiter } }
+ loading[key] = this
+ load(target, function(stage)
+  this.stage = stage
+  for _, w in this.waiters do w.progress(stage) end
+ end, function(pr, err)
+  loading[key] = nil
+  if pr then keep(key, pr) end
+  for _, w in this.waiters do w.done(pr, err) end
  end)
 end
 
