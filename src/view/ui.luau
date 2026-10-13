@@ -1,5 +1,6 @@
 --!strict
 -- Node builders every view shares.
+local Diff = require("../diff")
 local Guide = require("../guide")
 local Text = require("../text")
 local TextField = require("../text-field")
@@ -184,6 +185,21 @@ function M.body(motion: Motion, id: string, closing: boolean, height: number, ch
  local bucket = math.clamp(math.ceil(height / 40), 1, 75)
  local born = M.entering(motion, id, "gp-hb gp-hb" .. bucket)
  return el("div", { class = "gp-body gp-rb" .. bucket .. " " .. born .. (if closing then " gp-closing" else ""), key = "body" }, children)
+end
+
+-- A line's code from its colored pieces.
+function M.tokens(tokens: { Diff.Token }): Node
+	local nodes = {}
+	for _, token in tokens do
+		table.insert(nodes, M.span("gp-tk-" .. token.kind .. (if token.changed then " gp-chg" else ""), token.text))
+	end
+	return M.el("span", { class = "gp-code" }, nodes)
+end
+
+-- One line of `path` outside a diff, colored as the review page colors it.
+function M.line(path: string, text: string): Node
+	local tokens = Diff.highlight(path, text)
+	return if tokens then M.tokens(tokens) else M.el("span", { class = "gp-code", text = text })
 end
 
 return M

@@ -1537,9 +1537,15 @@
 .gp-fx-side { display: flex; flex-direction: column; }
 .gp-fx-side + .gp-fx-side { border-top: 1px solid var(--l2); }
 .gp-fx-side > * { flex-shrink: 0; }
-.gp-fx-side-h { display: flex; gap: 10px; align-items: baseline; padding: 7px 12px; background: var(--sf-shade); border-bottom: 1px solid var(--l2); }
-.gp-fx-side-n { font-family: var(--sans); font-size: 13px; font-weight: 650; }
+/* each side of a conflict has one color: your branch Added Green, the base Changed Amber */
+.gp-fx-ours { --gp-fx-tone: var(--gp-added); --gp-fx-wash: var(--gp-success-wash); }
+.gp-fx-theirs { --gp-fx-tone: var(--gp-changed); --gp-fx-wash: var(--gp-changed-wash); }
+.gp-fx-side-h { display: flex; gap: 8px; align-items: center; padding: 7px 12px; background: var(--sf-shade); border-bottom: 1px solid var(--l2); }
+.gp-fx-side-dot { width: 8px; height: 8px; flex-shrink: 0; border-radius: 50%; background: var(--gp-fx-tone); }
+.gp-fx-side-n { font-family: var(--sans); font-size: 13px; font-weight: 650; color: var(--gp-fx-tone); }
 .gp-fx-side-b { font-size: 12px; color: var(--t3); }
+.gp-fx-side .gp-row { box-shadow: inset 3px 0 0 var(--gp-fx-tone); }
+.gp-fx-differs { background: var(--gp-fx-wash); }
 .gp-fx-shared { opacity: 0.55; }
 .gp-fx-pad { height: 6px; }
 
