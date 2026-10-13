@@ -128,7 +128,9 @@ and how long ago, as in "jubbydev opened 3h ago".
 **Files** works like GitHub's PR page: the description, the changed files as a folder tree,
 search across the changed code, and comments on any line. The diff comes from local git, so
 GitHub's diff size limit doesn't apply, and large PRs stay responsive. Tests and generated files
-come last, under their own folding rows.
+come last, under their own folding rows. Code is colored by language, with the changed words of an
+edited line marked, for JavaScript and TypeScript, Python, Go, Rust, Ruby, Java, Kotlin, Swift, C
+and C++, C#, shell, Lua and Luau, CSS and SCSS, JSON, YAML, TOML and SQL. Other files show plain text.
 
 ![The PR file browser with the changed files and description](docs/screenshots/pr-view.png)
 

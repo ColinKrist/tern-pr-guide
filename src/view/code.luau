@@ -64,9 +64,9 @@ function M.head(s: State.State, file: Pr.File, head: Head): Node
 end
 
 -- The line's code: colored pieces, or its text alone when the block draws `plain` or the file
--- isn't highlighted.
+-- has no syntax.
 local function codeSpan(fd: Diff.FileDiff, i: number, plain: boolean): Node
- if plain or not fd.highlighted then return el("span", { class = "gp-code", text = fd.entries[i].row.text }) end
+ if plain or not fd.syntax then return el("span", { class = "gp-code", text = fd.entries[i].row.text }) end
  local nodes = {}
  for _, token in Diff.tokens(fd, i) do
   table.insert(nodes, span("gp-tk-" .. token.kind .. (if token.changed then " gp-chg" else ""), token.text))
