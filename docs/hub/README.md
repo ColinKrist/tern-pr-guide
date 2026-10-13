@@ -1195,7 +1195,7 @@ Tern's clipboard is plain text: `cx:copy(text)` (`tern.d.luau:1136-1137`, and `W
   - Only `src/block.luau` does effects, and every action is one `ACTIONS` entry that both clicks and `keys.luau` send. The hub's counterpart is `src/hub/block.luau`.
   - Views live in `src/view/*` and only build nodes.
   - Styles go in `guide.css` with `gp-` classes.
-  - A new key goes in `view/help.luau` and the README's Keys table.
+  - A new key goes in `view/help.luau` and `docs/keys.md`.
 
 ## Verification
 
@@ -1285,7 +1285,7 @@ Every PR passes these before review:
 2. `tern plugin reload` exits 0 and loads both `prguide.guide` and `prguide.hub`.
 3. The UI-checklist rows the PR touches pass in light and dark, wide and split, and the screenshots are attached.
 4. A PR with live GitHub actions has them tried in `GH_HUB_SMOKE_REPO`, nowhere else.
-5. `GUIDE.md`, `prompts/explain.md`, `prompts/review.md` and `src/guide.luau` still change together when the guide changes; a new key is in `view/help.luau` and the README Keys table.
+5. `GUIDE.md`, `prompts/explain.md`, `prompts/review.md` and `src/guide.luau` still change together when the guide changes; a new key is in `view/help.luau` and `docs/keys.md`.
 
 ## How to build this
 

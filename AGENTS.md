@@ -4,7 +4,7 @@ A Tern plugin (Luau and one stylesheet) with two surfaces: the PR hub organizes 
 
 ## Product map
 
-- `README.md` is the user manual and key reference.
+- `README.md` is the user manual; `docs/keys.md` is the key reference.
 - `GUIDE.md` is the saved guide-file contract.
 - `docs/hub/README.md` is the PR hub's product and architecture spec. Before changing the hub, read **Product decisions**, **Shared Luau contracts**, **How this maps onto Tern** and **Verification**.
 
@@ -25,7 +25,7 @@ A Tern plugin (Luau and one stylesheet) with two surfaces: the PR hub organizes 
 | Guided review interaction state and effects | `src/state.luau`, `src/review-page.luau` (the runtime, mounted at a root node path), `src/block.luau` (the `prguide.guide` block shell) |
 | Guided review rendering | `src/view/*.luau` outside `src/view/hub/` |
 | Model and lens menu (review page and hub Settings) | `src/model-box.luau`, `src/view/model-panel.luau` |
-| Keyboard actions and help | `src/keys.luau`, `src/view/help.luau`, `src/view/hub/help.luau`, README Keys table |
+| Keyboard actions and help | `src/keys.luau`, `src/view/help.luau`, `src/view/hub/help.luau`, `docs/keys.md` |
 | Shared presentation | `guide.css` |
 
 ## Where code goes
@@ -48,7 +48,7 @@ Read `DESIGN.md` and `docs/ui.md` before any change to `src/view/` or `guide.css
 
 **Keyboard first.** A new control (button, field, tab, menu, toggle) ships with its keyboard path in the same change, mockups included:
 
-- It has a key, listed in `view/help.luau` (the `?` panel) and the README Keys table, and shown as a `kbd` where `DESIGN.md`'s Keycaps section says.
+- It has a key, listed in `view/help.luau` (the `?` panel) and `docs/keys.md`, and shown as a `kbd` where `DESIGN.md`'s Keycaps section says.
 - A menu or list opened by key works without the mouse: arrows (or `j`/`k`) move, ⏎ chooses, Esc closes, and a keyboard-opened menu appears without animation.
 - The key and the click send the same `ACTIONS` entry.
 - In the hub, letter keys act only while the search and add-by-link fields are empty, as `j` and `k` do.

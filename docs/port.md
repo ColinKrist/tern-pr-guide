@@ -82,7 +82,7 @@ Rules and functions to drop:
 - `src/hub/block.luau`: `ACTIONS["card-handoff"]`, the `pr.tandem` guard in `ACTIONS["card-agent"]`, the `syncOwnership` call in `dispatch`, and the `watched` set and `raw-tandem-watch` fixture in `init`.
 - `src/agent-host.luau`: the `tandem = Tandem.clone` entry in `findAgentClone`, and `CloneLookup.tandem` in `src/hub/agent-fix.luau`'s `locateClone`.
 - `src/hub/runtime.luau`: the watched-card branch in `forgetReturned` that puts a failed state back.
-- `src/view/hub/help.luau` and the README Keys table: the A and ⇧A wording that names Tandem.
+- `src/view/hub/help.luau` and `docs/keys.md`: the A and ⇧A wording that names Tandem.
 
 Skip the Tandem scenarios of `tests/tandem_test.luau` (see [Appendix D](#appendix-d-tests)) and the fixtures `fixtures/hub/raw-tandem-watch.*` and `fixtures/hub/raw-tandem-pr-fix.*`.
 
@@ -865,7 +865,7 @@ The guide page has its own `ACTIONS` table in `src/review-page.luau`, with the s
 
 ### Keys
 
-`Keys.hubAction(s, key)` picks the mode with `HubState.mode(s)` and maps the key. The README Keys table and `src/view/hub/help.luau` list the same keys for the reader.
+`Keys.hubAction(s, key)` picks the mode with `HubState.mode(s)` and maps the key. `docs/keys.md` and `src/view/hub/help.luau` list the same keys for the reader.
 
 | Mode | Keys |
 |---|---|
