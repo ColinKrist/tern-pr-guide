@@ -441,16 +441,15 @@ ACTIONS["card-copy"] = function(b, cx, key)
 end
 
 -- The pull request actions (PrActions): Merge, Merge when ready, Cancel merge, Update branch, Re-request review and
--- Close, from a card's key or button, or the Pull request menu on its page.
+-- Close, from a card's key or button, the Actions menu on its review page, or the Pull request menu on its fixes page.
 for id, act in State.ACT_OF do
 	ACTIONS[act] = function(b, cx, key) Ops.act(b, cx, id, key) end
 end
--- ⇧P or the Pull request button on a PR's review page or fixes page: its pull request actions, in a menu.
-ACTIONS["hub-pr-menu"] = function(b, cx, value)
+-- ⇧P or the Pull request button on a PR's fixes page: its pull request actions, in a menu.
+ACTIONS["hub-pr-menu"] = function(b, cx, key)
 	local s = b.s
-	local key = if value ~= "" then value else Pages.cardKey(b)
 	if s.menu == "pr" then return closeMenu(b) end
-	if not key or #State.prMenu(s, key) == 0 then return end
+	if #State.prMenu(s, key) == 0 then return end
 	State.select(s, key)
 	State.openMenu(s, "pr")
 end
@@ -862,9 +861,8 @@ local block: BlockDef<Block> = {
 		local s = b.s
 		if b.pages.shown and Pages.shown(b) then
 			local page = Pages.view(b)
-			-- The Pull request menu and its question hang under the page's Pull request button, the checks popover under its
-			-- status marks.
-			return { main = page.main, layer = page.layer or Board.layer(s, Pages.prButton(b), Pages.statusMarks(b)) }
+			-- The question about an Actions row hangs under the page's Actions button, the checks popover under its status marks.
+			return { main = page.main, layer = page.layer or Board.layer(s, Pages.actionsButton(b), Pages.statusMarks(b)) }
 		end
 		local motion = { born = s.born, next = {}, booted = s.booted, animate = not s.keyed }
 		if s.route then
@@ -881,7 +879,12 @@ local block: BlockDef<Block> = {
 		local window = ev.ev == "action" and (ev.act == "hub-focused" or ev.act == "set-generate")
 		if Pages.shown(b) and not window then
 			local tab = Pages.tabAction(b, ev)
-			if not tab then return Pages.event(b, ev, cx) end
+			if not tab then
+				return Pages.event(b, ev, cx, function(action)
+					b.s.keyed = false
+					dispatch(b, cx, action)
+				end)
+			end
 			b.s.keyed = false
 			return dispatch(b, cx, tab)
 		end
@@ -896,7 +899,12 @@ local block: BlockDef<Block> = {
 			local action = Pages.action(b, key)
 			-- The hub's menu or question over the page swallows the keys it doesn't use.
 			if not action and Pages.covered(b) then return true end
-			if not action then return Pages.key(b, key, cx) end
+			if not action then
+				return Pages.key(b, key, cx, function(up)
+					s.keyed = true
+					dispatch(b, cx, up)
+				end)
+			end
 			s.keyed = true
 			dispatch(b, cx, action)
 			return true

@@ -1679,12 +1679,34 @@ function M.prConfirm(s: State): BatchConfirm?
 	}
 end
 
--- The pull request actions `key` offers, as the Pull request menu lists them on its review page and fixes page.
+-- The pull request actions `key` offers, as the Pull request menu lists them on its fixes page.
 function M.prMenu(s: State, key: string?): { CardAction }
 	local card = if key then M.card(s, key) else nil
 	if not card then return {} end
 	local out: { CardAction } = {}
 	for _, def in PrActions.list(card.pr, M.prCtx(s, card.pr, card.column)) do table.insert(out, prAction(def.id)) end
+	return out
+end
+
+-- A row the hub adds to a review page's Actions menu (the page's State.HostAction), and where each pull request action
+-- sits there.
+export type PageAction = { act: string, value: string?, label: string, key: string, group: "land" | "review" | "links" | "close" }
+local PAGE_GROUP: { [PrActions.Id]: "land" | "review" | "close" } = {
+	merge = "land", ["auto-merge"] = "land", ["cancel-merge"] = "land", update = "land", rerequest = "review", close = "close",
+}
+
+-- The rows the hub adds to the Actions menu of `key`'s review page: the pull request actions it offers, and Copy link.
+-- None for a PR off the board.
+function M.pageActions(s: State, key: string?): { PageAction }
+	local card = if key then M.card(s, key) else nil
+	if not card then return {} end
+	local out: { PageAction } = {}
+	for _, def in PrActions.list(card.pr, M.prCtx(s, card.pr, card.column)) do
+		local row: PageAction = { act = M.ACT_OF[def.id], value = card.pr.key, label = def.label, key = def.key, group = PAGE_GROUP[def.id] }
+		table.insert(out, row)
+	end
+	local copy: PageAction = { act = "card-copy", value = card.pr.key, label = "Copy link", key = "C", group = "links" }
+	table.insert(out, copy)
 	return out
 end
 

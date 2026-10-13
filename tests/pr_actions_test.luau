@@ -1,7 +1,7 @@
 --!strict
 -- The pull request actions both the board and a PR's page offer: what each PR offers, why an offered one is refused, the
--- question it asks, and the one command it sends. Also the keys: ⇧P on a hosted page, a row's key in the Pull request
--- menu, and ⌘⏎ on the board, which opens nothing.
+-- question it asks, and the one command it sends. Also the rows the hub adds to a review page's Actions menu, the keys
+-- of the fixes page's Pull request menu, and ⌘⏎ on the board, which opens nothing.
 local FakeRunner = require("./fake-runner")
 local Github = require("../src/github")
 local HubState = require("../src/hub/state")
@@ -125,11 +125,30 @@ return function()
 	assert(escape and escape.act == "hub-menu-close")
 	HubState.closeMenu(s)
 
-	-- ⇧P on a hosted page opens the menu when the PR has actions and the page takes letters.
-	local host = { rest = true, reading = true, fixes = false, pr = true, status = false }
-	local open = Keys.hubPageAction(key("p", true), host)
-	assert(open and open.act == "hub-pr-menu")
-	assert(Keys.hubPageAction(key("p", true), { rest = true, reading = true, fixes = false, pr = false, status = false }) == nil, "no actions, no menu")
-	assert(Keys.hubPageAction(key("p", true), { rest = false, reading = false, fixes = false, pr = true, status = false }) == nil, "a field has the letters")
-	assert(Keys.hubPageAction(key("p"), host) == nil, "plain p is the page's")
+	-- A review page's Actions menu: the hub adds the PR's actions, each in its group, and Copy link; nothing for a PR off
+	-- the board.
+	local function page(list: { Model.HubPR }, key: string?, tab: string?): string
+		local board = HubState.new(list, Cases.asOf, nil)
+		board.tab = (tab or "mine") :: any
+		board.merges["acme/api"] = SQUASH
+		board.autoMerge["acme/api"] = true
+		HubState.project(board)
+		local out: { string } = {}
+		for _, row in HubState.pageActions(board, key) do table.insert(out, row.act .. ":" .. row.key .. ":" .. row.group .. ":" .. tostring(row.value)) end
+		return table.concat(out, ",")
+	end
+	local function with(key: string, patch: { [string]: any }): { Model.HubPR }
+		local list: { Model.HubPR } = {}
+		for _, case in Cases.prs do table.insert(list, if case.key == key then pr(key, patch) else case) end
+		return list
+	end
+	local mine = page(Cases.prs, "acme/api#109")
+	assert(mine == "card-merge:M:land:acme/api#109,card-close:X:close:acme/api#109,card-copy:C:links:acme/api#109", mine)
+	local behind = page(with("acme/api#106", { behind = true }), "acme/api#106")
+	assert(behind == "card-auto:M:land:acme/api#106,card-update:U:land:acme/api#106,card-close:X:close:acme/api#106,card-copy:C:links:acme/api#106", behind)
+	local queued = page(with("acme/api#109", { pending = { method = "queue", at = "" } }), "acme/api#109")
+	assert(queued == "card-cancel:M:land:acme/api#109,card-copy:C:links:acme/api#109", "a queued merge: Cancel merge and Copy link, no Close: " .. queued)
+	local request = page(Cases.prs, "acme/api#307", "review")
+	assert(request == "card-copy:C:links:acme/api#307", "a review request: Copy link only: " .. request)
+	assert(page(Cases.prs, nil) == "" and page(Cases.prs, "acme/none#1") == "", "a PR off the board: none")
 end

@@ -43,12 +43,12 @@ local function settingsAction(run: Agent.Run?, open: boolean): Node?
  return headerAction("Settings", "settings", "⇧M", "toggle-models", if open then "gp-hdr-act-open" else nil, "settings")
 end
 
--- Pull request: the host's menu of merge, close and the rest, which it hangs under this button. Only on a page the PR
--- hub shows for a pull request on its board. Its ⇧P is in the `?` panel.
-local function prAction(hosted: State.Hosted?): Node?
- if not hosted or not hosted.pr then return nil end
- return el("span", { class = "gp-hdr-act" .. (if hosted.prOpen then " gp-hdr-act-open" else ""), key = "pr", aria = "Pull request", actions = { click = "hub-pr-menu" } }, {
-  span("gp-hdr-act-label", "Pull request"), Ui.icon("chev"),
+-- Actions: the menu of what to do with the PR, which Page.layer hangs under this button, as the host hangs its question
+-- about one of them. Its ⇧P is in the `?` panel.
+local function actionsButton(s: State.State): Node
+ local open = s.actionsCursor ~= nil or (s.hosted ~= nil and s.hosted.asking)
+ return el("span", { class = "gp-hdr-act" .. (if open then " gp-hdr-act-open" else ""), key = "actions", aria = "Actions", actions = { click = "toggle-actions" } }, {
+  span("gp-hdr-act-label", "Actions"), Ui.icon("chev"),
  })
 end
 
@@ -164,13 +164,9 @@ local function status(s: State.State, counts: Review.Counts): Node
  if Guide.isStale(r.guide, r.pr) then item(span("gp-status-text", "Review written for an older version of this PR")) end
  table.insert(kids, Ui.spacer())
  table.insert(kids, headerAction("Search", "search", "/", "open-search"))
- table.insert(kids, headerAction("Open on GitHub", "open", "g", "open-github"))
- local all = counts.filesReviewed == total
- table.insert(kids, headerAction(if all then "Unmark all reviewed" else "Mark all reviewed", "check", "m", "mark-all", if all then "gp-hdr-act-done" else nil))
  local settings = settingsAction(s.ai, s.models ~= nil)
  if settings then table.insert(kids, settings) end
- local prButton = prAction(hosted)
- if prButton then table.insert(kids, prButton) end
+ table.insert(kids, actionsButton(s))
  return el("div", { class = "gp-status", key = "status" }, kids)
 end
 

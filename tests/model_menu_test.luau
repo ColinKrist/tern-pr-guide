@@ -1,7 +1,7 @@
 --!strict
 -- The model and lens menu: its Explanation and Review slots and Tab between them, on the review page
--- and in the PR hub's Settings, the header's status row around them, and the AI row that offers Generate AI guide and
--- Generate LLM review.
+-- and in the PR hub's Settings, the header's status row around them, the Actions menu beside them (its groups, dividers
+-- and keys, with and without a host's rows), and the AI row that offers Generate AI guide and Generate LLM review.
 local Agent = require("../src/agent")
 local Fields = require("../src/text-field")
 local Guide = require("../src/guide")
@@ -74,13 +74,14 @@ local function drawn()
 		a.explain = { model = "anthropic/haiku-4", effort = "low" }
 		s.ai = Agent.idle(a)
 		local idle = texts(Header.view(s, motion))
-		assert(string.find(idle, "@Open on GitHub|[g]|@Mark all reviewed|[m]|@Settings|[shift+M]|Generate AI guide|[shift+G]|Generate LLM review|[shift+R]", 1, true), idle)
+		assert(string.find(idle, "@Search|[/]|@Settings|[shift+M]|@Actions|Actions|Generate AI guide|[shift+G]|Generate LLM review|[shift+R]", 1, true), idle)
+		assert(not string.find(idle, "Open on GitHub", 1, true) and not string.find(idle, "Mark all reviewed", 1, true), "both are in Actions now: " .. idle)
 		assert(not string.find(idle, "haiku-4", 1, true), "the models are in Settings, not the header: " .. idle)
 		assert(not string.find(idle, "Reviewers and checks", 1, true), "outside the hub the row has no status marks: " .. idle)
-		s.hosted = { fixes = false, pr = true, prOpen = false, status = { reviews = { kind = "changes" }, checks = { failing = 1, pending = 2, passed = 14 }, open = false } }
+		s.hosted = { fixes = false, actions = {}, asking = false, status = { reviews = { kind = "changes" }, checks = { failing = 1, pending = 2, passed = 14 }, open = false } }
 		local hosted = texts(Header.view(s, motion))
 		assert(string.find(hosted, "a opened|·|@Reviewers and checks|Changes requested|·|@Reviewers and checks|1|·||2 pending|·|14 passed|·|", 1, true), "the PR's marks follow who opened it: " .. hosted)
-		assert(string.find(hosted, "@Settings|[shift+M]|@Pull request|Pull request|Generate", 1, true), "the Pull request button comes last, without its key: " .. hosted)
+		assert(string.find(hosted, "@Settings|[shift+M]|@Actions|Actions|Generate", 1, true), "the Actions button comes last, without its key: " .. hosted)
 		s.hosted = nil
 		local run = s.ai :: Agent.Run
 		Agent.start(run, "explain", 60)
@@ -112,6 +113,38 @@ local function drawn()
 		s.models = ModelBox.open(a, "explain")
 		local anchor = ((Page.layer(s) :: any).c[2]).p.anchor.node
 		assert(paths[anchor], "the model menu hangs under a drawn Settings button: " .. anchor)
+		s.models = nil
+		s.actionsCursor = 1
+		local actions = ((Page.layer(s) :: any).c[2]).p.anchor.node
+		assert(paths[actions] and actions == Page.actionsPath("main"), "the Actions menu hangs under the drawn Actions button: " .. actions)
+		s.actionsCursor = nil
+
+		-- The Actions menu draws its groups apart with a hairline, Close in red, each row's key at its right.
+		local ActionsMenu = require("../src/view/actions-menu")
+		local function drawnMenu(rows: { State.ActionRow }): string
+			local out: { string } = {}
+			for _, child in (ActionsMenu.view(rows, 1, "anchor", false) :: any).c[1].c[1].c do
+				if string.find(child.p.class, "gp-am-div", 1, true) then
+					table.insert(out, "--")
+				else
+					local label = child.c[1].p.text
+					table.insert(out, (if string.find(child.p.class, "gp-am-danger", 1, true) then "!" else "") .. label .. "[" .. table.concat(child.c[3].p.keys, "+") .. "]")
+				end
+			end
+			return table.concat(out, " ")
+		end
+		s.hosted = { fixes = false, asking = false, status = nil, actions = {
+			{ act = "card-auto", value = "k", label = "Merge when ready", key = "M", group = "land" },
+			{ act = "card-update", value = "k", label = "Update branch", key = "U", group = "land" },
+			{ act = "card-rerequest", value = "k", label = "Re-request review", key = "Q", group = "review" },
+			{ act = "card-close", value = "k", label = "Close pull request", key = "X", group = "close" },
+			{ act = "card-copy", value = "k", label = "Copy link", key = "C", group = "links" },
+		} }
+		local behind = drawnMenu(State.actionRows(s))
+		assert(behind == "Merge when ready[M] Update branch[U] -- Re-request review[Q] Mark all reviewed[A] -- Copy link[C] Open on GitHub[G] -- !Close pull request[X]", behind)
+		s.hosted = nil
+		local alone = drawnMenu(State.actionRows(s))
+		assert(alone == "Mark all reviewed[A] -- Open on GitHub[G]", "outside the hub, the page's own two rows: " .. alone)
 
 		s.models = ModelBox.open(a, "review")
 		local box = s.models :: ModelBox.ModelBox
@@ -175,6 +208,35 @@ return function()
 	local file = Keys.action(s, key("f"))
 	assert(file and file.act == "mark-file" and file.value == "a.ts", "f marks the whole file reviewed")
 	assert(Keys.action(s, key("v")) == nil, "v is the hub's, so a page alone leaves it be")
+
+	-- The Actions menu's keys: ⇧P opens and closes it, j k and the arrows move, ⏎ runs the highlighted row, a row's own
+	-- letter runs it, Esc closes; plain p stays the previous suggestion.
+	local function pressed(name: string, shift: boolean?): string
+		local action = Keys.action(s, key(name, shift))
+		return if action then action.act .. (if action.value then "=" .. action.value else "") else "nil"
+	end
+	assert(pressed("p", true) == "toggle-actions" and pressed("p") == "next-suggestion=-1", pressed("p", true))
+	s.actionsCursor = 2
+	assert(State.mode(s) == "actions")
+	assert(pressed("j") == "actions-move=1" and pressed("down") == "actions-move=1" and pressed("k") == "actions-move=-1" and pressed("up") == "actions-move=-1")
+	assert(pressed("enter") == "actions-run=2", pressed("enter"))
+	assert(pressed("a") == "actions-run=1" and pressed("g") == "actions-run=2", "A is Mark all reviewed and G Open on GitHub in the menu")
+	assert(pressed("escape") == "toggle-actions" and pressed("p", true) == "toggle-actions")
+	assert(pressed("x") == "nil" and pressed("u") == "nil", "no Close or Update branch outside the hub")
+	s.hosted = { fixes = false, asking = false, status = nil, actions = {
+		{ act = "card-merge", value = "k", label = "Merge", key = "M", group = "land" },
+		{ act = "card-close", value = "k", label = "Close pull request", key = "X", group = "close" },
+	} }
+	assert(pressed("m") == "actions-run=1" and pressed("x") == "actions-run=4", pressed("x"))
+	local rows = State.actionRows(s)
+	assert(rows[1].host and rows[4].host and not rows[2].host and not rows[3].host, "the host runs its rows, the page its own")
+	s.actionsCursor = nil
+	assert(pressed("u") == "nil", "u on the page does nothing when the host offers no Update branch")
+	table.insert((s.hosted :: State.Hosted).actions, 2, { act = "card-update", value = "k", label = "Update branch", key = "U", group = "land" })
+	assert(pressed("u") == "actions-run=2", "u runs the Update branch row: " .. pressed("u"))
+	assert(pressed("m") == "mark-all" and pressed("g") == "open-github", "m and g keep their page keys")
+	s.actionsCursor = nil
+	s.hosted = nil
 
 	-- Arrowing down a list where every model has its own provider heading keeps the highlighted row
 	-- within the lines the list fits, headings and the "more" row counted.

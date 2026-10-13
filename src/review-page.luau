@@ -421,6 +421,18 @@ local ACTIONS: { [string]: Handler } = {
  ["search-go"] = function(s, cx, n) searchGo(s, cx, tonumber(n) :: number) end,
  ["search-close"] = function(s) s.search = nil end,
 
+ -- the Actions menu; its rows run through `perform`
+ ["toggle-actions"] = function(s)
+  if s.actionsCursor then
+   s.actionsCursor = nil
+   return
+  end
+  s.search, s.models, s.actionsCursor = nil, nil, 1
+ end,
+ ["actions-move"] = function(s, _, delta)
+  s.actionsCursor = math.clamp((s.actionsCursor or 1) + (tonumber(delta) or 0), 1, #State.actionRows(s))
+ end,
+
  -- the model dropdown
  ["toggle-models"] = function(s, cx) toggleModels(s, cx, "explain") end,
  ["toggle-lenses"] = function(s, cx) toggleModels(s, cx, "lens") end,
@@ -818,6 +830,27 @@ function M.title(b: ReviewPage): string?
  if b.page then return "Review · #" .. b.page.review.pr.number end
  return if b.name ~= "" then "PR " .. b.name else "PR Guide"
 end
+-- Hands an action to the page's host: the host's own rows of the Actions menu.
+export type ToHost = (action: Keys.Action) -> ()
+
+-- Runs `action` on the page. `actions-run=<n>` runs the Actions menu's row n, closing the menu: the page's own row
+-- here, the host's through `toHost` (a page with no host has no such rows).
+local function perform(b: ReviewPage, s: State, cx: BlockCx, action: Keys.Action, toHost: ToHost?)
+ if action.act == "actions-run" then
+  local row = State.actionRows(s)[tonumber(action.value) or 0]
+  s.actionsCursor = nil
+  if not row then return end
+  if row.host then
+   if toHost then toHost({ act = row.act, value = row.value }) end
+   return
+  end
+  action = { act = row.act, value = row.value }
+ end
+ local agentAction = AGENT_ACTIONS[action.act]
+ if agentAction then agentAction(b, cx) else dispatch(s, cx, action) end
+ remember(b, s)
+end
+
 function M.view(b: ReviewPage): BlockView
  local s = b.page
  if not s then
@@ -829,27 +862,26 @@ function M.view(b: ReviewPage): BlockView
  s.born, s.booted = motion.next, true
  return { main = main, layer = Page.layer(s) }
 end
-function M.event(b: ReviewPage, ev: UiEvent, cx: BlockCx)
+-- `toHost` is a host's (the PR hub's): it runs the host's rows of the Actions menu.
+function M.event(b: ReviewPage, ev: UiEvent, cx: BlockCx, toHost: ToHost?)
  local action = actionOf(b, ev)
  if not action then return end
- if b.page then b.page.keyed = false end
- local agentAction = AGENT_ACTIONS[action.act]
- if agentAction then
-  agentAction(b, cx)
- elseif b.page then
-  dispatch(b.page, cx, action)
-  remember(b, b.page)
+ local s = b.page
+ if s then
+  s.keyed = false
+  perform(b, s, cx, action, toHost)
+ else
+  local agentAction = AGENT_ACTIONS[action.act]
+  if agentAction then agentAction(b, cx) end
  end
 end
-function M.key(b: ReviewPage, key: Key, cx: BlockCx): boolean?
+function M.key(b: ReviewPage, key: Key, cx: BlockCx, toHost: ToHost?): boolean?
  local s = b.page
  if not s then return false end
  local action = Keys.action(s, key)
  if action then
   s.keyed = true
-  local agentAction = AGENT_ACTIONS[action.act]
-  if agentAction then agentAction(b, cx) else dispatch(s, cx, action) end
-  remember(b, s)
+  perform(b, s, cx, action, toHost)
   return true
  end
  local field = State.field(s)

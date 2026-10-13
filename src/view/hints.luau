@@ -8,6 +8,7 @@ local Ui = require("./ui")
 local el, span = Ui.el, Ui.span
 
 local FIXED: { [State.Mode]: { title: string, keys: { { string } } } } = {
+ actions = { title = "Actions", keys = { { "j k", "move" }, { "⏎", "choose" }, { "esc", "close" } } },
  search = { title = "Searching", keys = { { "↑ ↓", "choose" }, { "⏎", "go there" }, { "esc", "close" } } },
  composer = { title = "Writing a comment", keys = { { "⏎", "save" }, { "⇧ ⏎", "new line" }, { "esc", "cancel" } } },
  summary = { title = "Editing the summary", keys = { { "⏎", "done" }, { "⇧ ⏎", "new line" }, { "esc", "done" } } },

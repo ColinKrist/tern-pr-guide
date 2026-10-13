@@ -56,7 +56,8 @@ Every action in PR Guide has a key. Press `?` on any page for the shortcuts of t
 | `f` | Mark the whole file reviewed |
 | `t` | Switch between Guided and Files (in the hub, a Needs fixes PR also cycles Fixes) |
 | `Esc` | In the hub, with nothing open on the page: back to the board |
-| `⇧P` | In the hub: the Pull request menu (merge, close and the PR's other actions) |
+| `⇧P` | Actions: in the hub Merge (or Merge when ready, Cancel merge) `M` and Update branch `U`, Re-request review `Q`; on every page Mark all reviewed `A`; in the hub Copy link `C`; on every page Open on GitHub `G`; in the hub Close pull request `X`. `j` `k` move, `⏎` or a row's letter runs it, `Esc` closes |
+| `u` | In the hub: update the branch, when the PR offers Update branch |
 | `v` | In the hub: the PR's reviewers and checks (`v` or `Esc` closes) |
 | `b` | Hide or show the file tree in the file view |
 | `/` | Search steps, files, comments and code |
