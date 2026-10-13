@@ -65,12 +65,12 @@ local function lineNode(line: Checks.Line, index: number, hl: number): Node
 end
 
 -- Where the popover hangs: the All checks row on the fixes page, else the card's checks mark, or the card itself
--- while its mark is hidden (no checks, or an action in flight on its meta line).
+-- while its mark is hidden (no checks, or a question in place of its meta line's lead).
 local function anchorOf(s: State.State, pop: Checks.Popover): string
 	if pop.from == "fixes" then return Paths.allChecks end
 	local card = State.card(s, pop.key)
 	if card == nil then return Paths.titleLabel end
-	if Checks.mark(card.pr.checks) == nil or card.busy or card.asking then return Paths.card(card) end
+	if Checks.mark(card.pr.checks) == nil or card.asking then return Paths.card(card) end
 	return Paths.checksMark(card)
 end
 

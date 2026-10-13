@@ -95,11 +95,11 @@ Each PR appears exactly once.
 
 ### Cards and actions
 
-- **Anatomy:** chip line (the job), title, an optional note (what the agent found or why a fix failed), and the repo line (repo #num, the checks mark, age). The repo name ellipsizes before the number.
+- **Anatomy:** chip line (the job), title, an optional note (what the agent found or why a fix failed), and the repo line ("api #114 · ◌ 1 pending" on the left, the age on the right). The checks mark sits right after repo #num, so it never moves when the card is hovered or selected; the repo name ellipsizes before the number, and the mark is never cut off.
 - **Checks mark:** failing checks as a red ✕ and count, unfinished ones (running and queued) as the amber spinner and "N pending", and with neither, a green ✓ and the passed count. A click or `V` opens the **checks popover** under it (`checks.html`): "Checks" and the head commit's short sha, then the checks grouped Failing, Running, Queued, Passed ("· Skipped N" in the Passed header), each row the check's name and "<workflow or app> · <time>" (elapsed while running, "Queued", "Skipped", or "took 1m 31s"). Passed and skipped fold behind "Show N"; a check that finishes while the popover is open stays at the top of Passed. j/k move, ⏎ opens the check's page (or unfolds Passed), ⇧R re-runs failed checks when any fail, Esc closes. While open and a check is unfinished, the list is read again on the 30 s checks timer.
 - **Action placement (one rule for every card):**
   - Resting cards show no actions. The chip already names the job.
-  - While a card is hovered or selected, its **split button** takes the age's place on the repo line, the way Gmail swaps a row's date for its actions. The checks mark stays: it is state.
+  - While a card is hovered or selected, its **split button** takes the age's place on the repo line, and nothing else's, the way Gmail swaps a row's date for its actions.
   - Hovered, the button is quiet. Selected, it's filled and shows its key.
   - Alternatives sit behind the attached ▾. Card heights never change.
 - **Clicks:** a click opens, like ⏎; ⌘-click or ⇧-click selects for a batch.

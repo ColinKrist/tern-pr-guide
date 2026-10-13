@@ -47,18 +47,14 @@ button { font: inherit; color: inherit; }
 .ic .gp-hc-spin { width: 9px; height: 9px; }
 .ic-chev { color: var(--t3); }
 
-/* the card's checks mark: state, so it stays when the split button shows; age gives way instead */
-.gp-hc-chk { display: inline-flex; gap: 6px; align-items: center; height: 22px; padding: 0 6px; margin: 0 -6px 0 0; border-radius: var(--r-chip); cursor: pointer; transition: background-color 140ms ease; }
+/* the card's checks mark: right after repo #num, where nothing moves on hover; the split button takes only the age's place */
+.gp-hc-chk { display: inline-flex; gap: 6px; align-items: center; height: 22px; padding: 0 6px; margin: 0 -4px; border-radius: var(--r-chip); cursor: pointer; transition: background-color 140ms ease; }
 .gp-hc-chk:hover, .gp-hc-chk.open { background: var(--l1); }
 .gp-hc-chk .gp-hc-ci { gap: 4px; }
 .gp-hc-chk .ic { width: 12px; height: 12px; }
 .gp-hc-chk .ic svg { width: 11px; height: 11px; }
 .gp-hc-ci-run { color: var(--gp-changed); }
 .ci-sep { color: var(--t4); }
-.gp-hc-act:hover .gp-hc-stats.keep, .gp-hc-on .gp-hc-stats.keep { display: inline-flex; }
-.gp-hc-act:hover .gp-hc-stats .gp-hc-age, .gp-hc-on .gp-hc-stats .gp-hc-age { display: none; }
-.gp-hc-lead { gap: 4px; }
-.gp-hc-lead > span:first-child { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
 /* the checks list in the popover */
 .cl { display: flex; flex-direction: column; gap: 1px; }
@@ -262,7 +258,7 @@ function card(p) {
   return `<div class="gp-hc gp-hc-act ${kind} ${sel ? 'gp-hc-on' : ''}" data-card="${p.n}"><div class="gp-hc-body">
     <div class="gp-hc-chips">${chip}</div>
     <div class="gp-hc-title">${esc(p.title)}</div>
-    <div class="gp-hc-meta"><span class="gp-hc-lead"><span>${p.repo}</span><span class="num">#${p.n}</span></span><span class="gp-hc-stats keep">${ciMark(p)}<span class="gp-hc-age">${p.age}</span></span>${split(p)}</div>
+    <div class="gp-hc-meta"><span class="gp-hc-lead"><span class="gp-hc-repo"><span class="gp-hc-repo-name">${p.repo}</span><span class="gp-hc-num">#${p.n}</span></span>${p.checks.length ? `<span class="ci-sep">·</span>${ciMark(p)}` : ''}</span><span class="gp-hc-stats"><span class="gp-hc-age">${p.age}</span></span>${split(p)}</div>
     </div></div>`;
 }
 

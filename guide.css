@@ -1289,8 +1289,7 @@
 .gp-hc-age { font-variant-numeric: tabular-nums; }
 .gp-hc-bad .gp-hc-age, .gp-hc-info .gp-hc-age { color: var(--t2); }
 .gp-hc-acts { display: none; flex-shrink: 0; align-items: center; }
-/* hovered or selected: the checks mark stays (it is state), and the split button takes the age's place */
-.gp-hc-act:hover .gp-hc-age, .gp-hc-on.gp-hc-act .gp-hc-age { display: none; }
+.gp-hc-act:hover .gp-hc-stats, .gp-hc-on .gp-hc-stats { display: none; }
 .gp-hc-act:hover .gp-hc-acts, .gp-hc-on .gp-hc-acts { display: inline-flex; }
 .gp-hc-pinned .gp-hc-stats { display: none; }
 .gp-hc-pinned .gp-hc-acts { display: inline-flex; }
@@ -1375,7 +1374,7 @@
 .gp-hub-rc-when { width: 64px; flex-shrink: 0; text-align: right; font-size: 12.5px; color: var(--t3); font-variant-numeric: tabular-nums; }
 
 /* the menus and the key panel: Tern overlays holding rows like the model menu's */
-[data-role='gp.hubfilter'] .sf-ov-body, [data-role='gp.hubmenu'] .sf-ov-body, [data-role='gp.hubsettings'] .sf-ov-body, [data-role='gp.hubhelp'] .sf-ov-body { padding: 0; gap: 0; }
+[data-role='gp.hubfilter'] .sf-ov-body, [data-role='gp.hubmenu'] .sf-ov-body, [data-role='gp.hubsettings'] .sf-ov-body, [data-role='gp.hubhelp'] .sf-ov-body, [data-role='gp.hubchecks'] .sf-ov-body { padding: 0; gap: 0; }
 .gp-hm-head { padding: 10px 14px 0; font-family: var(--sans); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--t3); }
 .gp-hm-list { max-height: 360px; }
 .gp-hm-row { font-size: 13px; white-space: nowrap; }
@@ -1409,15 +1408,17 @@
 .gp-hh .gp-keyrow { gap: 10px; align-items: flex-start; }
 .gp-hh .gp-keylabel { white-space: normal; min-width: 0; }
 .gp-hh-keys { display: flex; flex-direction: column; gap: 3px; flex-shrink: 0; width: 76px; }
-/* menus and the key panel are opaque cards, so the board never shows through; the menus are narrow */
-.sf-overlay[data-role='gp.hubfilter'] .sf-ov-card, .sf-overlay[data-role='gp.hubmenu'] .sf-ov-card, .sf-overlay[data-role='gp.hubsettings'] .sf-ov-card, .sf-overlay[data-role='gp.hubhelp'] .sf-ov-card { background: var(--card); }
+/* menus, the checks popover and the key panel are opaque cards, so the board never shows through; the menus are narrow */
+.sf-overlay[data-role='gp.hubfilter'] .sf-ov-card, .sf-overlay[data-role='gp.hubmenu'] .sf-ov-card, .sf-overlay[data-role='gp.hubsettings'] .sf-ov-card, .sf-overlay[data-role='gp.hubhelp'] .sf-ov-card, .sf-overlay[data-role='gp.hubchecks'] .sf-ov-card { background: var(--card); }
 .sf-overlay[data-role='gp.hubmenu'], .sf-overlay[data-role='gp.hubmenu'] .sf-ov-card { width: 260px; }
 .sf-overlay[data-role='gp.hubfilter'], .sf-overlay[data-role='gp.hubfilter'] .sf-ov-card { width: 320px; max-width: 100%; }
 /* Settings is wider: full model names, every effort level and the links toggle on one line each */
 .sf-overlay[data-role='gp.hubsettings'], .sf-overlay[data-role='gp.hubsettings'] .sf-ov-card { width: 400px; max-width: 100%; }
-.sf-overlay[data-role='gp.hubfilter'] .sf-ov-body, .sf-overlay[data-role='gp.hubmenu'] .sf-ov-body, .sf-overlay[data-role='gp.hubsettings'] .sf-ov-body { width: 100%; max-width: none; padding: 0; }
+/* the checks popover fits a check's name and its workflow and time on two lines */
+.sf-overlay[data-role='gp.hubchecks'], .sf-overlay[data-role='gp.hubchecks'] .sf-ov-card { width: 440px; max-width: 100%; }
+.sf-overlay[data-role='gp.hubfilter'] .sf-ov-body, .sf-overlay[data-role='gp.hubmenu'] .sf-ov-body, .sf-overlay[data-role='gp.hubsettings'] .sf-ov-body, .sf-overlay[data-role='gp.hubchecks'] .sf-ov-body { width: 100%; max-width: none; padding: 0; }
 /* Tern's gradient edge draws at the card's default width, a stray line inside a resized card; its 1px ring stays */
-.sf-overlay[data-role='gp.hubfilter'] .sf-ov-card::after, .sf-overlay[data-role='gp.hubmenu'] .sf-ov-card::after, .sf-overlay[data-role='gp.hubsettings'] .sf-ov-card::after { display: none; }
+.sf-overlay[data-role='gp.hubfilter'] .sf-ov-card::after, .sf-overlay[data-role='gp.hubmenu'] .sf-ov-card::after, .sf-overlay[data-role='gp.hubsettings'] .sf-ov-card::after, .sf-overlay[data-role='gp.hubchecks'] .sf-ov-card::after { display: none; }
 .gp-hs-row { display: flex; flex-direction: column; gap: 6px; padding: 8px 14px 12px; border-top: 1px solid var(--l2); }
 .gp-hs-row > * { flex-shrink: 0; }
 .gp-hs-top { display: flex; align-items: center; min-height: 20px; }

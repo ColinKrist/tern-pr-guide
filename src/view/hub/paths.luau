@@ -68,9 +68,9 @@ M.fixesTitle = M.FIXES .. ".header.title"
 M.reviewFixTitle = "main.review-fix.header.title"
 M.replyField = M.FIXES .. ".cols.code.ex.body.composer.body.field"
 
--- A card's checks mark on its meta line, which the checks popover hangs under.
+-- A card's checks mark, after "repo #number" on its meta line, which the checks popover hangs under.
 function M.checksMark(card: State.Card): string
-	return M.card(card) .. ".body.meta.stats.ci"
+	return M.card(card) .. ".body.meta.lead.ci"
 end
 
 -- The fixes page's All checks row, which the checks popover hangs under there. It follows the keys in fixes.luau.

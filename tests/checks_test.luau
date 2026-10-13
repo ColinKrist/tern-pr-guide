@@ -1,11 +1,13 @@
 --!strict
 -- The checks popover: GitHub's answer parsed into check rows, the groups and times the popover shows, its state on
 -- the hub (open, move, press, close), and the keys that drive it.
+local Card = require("../src/view/hub/card")
 local Cases: any = require("../fixtures/hub/cases")
 local Checks = require("../src/hub/checks")
 local Fake = require("./fake-runner")
 local Github = require("../src/github")
 local Keys = require("../src/keys")
+local Paths = require("../src/view/hub/paths")
 local Raw: any = require("../fixtures/hub/raw-check-list")
 local State = require("../src/hub/state")
 
@@ -166,6 +168,31 @@ local function popover()
 	assert(not State.openChecks(s, "acme/web#999"))
 end
 
+-- The checks mark follows "repo #number" in the meta line's lead, so hovering or selecting a card never moves it;
+-- the right slot holds only the age, which the split button replaces.
+local function placed()
+	local s = State.new(Cases.prs, Cases.asOf, nil)
+	State.select(s, "acme/web#111")
+	local card = State.card(s, "acme/web#111") :: State.Card
+	assert(card.main ~= nil, "the selected card has a split button")
+	local node: any = Card.view(card, NOW, false)
+	local function child(parent: any, key: string): any
+		for _, c in parent.c or {} do
+			if c.p and c.p.key == key then return c end
+		end
+		return nil
+	end
+	local at = node
+	for _, part in string.split(string.sub(Paths.checksMark(card), #Paths.card(card) + 2), ".") do
+		at = at and child(at, part)
+	end
+	assert(at and string.find(at.p.class, "gp-hc-chk", 1, true), "the mark is drawn at Paths.checksMark")
+	local meta = child(child(node, "body"), "meta")
+	local lead, stats = child(meta, "lead"), child(meta, "stats")
+	assert(lead.c[1].p.class == "gp-hc-repo" and lead.c[3] == at, "the mark comes right after repo #number")
+	assert(#stats.c == 1 and stats.c[1].p.class == "gp-hc-age", "the age is alone in the slot the split button takes")
+end
+
 local function keys()
 	local s = State.new(Cases.prs, Cases.asOf, nil)
 	State.select(s, "acme/web#111")
@@ -198,5 +225,6 @@ return function()
 	parsing()
 	shown()
 	popover()
+	placed()
 	keys()
 end
