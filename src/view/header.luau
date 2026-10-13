@@ -3,6 +3,7 @@
 local Agent = require("../agent")
 local Guide = require("../guide")
 local Help = require("./help")
+local Model = require("../hub/model")
 local Review = require("../review")
 local ReviewPanel = require("./review-panel")
 local SearchPanel = require("./search-panel")
@@ -143,10 +144,17 @@ local function status(s: State.State, counts: Review.Counts): Node
  local total = #r.pr.files
  local cells, filled = {}, math.floor(METER_CELLS * counts.filesReviewed / math.max(total, 1) + 0.5)
  for i = 1, METER_CELLS do table.insert(cells, span(if i <= filled then "gp-cell gp-cell-on" else "gp-cell", "")) end
- local kids = {
-  el("div", { class = "gp-meter" }, cells),
-  span("gp-status-text", counts.filesReviewed .. " of " .. total .. " files reviewed"),
- }
+ local kids = {}
+ -- Who opened the PR and when, as GitHub's PR header says it.
+ local pr = r.pr
+ if pr.author ~= "" or pr.createdAt ~= "" then
+  local opened = if pr.author ~= "" then pr.author .. " opened" else "Opened"
+  if pr.createdAt ~= "" then opened ..= " " .. Model.ago(pr.createdAt, s.now) end
+  table.insert(kids, span("gp-status-text", opened))
+  table.insert(kids, span("gp-status-sep", "·"))
+ end
+ table.insert(kids, el("div", { class = "gp-meter" }, cells))
+ table.insert(kids, span("gp-status-text", counts.filesReviewed .. " of " .. total .. " files reviewed"))
  -- The review still going over a guide: said where its suggestions will show, so the header keeps
  -- its height when it lands.
  local run = s.ai

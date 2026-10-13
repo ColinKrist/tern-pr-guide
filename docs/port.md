@@ -478,7 +478,7 @@ interface PrData {
 
 | Step | Today | GitHub API |
 |---|---|---|
-| `openPr` metadata | `gh pr view <pr> --json number,title,body,url,author,baseRefName,headRefOid,mergeCommit` | `GET /repos/{o}/{r}/pulls/{n}`. `author` is `user.login`, `baseRefName` is `base.ref`, `headRefOid` is `head.sha`, `mergeCommit` is `merge_commit_sha` when merged. |
+| `openPr` metadata | `gh pr view <pr> --json number,title,body,url,author,createdAt,baseRefName,headRefOid,mergeCommit` | `GET /repos/{o}/{r}/pulls/{n}`. `author` is `user.login`, `createdAt` is `created_at`, `baseRefName` is `base.ref`, `headRefOid` is `head.sha`, `mergeCommit` is `merge_commit_sha` when merged. |
 | `openPr` refs and merge base | `git fetch` into `refs/prguide/<n>/*`, `git rev-parse`, `git merge-base` | `GET /repos/{o}/{r}/compare/{base}...{head}` gives `merge_base_commit`. A merged PR's exact parent needs git. |
 | `openPr` changes and patches | `git diff --name-status`, `git diff -- <paths>`, `git check-attr ... linguist-generated` | `GET /repos/{o}/{r}/pulls/{n}/files` (status, renames, `patch`; paginated, 3,000-file cap). Read `.gitattributes` and match `linguist-generated` in code, or on the worker. Generated files stay, marked `generated`: the page lists them apart (`FileGroup`) and the guide agent never reads them. Lockfiles are left out (`GitOutput`). |
 | `openPr` file contents | `git ls-tree`, `git cat-file --batch` at the head | `GET /repos/{o}/{r}/contents/{path}?ref={head}` or `GET /git/blobs/{sha}`. |

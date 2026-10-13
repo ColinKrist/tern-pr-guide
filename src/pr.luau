@@ -29,6 +29,8 @@ export type PR = {
  body: string,
  url: string,
  author: string,
+ -- When the PR was opened, an ISO time; empty when unknown.
+ createdAt: string,
  baseRef: string,
  -- The PR's head commit.
  head: string,

@@ -9,7 +9,7 @@ local function pr(): Pr.PR
 	local rows: { Pr.Row } = { { kind = "hunk", oldStart = 1, newStart = 1 } :: Pr.Hunk }
 	for i = 1, 4 do table.insert(rows, { kind = "add", text = "line " .. i, new = i } :: Pr.Line) end
 	local file: Pr.File = { path = "src/a.ts", status = "modified", adds = 4, dels = 0, rows = rows }
-	return { repo = "acme/api", number = 7, title = "t", body = "", url = "", author = "a", baseRef = "main", head = "abc", files = { file } }
+	return { repo = "acme/api", number = 7, title = "t", body = "", url = "", author = "a", createdAt = "", baseRef = "main", head = "abc", files = { file } }
 end
 
 local function comment(id: string, line: number): any
