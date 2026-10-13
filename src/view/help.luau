@@ -13,7 +13,7 @@ export type Kind = { guided: boolean, switch: boolean, hosted: State.Hosted? }
 
 local GUIDED: { Group } = {
  { title = "1  Read", keys = { { "j  k", "next / previous step" }, { "n  p", "next / previous suggestion" }, { "/", "search the PR" }, { "i", "PR description" }, { "s", "supporting changes" }, { "o", "open supporting files, not generated ones" }, { "⇧ S", "mark supporting files reviewed" }, { "g", "open on GitHub" } } },
- { title = "2  React", keys = { { "⏎", "step reviewed, move on" }, { "⇧ ⏎", "whole change reviewed" }, { "v", "whole file reviewed" }, { "m", "mark / unmark all reviewed" }, { "a  d", "add / dismiss suggestion" }, { "c", "comment on this step" } } },
+ { title = "2  React", keys = { { "⏎", "step reviewed, move on" }, { "⇧ ⏎", "whole change reviewed" }, { "f", "whole file reviewed" }, { "m", "mark / unmark all reviewed" }, { "a  d", "add / dismiss suggestion" }, { "c", "comment on this step" } } },
  { title = "3  Finish", keys = { { "r", "open your review" }, { "j  k", "move between comments" }, { "x", "include or leave out" }, { "a", "include / exclude all" }, { "e", "edit the summary" }, { "1 2 3", "comment, approve, request changes" }, { "⌘ ⏎", "submit" }, { "esc", "close the review" } } },
 }
 
@@ -41,6 +41,7 @@ local function groups(kind: Kind): { Group }
    if not kind.switch then table.insert(keys, { "⇧ G", "generate AI guide" }) end
    if kind.hosted then table.insert(keys, { "esc", "back to the board" }) end
    if kind.hosted and kind.hosted.pr then table.insert(keys, { "⇧ P", "pull request: merge, close and more" }) end
+   if kind.hosted and kind.hosted.status then table.insert(keys, { "v", "reviewers and checks" }) end
    table.insert(keys, { "⇧ R", "generate LLM review" })
    table.insert(keys, { "⇧ M", "settings: AI models, effort and lens" })
    table.insert(keys, { "⇧ L", "review lens" })

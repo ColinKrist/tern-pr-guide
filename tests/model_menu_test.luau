@@ -1,6 +1,7 @@
 --!strict
 -- The model and lens menu: its Explanation and Review slots and Tab between them, on the review page
--- and in the PR hub's Settings, and the AI row that offers Generate AI guide and Generate LLM review.
+-- and in the PR hub's Settings, the header's status row around them, and the AI row that offers Generate AI guide and
+-- Generate LLM review.
 local Agent = require("../src/agent")
 local Fields = require("../src/text-field")
 local Guide = require("../src/guide")
@@ -39,6 +40,7 @@ end
 local function texts(node: any, out: { string }?): string
 	local acc = out or {}
 	if node.p and type(node.p.text) == "string" then table.insert(acc, node.p.text) end
+	if node.p and type(node.p.aria) == "string" then table.insert(acc, "@" .. node.p.aria) end
 	if node.p and node.p.keys then table.insert(acc, "[" .. table.concat(node.p.keys, "+") .. "]") end
 	for _, child in node.c or {} do texts(child, acc) end
 	return table.concat(acc, "|")
@@ -72,8 +74,14 @@ local function drawn()
 		a.explain = { model = "anthropic/haiku-4", effort = "low" }
 		s.ai = Agent.idle(a)
 		local idle = texts(Header.view(s, motion))
-		assert(string.find(idle, "Open on GitHub|[g]|Settings|[shift+M]|Generate AI guide|[shift+G]|Generate LLM review|[shift+R]", 1, true), idle)
+		assert(string.find(idle, "@Open on GitHub|[g]|@Mark all reviewed|[m]|@Settings|[shift+M]|Generate AI guide|[shift+G]|Generate LLM review|[shift+R]", 1, true), idle)
 		assert(not string.find(idle, "haiku-4", 1, true), "the models are in Settings, not the header: " .. idle)
+		assert(not string.find(idle, "Reviewers and checks", 1, true), "outside the hub the row has no status marks: " .. idle)
+		s.hosted = { fixes = false, pr = true, prOpen = false, status = { reviews = { kind = "changes" }, checks = { failing = 1, pending = 2, passed = 14 }, open = false } }
+		local hosted = texts(Header.view(s, motion))
+		assert(string.find(hosted, "a opened|·|@Reviewers and checks|Changes requested|·|@Reviewers and checks|1|·||2 pending|·|14 passed|·|", 1, true), "the PR's marks follow who opened it: " .. hosted)
+		assert(string.find(hosted, "@Settings|[shift+M]|@Pull request|Pull request|Generate", 1, true), "the Pull request button comes last, without its key: " .. hosted)
+		s.hosted = nil
 		local run = s.ai :: Agent.Run
 		Agent.start(run, "explain", 60)
 		local explaining = texts(Header.view(s, motion))
@@ -88,7 +96,7 @@ local function drawn()
 		assert(string.find(guided, "Reviewing for issues…|0:00", 1, true) and not string.find(guided, "Generate AI guide", 1, true), "over a guide, the review shows in the same row: " .. guided)
 		run.reviewing = false
 		local offered = texts(Header.view(s, motion))
-		assert(string.find(offered, "Settings|[shift+M]", 1, true) and string.find(offered, "Generate LLM review|[shift+R]", 1, true) and not string.find(offered, "Generate AI guide", 1, true), "a guided page offers Settings and Generate LLM review: " .. offered)
+		assert(string.find(offered, "@Settings|[shift+M]", 1, true) and string.find(offered, "Generate LLM review|[shift+R]", 1, true) and not string.find(offered, "Generate AI guide", 1, true), "a guided page offers Settings and Generate LLM review: " .. offered)
 		s.review.guide.guided = false
 
 		s.models = ModelBox.open(a, "review")
@@ -150,6 +158,9 @@ return function()
 	assert(ModelBox.choose(box, a) and a.lens == "Security", "the filter narrows the lenses")
 	s.models = nil
 	assert(Keys.action(s, key("l", true)).act == "toggle-lenses", "⇧L opens the menu on Lens")
+	local file = Keys.action(s, key("f"))
+	assert(file and file.act == "mark-file" and file.value == "a.ts", "f marks the whole file reviewed")
+	assert(Keys.action(s, key("v")) == nil, "v is the hub's, so a page alone leaves it be")
 
 	-- Arrowing down a list where every model has its own provider heading keeps the highlighted row
 	-- within the lines the list fits, headings and the "more" row counted.

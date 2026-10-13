@@ -1,6 +1,8 @@
 --!strict
 -- The pinned header: PR title and review button, progress and actions, and whichever panel is open.
 local Agent = require("../agent")
+local Checks = require("../hub/checks")
+local ChecksView = require("./hub/checks")
 local Guide = require("../guide")
 local Help = require("./help")
 local Model = require("../hub/model")
@@ -26,30 +28,51 @@ local function reviewButton(s: State.State): Node
  return el("span", { class = "gp-rv-button" .. (if s.reviewOpen then " gp-rv-button-open" else ""), actions = { click = "toggle-review" } }, kids)
 end
 
--- An action in the status row; `icon` follows its label.
-local function headerAction(label: string, keyHint: string?, action: string, icon: string?): Node
- local kids = { span("gp-hdr-act-label", label) }
- if icon then table.insert(kids, Ui.icon(icon)) end
- if keyHint then table.insert(kids, Ui.keys(keyHint)) end
- return el("span", { class = "gp-hdr-act", key = action, actions = { click = action } }, kids)
+-- A quiet action in the status row: its icon and key, with its name for screen readers (Tern has no tooltip).
+local function headerAction(name: string, icon: string, keyHint: string, action: string, class: string?): Node
+ return el("span", { class = "gp-hdr-act gp-hdr-act-ico" .. (if class then " " .. class else ""), key = action, aria = name, actions = { click = action } }, {
+  Ui.icon(icon), Ui.keys(keyHint),
+ })
 end
 
 -- Settings: the models, their effort and the lens, in the menu Page.layer opens under it. Not while a
 -- run is going, which reads them when it finishes.
 local function settingsAction(run: Agent.Run?, open: boolean): Node?
  if not run or Agent.busy(run) then return nil end
- return el("span", { class = "gp-hdr-act" .. (if open then " gp-hdr-act-open" else ""), key = "settings", actions = { click = "toggle-models" } }, {
-  Ui.icon("settings"), span("gp-hdr-act-label", "Settings"), Ui.keys("⇧M"),
- })
+ return headerAction("Settings", "settings", "⇧M", "toggle-models", if open then "gp-hdr-act-open" else nil)
 end
 
 -- Pull request: the host's menu of merge, close and the rest, which it hangs under this button. Only on a page the PR
--- hub shows for a pull request on its board.
+-- hub shows for a pull request on its board. Its ⇧P is in the `?` panel.
 local function prAction(hosted: State.Hosted?): Node?
  if not hosted or not hosted.pr then return nil end
- return el("span", { class = "gp-hdr-act" .. (if hosted.prOpen then " gp-hdr-act-open" else ""), key = "pr", actions = { click = "hub-pr-menu" } }, {
-  span("gp-hdr-act-label", "Pull request"), Ui.icon("chev"), Ui.keys("⇧P"),
+ return el("span", { class = "gp-hdr-act" .. (if hosted.prOpen then " gp-hdr-act-open" else ""), key = "pr", aria = "Pull request", actions = { click = "hub-pr-menu" } }, {
+  span("gp-hdr-act-label", "Pull request"), Ui.icon("chev"),
  })
+end
+
+local function reviewsMark(mark: Checks.ReviewMark, open: string): Node
+ local kids: { Node }
+ if mark.kind == "approved" then
+  kids = { el("span", { class = "gp-hc-ci gp-hc-ci-ok", key = "ok" }, { Ui.icon("check"), span("gp-hc-ci-n", "Approved · " .. mark.approvals) }) }
+ elseif mark.kind == "changes" then
+  kids = { el("span", { class = "gp-hc-ci gp-hc-ci-bad", key = "bad" }, { Ui.icon("x"), span("gp-hc-ci-n", "Changes requested") }) }
+ else
+  kids = { el("span", { class = "gp-hc-ci gp-hdr-mark-wait", key = "wait" }, { span("gp-hcl-wait", ""), span("gp-hc-ci-n", "Review required") }) }
+ end
+ return el("span", { class = "gp-hc-chk gp-hdr-mark" .. open, key = "reviews", aria = "Reviewers and checks", actions = { click = "hub-checks" } }, kids)
+end
+
+-- The PR's reviews and checks marks, each opening the host's popover of reviewers and checks under them, as `v` does.
+local function statusMarks(status: State.Status): Node
+ local open = if status.open then " gp-hc-chk-open" else ""
+ local kids = { reviewsMark(status.reviews, open) }
+ if status.checks then
+  table.insert(kids, span("gp-status-sep", "·"))
+  table.insert(kids, el("span", { class = "gp-hc-chk gp-hdr-mark" .. open, key = "checks", aria = "Reviewers and checks", actions = { click = "hub-checks" } }, ChecksView.summary(status.checks, true)))
+ end
+ table.insert(kids, span("gp-status-sep", "·"))
+ return el("span", { class = "gp-status-marks", key = "marks" }, kids)
 end
 
 -- The views of a PR as Tern's tabs, with the key that cycles them: Guided and Files with a guide, only Files
@@ -125,6 +148,8 @@ local function status(s: State.State, counts: Review.Counts): Node
   if pr.createdAt ~= "" then opened ..= " " .. Model.ago(pr.createdAt, s.now) end
   table.insert(kids, el("span", { class = "gp-status-item" }, { span("gp-status-text", opened), span("gp-status-sep", "·") }))
  end
+ local hosted = s.hosted
+ if hosted and hosted.status then table.insert(kids, statusMarks(hosted.status)) end
  table.insert(kids, el("div", { class = "gp-meter" }, cells))
  table.insert(kids, span("gp-status-text", counts.filesReviewed .. " of " .. total .. " files reviewed"))
  if r.guide.lens then item(span("gp-status-text gp-status-lens", r.guide.lens .. " lens")) end
@@ -137,13 +162,14 @@ local function status(s: State.State, counts: Review.Counts): Node
  end
  if Guide.isStale(r.guide, r.pr) then item(span("gp-status-text", "Review written for an older version of this PR")) end
  table.insert(kids, Ui.spacer())
- table.insert(kids, headerAction(if counts.filesReviewed == total then "Unmark all reviewed" else "Mark all reviewed", "m", "mark-all"))
- table.insert(kids, headerAction("Search", "/", "open-search"))
- table.insert(kids, headerAction("Open on GitHub", "g", "open-github", "open"))
- local pr = prAction(s.hosted)
- if pr then table.insert(kids, pr) end
+ table.insert(kids, headerAction("Search", "search", "/", "open-search"))
+ table.insert(kids, headerAction("Open on GitHub", "open", "g", "open-github"))
+ local all = counts.filesReviewed == total
+ table.insert(kids, headerAction(if all then "Unmark all reviewed" else "Mark all reviewed", "check", "m", "mark-all", if all then "gp-hdr-act-done" else nil))
  local settings = settingsAction(s.ai, s.models ~= nil)
  if settings then table.insert(kids, settings) end
+ local prButton = prAction(hosted)
+ if prButton then table.insert(kids, prButton) end
  return el("div", { class = "gp-status", key = "status" }, kids)
 end
 

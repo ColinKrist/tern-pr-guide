@@ -294,11 +294,12 @@ function M.view(s: State.State, motion: Ui.Motion): Node
 end
 
 -- The layer: while a menu, the checks popover or the key panel is open, a scrim that closes it on a click outside,
--- and the overlay. The fixes page shows it for the checks popover, and a PR's page for its Pull request menu: `pr` is
--- the button that menu and its question hang under, where no card on show asks the question.
-function M.layer(s: State.State, pr: string?): Node?
+-- and the overlay. The fixes page shows it for the checks popover, and a PR's page for its Pull request menu and checks
+-- popover: `pr` is the button that menu and its question hang under, where no card on show asks the question, and
+-- `status` the page's status marks the popover hangs under.
+function M.layer(s: State.State, pr: string?, status: string?): Node?
 	if s.mode == "checks" then
-		local popover = ChecksView.view(s)
+		local popover = ChecksView.view(s, status)
 		if popover == nil then return nil end
 		return el("div", {}, { el("div", { class = "gp-md-scrim", key = "scrim", actions = { click = "checks-close" } }), popover })
 	elseif s.mode == "menu" and s.menu then

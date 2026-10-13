@@ -6,6 +6,7 @@
 -- in Needs fixes also has the fixes page as its first view, which `t` and the tab strips cycle to. A PR on the board
 -- also has its Pull request menu (⇧P) over its page: the hub's own menu and question, under the page's button. Also
 -- finds the checkout a PR opens in (`plan`), shared with opening a PR by link in a pane of its own.
+local Checks = require("./checks")
 local Details = require("./details")
 local Fetch = require("../fetch")
 local Host = require("../host")
@@ -111,12 +112,17 @@ local function evict(b: Block)
 	end
 end
 
--- What the page's host part says: a Fixes view beside it, and the Pull request menu with whether it is open.
+-- What the page's host part says: a Fixes view beside it, the Pull request menu with whether it is open, and the PR's
+-- reviews and checks marks with whether their popover is open (only for a PR on the board).
 local function host(b: Block, entry: Page)
 	local s = b.s
 	entry.hosted.fixes = hasFixes(b, entry.cardKey)
 	entry.hosted.pr = #State.prMenu(s, entry.cardKey) > 0
 	entry.hosted.prOpen = s.menu == "pr" or (s.mode == "confirm" and State.prConfirm(s) ~= nil)
+	local pr = if entry.cardKey then State.prOf(s, entry.cardKey) else nil
+	entry.hosted.status = if pr
+		then { reviews = Checks.reviewMark(pr.reviews), checks = Checks.mark(pr.checks), open = s.mode == "checks" and s.checks ~= nil and s.checks.key == pr.key }
+		else nil
 end
 
 -- Shows `entry`, most recent, in `view` when it is Guided or Files (a page that hasn't loaded opens in its own).
@@ -146,7 +152,7 @@ function M.open(b: Block, cx: BlockCx, spec: Spec)
 	end
 	if b.pages.opening[key] then return end
 	local function create(args: { string })
-		local hosted: ReviewPage.Hosted = { fixes = hasFixes(b, spec.cardKey), pr = false, prOpen = false }
+		local hosted: ReviewPage.Hosted = { fixes = hasFixes(b, spec.cardKey), pr = false, prOpen = false, status = nil }
 		local page = ReviewPage.init(cx, args, ROOT, hosted)
 		local made: Page = { key = key, slug = spec.slug, number = spec.number, cardKey = spec.cardKey, page = page, hosted = hosted }
 		local waiting = b.pages.shown == nil and (b.s.mode == "board" or b.s.mode == "fixes")
@@ -220,19 +226,26 @@ function M.prButton(b: Block): string?
 	return if entry then Page.prButtonPath(entry.page.root) else nil
 end
 
--- Whether the hub's menu or question is open over the page on show: then every key is the hub's.
-function M.covered(b: Block): boolean
-	return M.shown(b) ~= nil and (b.s.mode == "menu" or b.s.mode == "confirm")
+-- The reviews and checks marks of the page on show, which the checks popover hangs under.
+function M.statusMarks(b: Block): string?
+	local entry = M.shown(b)
+	return if entry then Page.statusPath(entry.page.root) else nil
 end
 
--- The hub's key for the page on show, before the page's own: the open menu's or question's keys, Esc at rest, `t` with
--- Fixes beside it, and ⇧P with pull request actions.
+-- Whether the hub's menu, question or checks popover is open over the page on show: then every key is the hub's.
+function M.covered(b: Block): boolean
+	local mode = b.s.mode
+	return M.shown(b) ~= nil and (mode == "menu" or mode == "confirm" or mode == "checks")
+end
+
+-- The hub's key for the page on show, before the page's own: the open menu's, question's or popover's keys, Esc at
+-- rest, `t` with Fixes beside it, ⇧P with pull request actions, and `v` with the PR's status marks.
 function M.action(b: Block, key: Key): Keys.Action?
 	local entry = M.shown(b)
 	if not entry then return nil end
 	if M.covered(b) then return Keys.hubAction(b.s, key) end
 	host(b, entry)
-	return Keys.hubPageAction(key, { rest = ReviewPage.atRest(entry.page), reading = ReviewPage.reading(entry.page), fixes = entry.hosted.fixes, pr = entry.hosted.pr })
+	return Keys.hubPageAction(key, { rest = ReviewPage.atRest(entry.page), reading = ReviewPage.reading(entry.page), fixes = entry.hosted.fixes, pr = entry.hosted.pr, status = entry.hosted.status ~= nil })
 end
 
 function M.key(b: Block, key: Key, cx: BlockCx): boolean?
@@ -241,11 +254,12 @@ function M.key(b: Block, key: Key, cx: BlockCx): boolean?
 end
 
 -- A click on the Fixes tab leaves the page for the fixes page, one on Pull requests goes back to the board, and the
--- Pull request button, menu and question are the hub's: the events the page doesn't take.
+-- Pull request button, menu and question and the status marks and their popover are the hub's: the events the page
+-- doesn't take.
 function M.tabAction(b: Block, ev: UiEvent): Keys.Action?
 	local entry = M.shown(b)
 	if entry and ev.ev == "action" and ev.act == "pages-back" then return { act = "pages-back" } end
-	if entry and ev.ev == "action" and string.sub(ev.act, 1, 4) == "hub-" then return { act = ev.act, value = ev.value } end
+	if entry and ev.ev == "action" and (string.sub(ev.act, 1, 4) == "hub-" or string.sub(ev.act, 1, 7) == "checks-") then return { act = ev.act, value = ev.value } end
 	if not entry or ev.ev ~= "select" or ev.item ~= "fixes" or ev.id ~= ReviewPage.tabsPath(entry.page) then return nil end
 	return { act = "pages-view", value = "fixes" }
 end

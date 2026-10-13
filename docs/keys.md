@@ -33,7 +33,7 @@ Every action in PR Guide has a key. Press `?` on any page for the shortcuts of t
 | `,` | Choose the repository's merge method |
 | `U` | Update the branch |
 | `⇧R` | Re-run failed checks |
-| `V` | Show the selected card's checks: `j` `k` move, `⏎` opens a check, `Esc` closes |
+| `V` | Show the selected card's reviewers and checks: `j` `k` move through the checks, `⏎` opens a check, `Esc` closes |
 | `Q` | Re-request review |
 | `O` | Choose a clone or open a retained worktree |
 | `⇧O` | Open agent chat: resume the agent's conversation after a conflict fix ends, or focus its pane when it is open |
@@ -53,10 +53,11 @@ Every action in PR Guide has a key. Press `?` on any page for the shortcuts of t
 | `n` `p` | Next or previous suggested comment |
 | `⏎` | Mark the step reviewed and move on |
 | `⇧⏎` | Mark the whole change reviewed |
-| `v` | Mark the whole file reviewed |
+| `f` | Mark the whole file reviewed |
 | `t` | Switch between Guided and Files (in the hub, a Needs fixes PR also cycles Fixes) |
 | `Esc` | In the hub, with nothing open on the page: back to the board |
 | `⇧P` | In the hub: the Pull request menu (merge, close and the PR's other actions) |
+| `v` | In the hub: the PR's reviewers and checks (`v` or `Esc` closes) |
 | `b` | Hide or show the file tree in the file view |
 | `/` | Search steps, files, comments and code |
 | `s` | Show supporting changes |

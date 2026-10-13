@@ -96,7 +96,7 @@ Each PR appears exactly once.
 ### Cards and actions
 
 - **Anatomy:** chip line (the job), title, an optional note (what the agent found or why a fix failed), and the repo line ("api #114 · ◌ 1 pending" on the left, the age on the right). The checks mark sits right after repo #num, so it never moves when the card is hovered or selected; the repo name ellipsizes before the number, and the mark is never cut off.
-- **Checks mark:** failing checks as a red ✕ and count, unfinished ones (running and queued) as the amber spinner and "N pending", and with neither, a green ✓ and the passed count. A click or `V` opens the **checks popover** under it (`checks.html`): "Checks" and the head commit's short sha, then the checks grouped Failing, Running, Queued, Passed ("· Skipped N" in the Passed header), each row the check's name and "<workflow or app> · <time>" (elapsed while running, "Queued", "Skipped", or "took 1m 31s"). Passed and skipped fold behind "Show N"; a check that finishes while the popover is open stays at the top of Passed. j/k move, ⏎ opens the check's page (or unfolds Passed), ⇧R re-runs failed checks when any fail, Esc closes. While open and a check is unfinished, the list is read again on the 30 s checks timer.
+- **Checks mark:** failing checks as a red ✕ and count, unfinished ones (running and queued) as the amber spinner and "N pending", and with neither, a green ✓ and the passed count. A click or `V` opens the **checks popover** under it (`checks.html`): the PR's reviewers (each one's latest review and when, then who is asked and hasn't reviewed; not on the fixes page's All checks), then "Checks" and the head commit's short sha, then the checks grouped Failing, Running, Queued, Passed ("· Skipped N" in the Passed header), each row the check's name and "<workflow or app> · <time>" (elapsed while running, "Queued", "Skipped", or "took 1m 31s"). Passed and skipped fold behind "Show N"; a check that finishes while the popover is open stays at the top of Passed. j/k move, ⏎ opens the check's page (or unfolds Passed), ⇧R re-runs failed checks when any fail, Esc closes. While open and a check is unfinished, the list is read again on the 30 s checks timer.
 - **Action placement (one rule for every card):**
   - Resting cards show no actions. The chip already names the job.
   - While a card is hovered or selected, its **split button** takes the age's place on the repo line, and nothing else's, the way Gmail swaps a row's date for its actions.
@@ -118,7 +118,7 @@ Each PR appears exactly once.
 | To review | **Review** (⏎) | Remove from Review requests (X), only on PRs you added |
 | Any of yours | | **Close pull request** (X), with an inline "Close #n?" confirm; not while a merge is pending, an agent is at work, or Tandem owns the PR |
 
-- **One set of rules (`src/pr-actions.luau`).** Merge, Merge when ready, Cancel merge, Update branch, Re-request review and Close are pull request actions: a registry by id that says which a PR offers, why an offered one is refused now ("Couldn't …: reason"), the question it asks and the command it sends. The table above places them on the card (`actionsFor` picks the main button); the **Pull request menu** on a PR's review page and fixes page in the hub lists the same ones (`State.prMenu`), opened by ⇧P or the header's **Pull request** button (▾, `⇧P` keycap, beside Open on GitHub). `j`/`k` move, ⏎ or a row's own key chooses, Esc closes; Merge and Close ask in the same place, an overlay under the button with the question, the PR, Confirm (⌘⏎) and Cancel (Esc). Both surfaces send the same `card-*` entries, which `Ops.act` runs. After a merge or close from the page the page stays, with the toast: the PR leaves the board as it would from the card, and the page may hold review work that only a page close would drop. The standalone guide block has no menu.
+- **One set of rules (`src/pr-actions.luau`).** Merge, Merge when ready, Cancel merge, Update branch, Re-request review and Close are pull request actions: a registry by id that says which a PR offers, why an offered one is refused now ("Couldn't …: reason"), the question it asks and the command it sends. The table above places them on the card (`actionsFor` picks the main button); the **Pull request menu** on a PR's review page and fixes page in the hub lists the same ones (`State.prMenu`), opened by ⇧P or the header's **Pull request** button (▾, the last action in the status row; its ⇧P is in the `?` panel). `j`/`k` move, ⏎ or a row's own key chooses, Esc closes; Merge and Close ask in the same place, an overlay under the button with the question, the PR, Confirm (⌘⏎) and Cancel (Esc). Both surfaces send the same `card-*` entries, which `Ops.act` runs. After a merge or close from the page the page stays, with the toast: the PR leaves the board as it would from the card, and the page may hold review work that only a page close would drop. The standalone guide block has no menu.
 
 ### ⏎ on a Needs fixes card (`pr-fixes.html`)
 
@@ -249,6 +249,7 @@ To review has its own field: "Paste a pull request link to review" (`N`, from ei
 | Esc (on a review page) | Back to the board with the card still selected, when nothing on the page is open |
 | T (on a PR's pages) | Next view: Fixes, Guided, Files |
 | ⇧P (on a PR's pages) | The Pull request menu: the PR's merge, close and other actions, under the same rules as its card |
+| v (on a PR's review page) | The PR's reviewers and checks, under the status row's reviews and checks marks (the popover's keys as V's) |
 | T | Switch tab |
 | I | Show or hide Inactive (either tab) |
 | ⇧T | Show or hide Team requests (Review requests) |
@@ -509,13 +510,18 @@ export type CheckState = "failing" | "running" | "queued" | "passed" | "skipped"
 export type CheckRow = { name: string, source: string?, state: CheckState, startedAt: string?, completedAt: string?, url: string }
 export type CheckList = { headOid: string, rows: { CheckRow } }
 export type Load = { state: "loading" } | { state: "loaded", list: CheckList } | { state: "failed", reason: string }
-export type Popover = { key: string, hl: number, passedOpen: boolean, seen: { [string]: boolean }, from: "board" | "fixes" }
+export type Origin = "board" | "fixes" | "page"
+export type Popover = { key: string, hl: number, passedOpen: boolean, seen: { [string]: boolean }, from: Origin }
+export type ReviewMark = { kind: "approved", approvals: number } | { kind: "changes" } | { kind: "required" }
+export type Reviewer = { name: string, state: "approved" | "changes" | "commented" | "requested", sub: string }
 export type Line = { kind: "header", label: string, count: number, skipped: number } | { kind: "check", row: CheckRow, sub: string } | { kind: "more", count: number, fresh: boolean }
 export type Mark = { failing: number, pending: number, passed: number }
 function M.clock(seconds: number): string                       -- "45s", "6m 24s", "1h 05m"
 function M.timeText(row: CheckRow, now: number): string          -- elapsed while running, "Queued", "Skipped", "took 1m 31s"
 function M.sub(row: CheckRow, now: number): string               -- "<workflow or app> · <time>"
 function M.counts(list: CheckList): Counts / M.unfinished(list): boolean / M.mark(checks: Model.Checks): Mark?
+function M.reviewMark(reviews: Model.ReviewState): ReviewMark      -- GitHub's decision, else (no review required) the latest verdicts
+function M.reviewers(reviews: Model.ReviewState, now: number): { Reviewer }   -- latest stands ("Approved · 2h"), then requested logins and teams not in them; dismissed left out
 function M.lines(list: CheckList, pop: Popover, now: number): { Line }   -- Failing, Running, Queued, then Passed with what finished while open first and the rest behind "Show N"
 function M.choices(lines): { Line } / M.observe(pop, list) / M.rerunning(list?, name): CheckRow? / M.rerunText(row, now): string
 ```
@@ -969,9 +975,9 @@ function M.fixAsk(s, ask: boolean)                -- the Push empty commit quest
 function M.fixSelect(s, index) / M.fixMove(s, delta) / M.fixFocus(s, "steps" | "panel") / M.fixPress(s): string? / M.fixToggleBots(s)
 function M.beginReply(s): boolean / M.cancelReply(s) / M.setDetails(s, details)
 
--- The checks popover: mode "checks" over the board or the fixes page. `s.checks: Checks.Popover?` is { key, hl, passedOpen,
--- seen, from }; loads are cached per "key@headOid" in `s.checkLists` as a Checks.Load (loading | loaded | failed).
-function M.openChecks(s, key): boolean / M.closeChecks(s)   -- closing returns to the fixes page when it is open
+-- The checks popover: mode "checks" over the board, the fixes page or a PR page. `s.checks: Checks.Popover?` is { key, hl,
+-- passedOpen, seen, from }; loads are cached per "key@headOid" in `s.checkLists` as a Checks.Load (loading | loaded | failed).
+function M.openChecks(s, key, page: boolean?): boolean / M.closeChecks(s)   -- `page`: from a PR page's status marks; closing returns to the fixes page when it is open
 function M.checkLoad(s, key): Checks.Load? / M.checksWanted(s, key): boolean / M.setCheckLoad(s, key, headOid, load)
 function M.checkLines(s): ({ Checks.Line }, Checks.Load?) / M.checksMove(s, delta) / M.checksFailing(s): boolean
 function M.checksPress(s): ChecksPress? / M.checksPick(s, index): ChecksPress?   -- { kind: "open", url, name } | { kind: "expand" } | { kind: "retry" }
@@ -1105,7 +1111,7 @@ The hub is the PR's container: ⏎, a click and ⇧⏎ open the PR's review page
 
 **In the hub (`src/hub/pages.luau`).** `Pages.plan` runs steps 1 and 2 below up to the link; `Links.openRoute` and `Links.routeArgs` (what `window.luau` does in step 3) turn it into the guide's arguments, and `ReviewPage.init(cx, args, "main", hosted)` builds the page under the hub's own `main` root instead of a new block. A sample board (`fixture=`) has no network: it opens the bundled sample (arguments `{}`). While a page shows, the hub's `view` returns the page's `{ main, layer }` verbatim and its `title` is "Review · #N"; `key` and `event` go to the page, except the hub's own `hub-focused` and `set-generate`, Esc at the page's rest (`pages-back`: back to the board, closing the fixes page under it, with the card still selected), `t` when Fixes is one of the views (`pages-cycle`) and a click on the Fixes tab (`pages-view=fixes`).
 
-- **The host hook.** `ReviewPage.init`'s optional fourth argument is `State.Hosted = { fixes: boolean, pr: boolean, prOpen: boolean }`, kept on the page's state: it adds the Fixes tab, hands `t` to the host and shows "esc board" in the hint bar and `?` panel; with `pr` the header shows the Pull request button (open while `prOpen`) and the `?` panel lists ⇧P. The host takes ⇧P before the page (`Keys.hubPageAction`), and while its menu or question is open every key (`Pages.covered`); clicks on `hub-*` actions are the host's (`Pages.tabAction`), and the host draws its layer under `Page.prButtonPath(root)` when the page has none. The guide block passes nothing and is unchanged. The page also exposes `atRest` (loaded and reading with no search, composer, panel, help or focused suggestion, or not loaded), `reading`, `views`, `current`, `setView`, `unsaved`, `startGuide` and `tabsPath`.
+- **The host hook.** `ReviewPage.init`'s optional fourth argument is `State.Hosted = { fixes: boolean, pr: boolean, prOpen: boolean, status: State.Status? }`, kept on the page's state: it adds the Fixes tab, hands `t` to the host and shows "esc board" in the hint bar and `?` panel; with `pr` the header shows the Pull request button (open while `prOpen`) and the `?` panel lists ⇧P. `status = { reviews: Checks.ReviewMark, checks: Checks.Mark?, open: boolean }` is set only for a PR on the board: the status row shows its reviews and checks marks, and the `?` panel lists `v`. The host takes ⇧P and `v` before the page (`Keys.hubPageAction`), and while its menu, question or checks popover is open every key (`Pages.covered`); clicks on `hub-*` and `checks-*` actions are the host's (`Pages.tabAction`), and the host draws its layer under `Page.prButtonPath(root)` or, for the checks popover, `Page.statusPath(root)` when the page has none. The guide block passes nothing and is unchanged. The page also exposes `atRest` (loaded and reading with no search, composer, panel, help or focused suggestion, or not loaded), `reading`, `views`, `current`, `setView`, `unsaved`, `startGuide` and `tabsPath`.
 - **Views.** `src/hub/page-views.luau` (pure) holds `views(fixes, pageViews)`, `next` (what `t` does), `tabs` and `victims`. A PR's views are Fixes (a card in Needs fixes with no agent fix to review, or the fixes page already open on it), then Guided and Files, or Files alone for a PR with no guide, or "review" for a page not loaded yet.
 - **Kept pages.** `Block.pages` keeps the last 3 pages opened, least recent first, each with the PR, the card it came from and its page: reopening the PR shows it at once with its marks, comments and any guide in flight (scroll resets). Never in `State`, never saved. A page beyond the limit is dropped, oldest first, unless it holds work no file has (`ReviewPage.unsaved`: text in the composer, the reader's own comments, an edited summary, or an agent run in flight; the page's review comments from the agent live in the checkout's review file, and the reader's own live only in memory), so more than 3 can stay. ⇧⏎ on a kept page starts its guide (`ReviewPage.startGuide`).
 

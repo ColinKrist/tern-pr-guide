@@ -1,6 +1,7 @@
 --!strict
 -- What the page shows on top of the review itself, and the changes to it that need no window.
 local Agent = require("./agent")
+local Checks = require("./hub/checks")
 local Diff = require("./diff")
 local FileGroup = require("./file-group")
 local FileTree = require("./file-tree")
@@ -62,9 +63,13 @@ export type Place = {
 -- Code blocks are keyed by block id: the key of the first step of a run of steps on one file (see
 -- Guide.Step.block), or "f:<path>" for a supporting file. What
 -- `Place` lists belongs to the view shown; the other view's is parked in `other`.
+-- The PR's reviews and checks marks in the status row, for a page the host shows from a card on its board. `checks`
+-- is nil for a PR with none; `open`: the host's reviewers and checks popover is showing under them.
+export type Status = { reviews: Checks.ReviewMark, checks: Checks.Mark?, open: boolean }
+
 -- What a host (the PR hub) tells the page it shows. `pr`: the host has a Pull request menu for the page's PR (⇧P),
--- and `prOpen`: that menu or its question is open.
-export type Hosted = { fixes: boolean, pr: boolean, prOpen: boolean }
+-- and `prOpen`: that menu or its question is open. `status`: the PR is on the host's board.
+export type Hosted = { fixes: boolean, pr: boolean, prOpen: boolean, status: Status? }
 
 export type State = {
  -- The node path the page sits under in its host's view; every frame op and path starts there.
@@ -124,7 +129,8 @@ export type State = {
  -- switches view nothing arrives ("still"): a switch is instant.
  arrival: "load" | "guide" | "still",
  -- Set when a host (the PR hub) shows the page: `fixes` is whether a Fixes view sits beside it. The page then
- -- shows a Fixes tab, and its `t` is the host's, an Esc hint, and with `pr` a Pull request button.
+ -- shows a Fixes tab, and its `t` is the host's, an Esc hint, with `pr` a Pull request button, and with `status` the
+ -- reviews and checks marks.
  hosted: Hosted?,
 }
 

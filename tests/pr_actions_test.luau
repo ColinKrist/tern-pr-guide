@@ -126,10 +126,10 @@ return function()
 	HubState.closeMenu(s)
 
 	-- ⇧P on a hosted page opens the menu when the PR has actions and the page takes letters.
-	local host = { rest = true, reading = true, fixes = false, pr = true }
+	local host = { rest = true, reading = true, fixes = false, pr = true, status = false }
 	local open = Keys.hubPageAction(key("p", true), host)
 	assert(open and open.act == "hub-pr-menu")
-	assert(Keys.hubPageAction(key("p", true), { rest = true, reading = true, fixes = false, pr = false }) == nil, "no actions, no menu")
-	assert(Keys.hubPageAction(key("p", true), { rest = false, reading = false, fixes = false, pr = true }) == nil, "a field has the letters")
+	assert(Keys.hubPageAction(key("p", true), { rest = true, reading = true, fixes = false, pr = false, status = false }) == nil, "no actions, no menu")
+	assert(Keys.hubPageAction(key("p", true), { rest = false, reading = false, fixes = false, pr = true, status = false }) == nil, "a field has the letters")
 	assert(Keys.hubPageAction(key("p"), host) == nil, "plain p is the page's")
 end

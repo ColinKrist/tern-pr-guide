@@ -71,9 +71,9 @@ from the past 7 days.
 ### Checks
 
 Each card shows its checks as one mark: failing in red, unfinished as "3 pending" in amber,
-otherwise the passed count in green. Click it or press `V` to list every check on the latest
-commit, grouped Failing, Running, Queued and Passed, with how long each ran. `⏎` opens a check's
-page. Running checks update every 30 seconds while the list is open.
+otherwise the passed count in green. Click it or press `V` to list the PR's reviewers, then every
+check on the latest commit, grouped Failing, Running, Queued and Passed, with how long each ran.
+`⏎` opens a check's page. Running checks update every 30 seconds while the list is open.
 
 ![The checks list for a PR, with a running Buildkite check](docs/screenshots/checks.png)
 
@@ -155,6 +155,8 @@ page, returns to the board with the card still selected.
 
 - Tabs in the header: **Fixes** (Needs fixes PRs, opened first), **Guided** (when the PR has a
   guide) and **Files**. `t` cycles them.
+- The status row shows the PR's reviews ("Approved · 2", "Changes requested" or "Review required")
+  and its checks. Click either, or press `v`, to list the reviewers and the checks.
 - The hub keeps the last three PRs you opened, with their drafts, marks and any guide being
   written. A page with an unsent comment or an agent run in progress is never dropped.
 

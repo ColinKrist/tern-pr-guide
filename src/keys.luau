@@ -70,7 +70,7 @@ local function readingKey(s: State.State, key: Key): Action?
  if name == "p" then return act("next-suggestion", -1) end
  if name == "enter" and key.shift then return act("mark-change", step.change) end
  if name == "enter" then return act("review-step", step.key) end
- if name == "v" then return act("mark-file", step.file) end
+ if name == "f" then return act("mark-file", step.file) end
  if name == "a" then return act("decide-current", "added") end
  if name == "d" then return act("decide-current", "dismissed") end
  if name == "c" then return act("comment-step") end
@@ -335,17 +335,18 @@ end
 
 -- What the hub's page host knows about the review page it shows: whether Esc is its own (nothing of the
 -- page's is open), whether letters are the page's keys (no field or panel has them), whether a Fixes view
--- sits beside the page, and whether the PR has pull request actions.
-export type PageHost = { rest: boolean, reading: boolean, fixes: boolean, pr: boolean }
+-- sits beside the page, whether the PR has pull request actions, and whether it shows the PR's status marks.
+export type PageHost = { rest: boolean, reading: boolean, fixes: boolean, pr: boolean, status: boolean }
 
 -- The key the hub takes before the page does: Esc at rest goes back to the board, `t` cycles the views
--- when Fixes is one of them (the page's own `t` flips Guided and Files), and ⇧P opens the Pull request
--- menu. Every other key is the page's.
+-- when Fixes is one of them (the page's own `t` flips Guided and Files), ⇧P opens the Pull request
+-- menu, and `v` the reviewers and checks under the status marks. Every other key is the page's.
 function M.hubPageAction(key: Key, host: PageHost): Action?
 	if key.ctrl or key.meta or key.alt then return nil end
 	if key.name == "escape" and host.rest then return act("pages-back") end
 	if key.name == "t" and not key.shift and host.fixes and host.reading then return act("pages-cycle") end
 	if host.pr and host.reading and cardKeyLabel(key) == "⇧P" then return act("hub-pr-menu") end
+	if host.status and host.reading and cardKeyLabel(key) == "V" then return act("hub-checks") end
 	return nil
 end
 
