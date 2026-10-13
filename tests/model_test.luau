@@ -58,8 +58,21 @@ local function testAutoLand()
 	assert(Model.mergeable(landing("acme/api#110", stopped)), "a stopped mark doesn't block merging by hand")
 end
 
+-- Aviator sets its own status back to pending once it queues a merge: the card stays Ready.
+local function testQueuedMergeStaysReady()
+	local queued = table.clone(byKey["acme/api#110"])
+	queued.checks = { state = "pending", passing = 3, failing = 0, pending = 1 }
+	assert(Model.placement(queued, NOW).column == "in_review", "pending checks without a merge wait in In review")
+	queued.pending = { method = "comment", at = "2026-10-08T00:00:00Z" }
+	assert(Model.placement(queued, NOW).column == "ready", "a merge in flight stays Ready while checks run")
+	assert(not Model.mergeable(queued), "and can't be merged again")
+	queued.checks = { state = "failing", passing = 3, failing = 1, pending = 0, failedNames = { "aviator/checks" } }
+	assert(Model.placement(queued, NOW).column == "needs_fixes", "a failing check still needs fixes")
+end
+
 return function()
 	testAutoLand()
+	testQueuedMergeStaysReady()
 	-- The clock is frozen in the fixture, not read.
 	assert(Cases.asOf == Model.epoch(Cases.asOfIso), "asOf matches asOfIso")
 	assert(Cases.asOf == 1791547200)

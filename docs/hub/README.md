@@ -78,7 +78,7 @@ Each PR appears exactly once.
   - **Feedback from a person:** the reviewer's latest review requested changes, or a thread is unresolved and its author's latest review isn't an approval. Plain comments ("LGTM"), threads whose author later approved, bots and your own comments never count. An approval doesn't clear a failing check or a conflict.
   - **A merge conflict.**
 - **In review:** everything else that's waiting on someone else: waiting on review, on one more approval, on checks, or on Tandem. A PR Tandem is working on stays here.
-- **Ready to merge:** approved, checks passing, no conflicts.
+- **Ready to merge:** approved, checks passing, no conflicts. A PR whose merge is in flight stays here while its checks run again, since Aviator sets its own status back to pending when it queues the PR.
 - **Inactive:** drafts, and PRs with no activity for 7 days, including stale conflicts. Your real data has 16 conflicted PRs, which is why the 7-day gate exists.
 - **Recently merged (folded, `R`):** your PRs merged in the last 7 days, newest first, as rows like Recently opened: repo and number, title, when it merged. ⏎ or a click opens one. Merged PRs leave the board (a hub merge drops the card at once; a merge elsewhere drops it at the next refresh, since the searches ask for open PRs), so this is where they go. Never counted, never in Next up.
 - **Review requests tab:**

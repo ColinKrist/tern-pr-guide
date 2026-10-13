@@ -58,7 +58,7 @@ The **Your pull requests** tab sorts every PR you opened into three columns:
 - **Needs fixes:** requested changes, unresolved comments, failing checks, a conflict or a failed
   merge-queue run. Each reason is its own chip on the card.
 - **In review:** waiting on a reviewer, on checks or on Tandem.
-- **Ready to merge:** approved, passing and free of conflicts.
+- **Ready to merge:** approved, passing and free of conflicts. A queued merge stays here while its checks run again.
 
 The **Next up** bar above the board shows the most urgent PR. Drafts and PRs with no activity for
 7 days move to a hidden **Inactive** group, where you can select stale PRs and close them together.
