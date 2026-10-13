@@ -353,6 +353,7 @@ local function layShared(b: Block, cx: BlockCx, shared: Sync.Cache): (boolean, b
 	b.cache = shared
 	b.held = storedId(shared)
 	State.replace(b.s, prs, now, shared.refreshedAt)
+	State.setMerged(b.s, shared.merged)
 	return moved, replayEdits(b, requestedAt(shared))
 end
 

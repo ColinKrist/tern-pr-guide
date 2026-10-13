@@ -56,6 +56,14 @@ return function()
 			local op = frames[#frames]
 			return if op then table.concat(op, " ") else ""
 		end
+		-- Your pull requests: R opens Recently merged.
+		press("r")
+		assert(b.s.folded.merged == false and b.s.folded.recent == true, "R opens Recently merged")
+		assert(lastFrame() == "reveal " .. Paths.foldHead("merged") .. " start", lastFrame())
+		local merged = nodeAt(Block.view(b).main, Paths.foldHead("merged"))
+		assert(merged and string.find(merged.p.class, "gp-hub-foldhead", 1, true), "Recently merged's header is drawn at Paths.foldHead")
+		press("r")
+		frames = {}
 		press("t")
 		assert(b.s.tab == "review" and #frames == 0)
 

@@ -59,6 +59,9 @@ The **Your pull requests** tab sorts every PR you opened into three columns:
 The **Next up** bar above the board shows the most urgent PR. Drafts and PRs with no activity for
 7 days move to a hidden **Inactive** group, where you can select stale PRs and close them together.
 
+A PR leaves the board once it merges, from the hub or anywhere else. The folded **Recently merged**
+list at the bottom (`R`) keeps your 20 latest merges from the past 7 days, and ⏎ opens one.
+
 When a PR lands in Needs fixes, its card is outlined in red and the hub's status-line segment
 flashes. Failed merges, failing checks and feedback from a person also show a toast. Conflicts
 don't, because they arrive in bursts when other PRs merge. The segment stays visible while the hub
@@ -232,7 +235,7 @@ Press `?` on any PR Guide page for the keys that apply there.
 | `I` | Show or hide inactive PRs, on either tab |
 | `⇧T` | Show or hide team review requests |
 | `A` | Show or hide approved PRs, on Review requests |
-| `R` | Show or hide recently opened PRs |
+| `R` | Show or hide recently merged PRs, or recently opened PRs on Review requests |
 | `N` | Add a PR by link |
 | `⇧S` | Settings: the review model and effort (agent fixes use it too), and whether GitHub links open in Tern or the default browser (`L` switches). `⇧M` opens it too |
 | `A` | Run the selected card's main action, on your PRs |

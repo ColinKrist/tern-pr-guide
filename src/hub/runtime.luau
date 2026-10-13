@@ -99,7 +99,7 @@ local function revealSelected(b: Block, cx: BlockCx)
 	local card = State.selectedCard(b.s)
 	if card then return frameLater(cx, { { "reveal", Paths.card(card), "nearest" } }) end
 	local recent = State.selectedRecent(b.s)
-	if recent then frameLater(cx, { { "reveal", Paths.recentRow(State.recentKey(recent)), "nearest" } }) end
+	if recent then frameLater(cx, { { "reveal", Paths.recentRow(State.ROW_FOLD[b.s.tab], State.recentKey(recent)), "nearest" } }) end
 end
 
 -- The reason alone from a "Couldn't …: reason" message; the board adds its own lead-in.

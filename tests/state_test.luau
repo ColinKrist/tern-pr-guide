@@ -355,10 +355,24 @@ return function()
 	assert(State.move(last, "down") and last.selected == "rc:acme/web#4")
 	assert(not State.move(last, "down") and last.selected == "rc:acme/web#4")
 	assert(State.move(last, "up") and last.selected == "rc:acme/api#9")
-	-- Your pull requests has no such fold
+	-- Your pull requests ends with Recently merged instead: the last 7 days of the cache's list, under its own fold name.
 	local mine = fresh({ tab = "mine" })
 	State.setRecent(mine, recent)
 	assert(#mine.board.recent == 0 and not mine.board.open.recent)
+	State.setMerged(mine, {
+		{ repo = "acme/web", number = 981, title = "Cache sprites", author = "", at = "2026-10-09T00:00:00Z" },
+		{ repo = "acme/api", number = 377, title = "Log slow queries", author = "", at = "2026-09-01T00:00:00Z" },
+	})
+	assert(#mine.board.recent == 1 and mine.board.recent[1].number == 981 and not mine.board.open.recent)
+	State.toggleFold(mine, "recent")
+	assert(not mine.board.open.recent, "Recently opened's flag doesn't open Recently merged")
+	State.toggleFold(mine, "merged")
+	assert(mine.board.open.recent)
+	State.setTab(mine, "review")
+	assert(#mine.board.recent == 2 and mine.board.recent[1].number == 9, "Review requests keeps Recently opened")
+	State.setMerged(mine, nil)
+	State.setTab(mine, "mine")
+	assert(#mine.board.recent == 0)
 
 	-- Card actions: Merge asks first, naming the repo's method; ⌘⏎ is the block's, Esc cancels.
 	local ms = fresh()

@@ -335,6 +335,7 @@ type Refresh = {
 	calls: RateLimit[] // every call's, in order
 	truncated: boolean // a search returned more than 50
 	partial?: Error // threads or merge failures failed; prs still stand
+	merged?: Opened[] // Recently merged, newest merge first (`at` is mergedAt); unset when that search failed
 }
 type Probe = { changed: boolean; lastModified?: string; pollSeconds?: number }
 type ChecksUpdate = { byId: Record<string, { headOid: string; checks: Checks }>; rateLimit: RateLimit }
@@ -360,7 +361,7 @@ interface GithubClient {
 
 | Method | Today | Port |
 |---|---|---|
-| `refresh` | `gh api graphql` with `HUB_QUERY` (`docs/hub/queries/hub-f.graphql`), once per search in `SEARCHES` (`mine`, `requested`, `reviewed`), all three at once. Each search pages with `q`, `n` and `after`: 20 PRs a page (`PAGE_SIZE`) up to 50 (`SEARCH_MAX`), and a page that fails transiently is asked again at half the size, down to 5 (`PAGE_MIN`). The first page of `mine` carries one `added<N>: repository { pullRequest(number:) }` alias per PR in `req.added` (`hubQuery`). The first failure ends the refresh. Then `THREADS_QUERY` (`threads.graphql`) for PRs with unresolved threads whose activity changed, at most 100 ids (`threadsFor`). Then `MERGE_FAILURE_QUERY` (`merge-failure.graphql`) for PRs with a comment or label merge pending on the same head (`inFlightMerges`). | `POST /graphql`, the same queries and variables. Keep the paging, `pageInfo.hasNextPage` as `truncated`, and one `RateLimit` per page in `calls`. A threads or merge-failure failure sets `partial` and keeps `prs`. |
+| `refresh` | `gh api graphql` with `HUB_QUERY` (`docs/hub/queries/hub-f.graphql`), once per search in `SEARCHES` (`mine`, `requested`, `reviewed`), all three at once. Each search pages with `q`, `n` and `after`: 20 PRs a page (`PAGE_SIZE`) up to 50 (`SEARCH_MAX`), and a page that fails transiently is asked again at half the size, down to 5 (`PAGE_MIN`). The first page of `mine` carries one `added<N>: repository { pullRequest(number:) }` alias per PR in `req.added` (`hubQuery`). The first failure ends the refresh. Beside them, `MERGED_QUERY` (`merged.graphql`) with `q = MERGED_SEARCH` fills `merged` (`parseMerged`); its failure only leaves `merged` unset. Then `THREADS_QUERY` (`threads.graphql`) for PRs with unresolved threads whose activity changed, at most 100 ids (`threadsFor`). Then `MERGE_FAILURE_QUERY` (`merge-failure.graphql`) for PRs with a comment or label merge pending on the same head (`inFlightMerges`). | `POST /graphql`, the same queries and variables. Keep the paging, `pageInfo.hasNextPage` as `truncated`, and one `RateLimit` per page in `calls`. A threads or merge-failure failure sets `partial` and keeps `prs`. |
 | `probe` | `gh api -i notifications?per_page=1`, with `-H If-Modified-Since: <since>`. `parseProbe` reads the status line. | `GET /notifications?per_page=1` with `If-Modified-Since`. 200 is a change, 304 is none. Keep `Last-Modified` and `X-Poll-Interval`. |
 | `checks` | `gh api graphql` with `CHECKS_QUERY` (`checks.graphql`), `ids[]=` per node. Empty `ids` answers at once. | `POST /graphql`, same query. |
 | `details` | `gh api graphql` with `DETAILS_QUERY` (`details.graphql`), `id=<node id>`. | `POST /graphql`, same query. |
@@ -567,6 +568,7 @@ type Cache = {
 	rateLimit?: RateLimit
 	lastModified?: string // the probe's validator
 	counts: Counts
+	merged?: Opened[] // the last Recently merged list; a refresh without one keeps it
 }
 // What `persist` stores: the Cache plus two fields the Sync.Cache type does not declare.
 type StoredCache = Cache & {
@@ -735,7 +737,7 @@ The guide page has its own `ACTIONS` table in `src/block.luau`, with the same `d
 
 | Mode | Keys |
 |---|---|
-| `board` | `?` help. `/` search. ⌘R or Ctrl+R refresh. Esc `hub-escape`. ⏎ `hub-open`, ⇧⏎ `hub-open-generate`. Space `hub-mark`. ⇧X `hub-mark-stale` on the mine tab. With marks, M `hub-batch-merge` and X `hub-batch-close`. h j k l and the arrows `hub-move`. `.` `hub-next`. T `hub-tab`. I `hub-fold inactive`. R `hub-fold recent`, ⇧T `hub-fold team` and A `hub-fold approved` on the review tab. F `hub-menu repositories`. S `hub-menu sort`. ⇧S or ⇧M `hub-menu settings`. N `hub-link`. Any other letter runs the selected card's main or alternative action whose `key` matches (⇧A also runs a main `card-summarize`). |
+| `board` | `?` help. `/` search. ⌘R or Ctrl+R refresh. Esc `hub-escape`. ⏎ `hub-open`, ⇧⏎ `hub-open-generate`. Space `hub-mark`. ⇧X `hub-mark-stale` on the mine tab. With marks, M `hub-batch-merge` and X `hub-batch-close`. h j k l and the arrows `hub-move`. `.` `hub-next`. T `hub-tab`. I `hub-fold inactive`. R `hub-fold merged` on the mine tab and `hub-fold recent` on the review tab (`State.ROW_FOLD`). ⇧T `hub-fold team` and A `hub-fold approved` on the review tab. F `hub-menu repositories`. S `hub-menu sort`. ⇧S or ⇧M `hub-menu settings`. N `hub-link`. Any other letter runs the selected card's main or alternative action whose `key` matches (⇧A also runs a main `card-summarize`). |
 | `menu` | j k and the arrows `hub-menu-move`. ⏎ `hub-menu-enter`. Space `hub-menu-select`. Esc `hub-menu-close`. In Settings, left and right step the effort and L sends `hub-links`. While a merge method is typed, ⏎ `hub-method-save` and Esc `hub-method-cancel`. |
 | `search` | ⏎ `hub-search-done`. Esc `hub-search-clear`. Up and down `hub-move`. Other keys type, and a change sends `hub-searched` (`Keys.hubAfterTyping`). |
 | `link` | ⏎ `hub-link-add`. ⇧⏎ `hub-link-open`. Esc `hub-link-clear`. Other keys type. |

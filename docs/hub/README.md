@@ -26,7 +26,7 @@ Two Tern tabs, one board each. `T` switches between them.
 
 | Tab | Columns | Below |
 |---|---|---|
-| Your pull requests | Needs fixes · In review · Ready to merge | Inactive (folded) |
+| Your pull requests | Needs fixes · In review · Ready to merge | Inactive, Recently merged (each folded) |
 | Review requests | To review · Waiting on author | Inactive, Team requests, Approved, Recently opened (each folded) |
 
 - **Tab counts:** blue, counting only the cards in the your-turn column. Folds never count.
@@ -54,6 +54,7 @@ Each PR appears exactly once.
 - **In review:** everything else that's waiting on someone else: waiting on review, on one more approval, on checks, or on Tandem. A PR Tandem is working on stays here.
 - **Ready to merge:** approved, checks passing, no conflicts.
 - **Inactive:** drafts, and PRs with no activity for 7 days, including stale conflicts. Your real data has 16 conflicted PRs, which is why the 7-day gate exists.
+- **Recently merged (folded, `R`):** your PRs merged in the last 7 days, newest first, as rows like Recently opened: repo and number, title, when it merged. ⏎ or a click opens one. Merged PRs leave the board (a hub merge drops the card at once; a merge elsewhere drops it at the next refresh, since the searches ask for open PRs), so this is where they go. Never counted, never in Next up.
 - **Review requests tab:**
   - **To review:** reviews requested of you by name (a re-review when you had already reviewed), PRs whose review of yours was dismissed, and PRs you added by link. A request that names both you and your team is yours.
   - **Inactive (folded):** what would be in To review but has had no activity for 7 days. PRs you added by link never go here. Nothing here can be selected or closed: these are other people's PRs.
@@ -184,7 +185,7 @@ To review has its own field: "Paste a pull request link to review" (`N`, from ei
 | I | Show or hide Inactive (either tab) |
 | ⇧T | Show or hide Team requests (Review requests) |
 | A | Show or hide Approved (Review requests; no Review requests card uses A) |
-| R | Show or hide Recently opened (Review requests) |
+| R | Show or hide Recently merged (Your pull requests) or Recently opened (Review requests) |
 | F / S | Repository filter / Sort menu (menus: j/k, ⏎ or Space, Esc) |
 | ⇧S, ⇧M | Settings (↑↓ model, ←→ effort, L where links open) |
 | N | Add a PR by link |
@@ -202,6 +203,7 @@ To review has its own field: "Paste a pull request link to review" (`N`, from ei
 | Call | Cost | Time | When |
 |---|---|---|---|
 | `docs/hub/queries/hub-f.graphql`: one page of one search, run for each of the 3 searches (author, review-requested, reviewed-by) at once, 20 PRs a page up to 50, with check counts, author types, and the fields `HubPR` needs (size, dates, base branch, auto-merge, last queue removal) | 1 pt a page: 4 for 40 PRs (2 + 1 + 1), at most 9 (the old single query was 11 for any count) | 0.9–3.6 s a page on 40 PRs, 4.4–6.6 s on busy repos | On a change, on focus (debounced to 30 s), and every 5 min while the hub block exists (a block can't observe visibility) |
+| `merged.graphql`: the viewer's 20 most recently updated merged PRs (`is:pr is:merged author:@me archived:false sort:updated-desc`; search can't sort by merge time, and a merge updates the PR), run beside hub-f's three searches. Measured 2026-10-12 on jubbydev's account (194 merges in 7 days) | 1 pt | 0.7–0.8 s | With every refresh. A failure leaves the cached list |
 | `threads.graphql`: thread authors via `nodes(ids:)`, only for PRs with an unresolved thread whose `updatedAt` changed | 5 pts for 17 PRs (the first 30 threads of each; 9 pts at 50) | 0.7–0.8 s | After hub-f |
 | `checks.graphql`: CI state for PRs with running checks | 1 pt for 5 or 42 PRs | 1–1.6 s | Every 30 s while any check is running |
 | REST `/notifications` with `If-Modified-Since` | free (304) | | Every 60 s, as the change probe |
@@ -211,8 +213,8 @@ To review has its own field: "Paste a pull request link to review" (`N`, from ei
 
 - **Don't** put thread authors inside the search query. Measured at **159 points** per call.
 - **Pages, not one query.** GitHub stops a GraphQL query at about 10 s and answers HTTP 502. Measured 2026-10-12 on busy repos (vscode, next.js): the three searches at 50 each in one query got 502 after about 11 s every time, and so did a single search at 50; a 20-PR page took 4.4–6.6 s. A page that fails with a 502, 503 or 504, GitHub's "Something went wrong" timeout body, or the 30 s client timeout is asked again with half the PRs, down to 5; later pages of that search keep the smaller size. Every other GraphQL read retries those failures once; writes never retry.
-- **Per refresh:** hub-f 4 (40 PRs) + threads 5 + checks 1 = 10, under the 18-point limit the tests hold. A cost depends on the connections a query selects times the PRs it can return (`first:` on a connection under a search doesn't change it), so a page's `$n` sets its cost and an added connection is paid 20 times per page. Alias-added PRs ride on the first `mine` page.
-- **Budget:** about 130 pts/hr while the hub block exists (12 refreshes at 10, plus checks). Even the 30 s debounce ceiling (about 2,200/hr at the 18-point limit) fits the 5,000/hr GraphQL budget, which Tandem's pr-watch shares.
+- **Per refresh:** hub-f 4 (40 PRs) + merged 1 + threads 5 + checks 1 = 11, under the 18-point limit the tests hold. A cost depends on the connections a query selects times the PRs it can return (`first:` on a connection under a search doesn't change it), so a page's `$n` sets its cost and an added connection is paid 20 times per page. Alias-added PRs ride on the first `mine` page.
+- **Budget:** about 140 pts/hr while the hub block exists (12 refreshes at 11, plus checks). Even the 30 s debounce ceiling (about 2,200/hr at the 18-point limit) fits the 5,000/hr GraphQL budget, which Tandem's pr-watch shares.
 - **Latency is the real cost.** Always render from the kv cache first, then refresh in the background.
 - **Check annotations include noise.** Drop paths under `.github/` and messages like "Process completed with exit code". Measured on Tagalingo-App #1013, the useful one was `src/lib/query-persister.ts:39 Type …`.
 - **Conflicted files** come from local `git merge-tree --write-tree --name-only`, not GitHub.

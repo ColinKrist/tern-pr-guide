@@ -1,0 +1,6 @@
+# Recently merged: the viewer's merged PRs, run beside hub-f's three searches with
+# q = "is:pr is:merged author:@me archived:false sort:updated-desc". A failure leaves the cached list in place.
+query Merged($q: String!) {
+  rateLimit { cost remaining limit resetAt }
+  merged: search(type: ISSUE, query: $q, first: 20) { nodes { ... on PullRequest { number title mergedAt repository { nameWithOwner } } } }
+}

@@ -15,8 +15,7 @@ type Tab = Model.Tab
 type Column = Model.Column
 type Sort = Model.Sort
 
--- The recent store retains the shared Opened shape; summaries use their pure module contract.
-export type Opened = { repo: string, number: number, title: string, author: string, at: string } -- sync.Opened
+export type Opened = Model.Opened
 export type Summary = Summary.Summary
 export type FixDetails = Fixes.FixDetails
 
@@ -75,8 +74,8 @@ export type BoardData = {
 	tab: Tab,
 	columns: { { column: Column, cards: { Card } } }, -- the tab's columns, left to right, filtered and ordered
 	folds: { CardFold }, -- the tab's card folds, in M.FOLDS order
-	recent: { Opened }, -- the fold under "Review requests"
-	open: { recent: boolean }, -- whether Recently opened shows its rows
+	recent: { Opened }, -- the tab's row fold, last under the board: Recently merged or Recently opened (M.ROW_FOLD)
+	open: { recent: boolean }, -- whether that fold shows its rows
 	grid: { { string } }, -- keys per column, for h j k l
 	counts: { mine: number, review: number }, -- your-turn cards per tab: the blue counts
 	repositories: { RepoOption },
@@ -124,6 +123,7 @@ export type State = {
 	methodEdit: MethodEdit?, -- the merge menu is asking for a command or a label
 	folded: { [string]: boolean }, -- true: the fold is closed. Every fold starts closed
 	recent: { Opened }, -- hub.recent, newest first; the block sets it, `project` builds the Review requests fold from it
+	merged: { Opened }, -- the cache's Recently merged list, newest first; `project` keeps the last ACTIVE_DAYS of it
 	walking: boolean, -- Next up is being walked: the banner shows "2 of 11"
 	ringed: { [string]: Ring },
 	agents: { [string]: AgentFixState },
@@ -265,6 +265,9 @@ M.FOLDS = {
 	review = { "inactive", "team", "approved" },
 } :: { [Tab]: { Column } }
 
+-- The fold of PR rows that ends each tab's board, by its `folded` name.
+M.ROW_FOLD = { mine = "merged", review = "recent" } :: { [Tab]: string }
+
 M.SORTS = {
 	{ id = "repository" :: Sort, label = "Repository", sub = "Priority within each" },
 	{ id = "priority" :: Sort, label = "Priority", sub = "What to do first" },
@@ -297,7 +300,7 @@ function M.new(prs: { HubPR }, now: number, saved: any): State
 	local tab: Tab = "mine"
 	local sort: Sort = "repository"
 	local repositories: { [string]: boolean }? = nil
-	local folded: { [string]: boolean } = { inactive = true, team = true, approved = true, recent = true }
+	local folded: { [string]: boolean } = { inactive = true, team = true, approved = true, recent = true, merged = true }
 	if type(saved) == "table" then
 		tab = validTab(saved.tab) or tab
 		sort = validSort(saved.sort) or sort
@@ -317,7 +320,7 @@ function M.new(prs: { HubPR }, now: number, saved: any): State
 	local s: State = {
 		prs = prs, now = now, board = emptyBoard(tab), tab = tab, selected = nil, marked = {},
 		repositories = repositories, sort = sort, search = Fields.create(""), link = Fields.create(""),
-		mode = "board", route = nil, menu = nil, menuCursor = 1, confirm = nil, methodEdit = nil, folded = folded, recent = {}, walking = false,
+		mode = "board", route = nil, menu = nil, menuCursor = 1, confirm = nil, methodEdit = nil, folded = folded, recent = {}, merged = {}, walking = false,
 		ringed = {}, agents = {}, details = {}, flakes = {}, summaries = {}, merges = {}, autoMerge = {}, acted = {}, busy = {},
 		refreshedAt = nil, loading = false, error = nil, agent = nil, links = "tern",
 		keyed = false, born = {}, booted = false,
@@ -351,6 +354,12 @@ end
 -- Sets the Recently opened list (hub.recent) and rebuilds the board.
 function M.setRecent(s: State, recent: { Opened })
 	s.recent = recent
+	M.project(s)
+end
+
+-- Sets the Recently merged list (the cache's `merged`) and rebuilds the board.
+function M.setMerged(s: State, merged: { Opened }?)
+	s.merged = merged or {}
 	M.project(s)
 end
 
@@ -717,7 +726,7 @@ local function shortRepo(repo: string): string
 	return string.match(repo, "[^/]+$") or repo
 end
 
--- The key a Recently opened row is selected and clicked by. A card's key is a node id, so the two never clash.
+-- The key a row fold's row is selected and clicked by. A card's key is a node id, so the two never clash.
 function M.recentKey(opened: Opened): string
 	return "rc:" .. string.lower(opened.repo) .. "#" .. opened.number
 end
@@ -818,15 +827,15 @@ function M.project(s: State)
 		table.insert(folds, { column = column, cards = cards, open = open })
 	end
 
-	-- Recently opened: under Review requests only, narrowed by the search, open on its own while a search finds some.
+	-- The row fold: Recently opened under Review requests, Recently merged (the last 7 days) under Your pull requests.
+	-- Narrowed by the search, and open on its own while a search finds some.
 	local recent: { Opened } = {}
-	if s.tab == "review" then
-		local needle = string.lower(s.search.text)
-		for _, opened in s.recent do
-			if needle == "" or recentMatches(opened, needle) then table.insert(recent, opened) end
-		end
+	local needle = string.lower(s.search.text)
+	for _, opened in if s.tab == "review" then s.recent else s.merged do
+		local current = s.tab == "review" or s.now - (Model.epoch(opened.at) or 0) < Model.ACTIVE_DAYS * 86400
+		if current and (needle == "" or recentMatches(opened, needle)) then table.insert(recent, opened) end
 	end
-	local recentOpen = #recent > 0 and (not s.folded.recent or searching)
+	local recentOpen = #recent > 0 and (not s.folded[M.ROW_FOLD[s.tab]] or searching)
 	if recentOpen then
 		for _, opened in recent do present[M.recentKey(opened)] = true end
 	end
@@ -885,7 +894,7 @@ function M.card(s: State, key: string): Card?
 	return nil
 end
 
--- The Recently opened row with `key`, while that fold shows its rows.
+-- The row fold's row with `key`, while that fold shows its rows.
 function M.recentRow(s: State, key: string): Opened?
 	if s.board.open.recent then
 		for _, opened in s.board.recent do
@@ -895,7 +904,7 @@ function M.recentRow(s: State, key: string): Opened?
 	return nil
 end
 
--- The selected Recently opened row, if one is selected.
+-- The selected row of the row fold, if one is selected.
 function M.selectedRecent(s: State): Opened?
 	if s.selected then return M.recentRow(s, s.selected) end
 	return nil
