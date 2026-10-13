@@ -302,11 +302,14 @@ end
 -- says nothing the overview doesn't.
 local function parseFlow(raw: any, changeCount: number): Flow?
  if type(raw) ~= "table" or type(raw.stages) ~= "table" then return nil end
- local stages, marked = {}, false
- for _, rawStage in raw.stages do
+ -- `kept[i]` is where the guide's stage i landed once unusable stages are dropped, so `check.stage`
+ -- still names the stage the guide meant.
+ local stages, marked, kept = {}, false, {}
+ for i, rawStage in raw.stages do
   local stage = parseStage(rawStage, changeCount)
   if stage then
    table.insert(stages, stage)
+   kept[i] = #stages
    marked = marked or stage.tone ~= nil
   end
  end
@@ -316,7 +319,7 @@ local function parseFlow(raw: any, changeCount: number): Flow?
  return {
   title = text(raw.title, ""), stages = stages, arrows = raw.arrows ~= false,
   check = checkText,
-  checkStage = if checkText and isLine(check.stage) and check.stage <= #stages then check.stage else nil,
+  checkStage = if checkText and isLine(check.stage) then kept[check.stage] else nil,
  }
 end
 

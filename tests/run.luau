@@ -23,6 +23,7 @@ local modules: { { name: string, run: () -> () } } = {
 	{ name = "moves_test", run = require("./moves_test") },
 	{ name = "diff_test", run = require("./diff_test") },
 	{ name = "groups_test", run = require("./groups_test") },
+	{ name = "flow_test", run = require("./flow_test") },
 	{ name = "fold_test", run = require("./fold_test") },
 	{ name = "ci_log_test", run = require("./ci_log_test") },
 	{ name = "draft_test", run = require("./draft_test") },

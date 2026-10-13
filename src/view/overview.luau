@@ -20,12 +20,14 @@ local function name(text: string): Node
  return span(if string.find(text, " ") then "gp-fb-name gp-fb-prose" else "gp-fb-name", text)
 end
 
--- One box. `tone` marks the side that carries the change; `go` is the step a click opens.
-local function box(text: string, tone: Guide.Tone?, note: string?, change: number?, go: number?): Node
+-- One box holding one name, or two alternatives joined by "or" (stacked in the taller unchanged box).
+-- `tone` marks the side that carries the change; `go` is the step a click opens.
+local function box(names: { string }, tone: Guide.Tone?, note: string?, change: number?, go: number?, stacked: boolean?): Node
  local top = {}
  if tone then table.insert(top, span("gp-fb-sign", SIGNS[tone])) end
- table.insert(top, name(text))
- local kids = { el("div", { class = "gp-fb-top" }, top) }
+ table.insert(top, name(names[1]))
+ if names[2] then table.insert(top, span("gp-fb-or", "or")); table.insert(top, name(names[2])) end
+ local kids = { el("div", { class = "gp-fb-top" .. (if stacked and names[2] then " gp-fb-alts" else "") }, top) }
  if note or go then
   local row = {}
   if note then table.insert(row, span("gp-fb-note-text", note)) end
@@ -38,14 +40,10 @@ local function box(text: string, tone: Guide.Tone?, note: string?, change: numbe
  }, kids)
 end
 
--- One lane of a touched stage: its boxes, or a muted word where that side has nothing.
+-- One lane of a touched stage: its box, or a muted word where that side has nothing.
 local function cell(names: { string }, empty: string, tone: Guide.Tone?, note: string?, change: number?, go: number?): Node
  if #names == 0 then return el("div", { class = "gp-fc gp-fc-none" }, { span("gp-fc-empty", empty) }) end
- local kids = {}
- for _, text in names do
-  table.insert(kids, box(text, tone, if #names == 1 then note else nil, change, if #names == 1 then go else nil))
- end
- return el("div", { class = "gp-fc" }, kids)
+ return el("div", { class = "gp-fc" }, { box(names, tone, note, change, go) })
 end
 
 local function stage(r: Review.Review, st: Guide.Stage, n: number, flagged: boolean): Node
@@ -53,14 +51,9 @@ local function stage(r: Review.Review, st: Guide.Stage, n: number, flagged: bool
  if flagged then table.insert(head, 1, Ui.icon("warn")) end
  local kids = { el("div", { class = "gp-fl-h" .. (if flagged then " gp-fl-flag" else "") }, head) }
  if not st.tone then
-  -- Unchanged: one box across both lanes.
-  -- Two names here are alternatives, so they share the box rather than sitting on the two rows.
+  -- Unchanged: one box across both lanes, with whichever side the stage names.
   local names = if #st.after > 0 then st.after else st.before
-  local top = { name(names[1]) }
-  if names[2] then table.insert(top, span("gp-fb-or", "or")); table.insert(top, name(names[2])) end
-  local inner = { el("div", { class = "gp-fb-top gp-fb-alts" }, top) }
-  if st.note then table.insert(inner, el("div", { class = "gp-fb-note" }, { span("gp-fb-note-text", st.note) })) end
-  table.insert(kids, el("div", { class = "gp-fc gp-fc-span" }, { el("div", { class = "gp-fb gp-fb-plain" }, inner) }))
+  table.insert(kids, el("div", { class = "gp-fc gp-fc-span" }, { box(names, nil, st.note or st.beforeNote, nil, nil, true) }))
  else
   local go = if st.change then Review.firstStep(r, st.change) else nil
   local removed = st.tone == "removed"
