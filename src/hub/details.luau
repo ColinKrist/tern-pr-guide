@@ -9,6 +9,7 @@ local Host = require("../host")
 local Log = require("../ci/log")
 local Model = require("./model")
 local Prdata = require("../prdata")
+local Refresh = require("./refresh")
 local ReviewFix = require("./review-fix")
 local Runtime = require("./runtime")
 local State = require("./state")
@@ -215,6 +216,8 @@ local function openFixes(b: Block, cx: BlockCx, key: string)
 	local s = b.s
 	if not State.openFixes(s, key) then return end
 	local pr = State.prOf(s, key) :: Model.HubPR
+	-- The All checks row and a re-running check read the list; it is one point, and the popover reuses it.
+	Refresh.loadCheckList(b, cx, key)
 	if b.fixture then
 		local d = sampleDetails(pr)
 		State.setDetails(s, d)

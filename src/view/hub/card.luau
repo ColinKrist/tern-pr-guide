@@ -1,7 +1,9 @@
 --!strict
--- One pull request as a card: chip line, title, optional note, then the repo line. The repo line ends in
--- a slot that holds the checks and age at rest and the split button while the card is hovered or selected,
--- so a card is the same height in every state.
+-- One pull request as a card: chip line, title, optional note, then the repo line. The repo line opens with
+-- "repo #number" and the checks mark, which never move, and ends in a slot that holds the age at rest and the
+-- split button while the card is hovered or selected, so a card is the same height in every state.
+local Checks = require("../../hub/checks")
+local ChecksView = require("./checks")
 local Model = require("../../hub/model")
 local Paths = require("./paths")
 local State = require("../../hub/state")
@@ -13,14 +15,11 @@ local M = {}
 
 local CHIP_CLASS: { [string]: string } = {
 	bad = "gp-hc-chip-bad", ["bad-soft"] = "gp-hc-chip-bad-soft", info = "gp-hc-chip-info", wait = "gp-hc-chip-wait",
-	done = "gp-hc-chip-done", agent = "gp-hc-chip-agent", running = "gp-hc-chip-wait",
+	done = "gp-hc-chip-done", agent = "gp-hc-chip-agent",
 }
 
 -- One chip pill; the Next up banner draws the same one.
 function M.chip(chip: State.Chip): Node
-	if chip.kind == "running" then
-		return el("span", { class = "gp-hc-chip gp-hc-chip-wait" }, { span("gp-hc-spin", ""), span("gp-hc-chip-text", chip.text) })
-	end
 	return span("gp-hc-chip " .. CHIP_CLASS[chip.kind], chip.text)
 end
 
@@ -32,20 +31,6 @@ local function chipLine(card: State.Card, box: Node?): Node
 	-- Three or more chips leave no room for the detail to read, so it is dropped.
 	if card.detail and #card.chips < 3 then table.insert(out, span("gp-hc-why gp-hc-why-" .. (card.detailKind or "bad"), card.detail)) end
 	return el("div", { class = "gp-hc-chips", key = "chips" }, out)
-end
-
--- Checks as one mark and a count, as GitHub shows them.
-local function checks(pr: Model.HubPR): Node?
-	local c = pr.checks
-	if c.state == "none" then return nil end
-	local total = c.passing + c.failing + c.pending
-	local count = c.passing .. "/" .. total
-	if c.state == "passing" then
-		return el("span", { class = "gp-hc-ci gp-hc-ci-ok", key = "ci" }, { Ui.icon("check"), span("gp-hc-ci-n", count) })
-	elseif c.state == "failing" then
-		return el("span", { class = "gp-hc-ci gp-hc-ci-bad", key = "ci" }, { Ui.icon("warn"), span("gp-hc-ci-n", count) })
-	end
-	return el("span", { class = "gp-hc-ci", key = "ci" }, { span("gp-hc-spin", ""), span("gp-hc-ci-n", count) })
 end
 
 -- The split button: the main action with its key while selected, and the attached ▾ for the alternatives.
@@ -83,11 +68,17 @@ local function toneOf(card: State.Card): string
 	return "wait"
 end
 
-function M.view(card: State.Card, now: number): Node
+function M.view(card: State.Card, now: number, checksOpen: boolean?): Node
 	local pr = card.pr
 	local main = card.main
 	local lead: { Node } = {}
-	table.insert(lead, span("gp-hc-repo", (string.match(pr.repo, "[^/]+$") :: string) .. " #" .. pr.number))
+	-- The repo name gives way before the number does.
+	table.insert(lead, el("span", { class = "gp-hc-repo" }, { span("gp-hc-repo-name", string.match(pr.repo, "[^/]+$") :: string), span("gp-hc-num", "#" .. pr.number) }))
+	local mark = Checks.mark(pr.checks)
+	if mark then
+		table.insert(lead, span("gp-hcl-sep", "·"))
+		table.insert(lead, ChecksView.mark(pr.key, mark, checksOpen == true))
+	end
 	local named = card.detail ~= nil and string.find(card.detail, "@" .. pr.author, 1, true) ~= nil
 	if pr.role == "review" then
 		if not named then table.insert(lead, span("gp-hc-who", "@" .. pr.author)) end
@@ -98,12 +89,10 @@ function M.view(card: State.Card, now: number): Node
 	end
 	if pr.behind then table.insert(lead, span("gp-hc-who", "Behind main")) end
 
-	local info: { Node } = {}
-	local ci = checks(pr)
-	if ci then table.insert(info, ci) end
-	table.insert(info, span("gp-hc-age", Model.ago(pr.lastActivityAt, now)))
-
-	local meta: { Node } = { el("span", { class = "gp-hc-lead", key = "lead" }, lead), el("span", { class = "gp-hc-stats", key = "stats" }, info) }
+	local meta: { Node } = {
+		el("span", { class = "gp-hc-lead", key = "lead" }, lead),
+		el("span", { class = "gp-hc-stats", key = "stats" }, { span("gp-hc-age", Model.ago(pr.lastActivityAt, now)) }),
+	}
 	if card.asking then
 		meta[1] = el("span", { class = "gp-hc-lead", key = "lead" }, { span("gp-hc-ask", card.asking) })
 		table.insert(meta, el("span", { class = "gp-hc-acts", key = "acts" }, { confirmButtons(card) }))

@@ -1,7 +1,7 @@
 --!strict
--- GitHub Actions logs for the fixes page: which failing checks are Actions jobs, the `gh run view --log-failed`
--- command that reads one, and the cut that keeps the lines around its errors. It reaches GitHub only through the
--- runner it is given.
+-- GitHub Actions for the fixes page and Re-run failed checks: which failing checks are Actions jobs, the
+-- `gh run view --log-failed` command that reads one, the cut that keeps the lines around its errors, and
+-- `gh run rerun --failed` for each failed run. It reaches GitHub only through the runner it is given.
 local Log = require("./log")
 
 local M = {}
@@ -26,33 +26,46 @@ function M.command(repo: string, check: Log.Check): { string }
 	return argv
 end
 
-local function isError(text: string, flagged: boolean): boolean
-	if flagged then return true end
-	return string.find(text, "%f[%a][Ee]rror[%s:%[]") ~= nil or string.find(text, "FAIL", 1, true) ~= nil
-		or string.find(text, "Traceback", 1, true) ~= nil or string.find(text, "panic:", 1, true) ~= nil
-		or string.find(text, "✕", 1, true) ~= nil or string.find(text, "✗", 1, true) ~= nil
+-- Runs the failed jobs of one workflow run again; zero tokens, and never sent but by a press.
+function M.retryCommand(repo: string, runId: number): { string }
+	return { "gh", "run", "rerun", tostring(runId), "--failed", "--repo", repo }
 end
 
--- The lines worth reading: a window around each error, gaps marked, or the tail when nothing reads as one.
-local function cut(lines: { string }, errors: { boolean }): { string }
+local function reason(out: Log.Out): string?
+	if out.timed_out then return "gh timed out" end
+	if out.status == 0 then return nil end
+	return string.match(out.stderr, "[^\n]+") or ("gh exited " .. out.status)
+end
+
+-- The lines worth reading: a window around each error, gaps marked, or the tail when nothing reads as one. Lines
+-- before `start`, the job's first step, are the runner's setup: kept only when they are errors.
+local function cut(lines: { Log.Line }, start: number): { Log.Line }
+	local function isError(i: number): boolean
+		local line = lines[i]
+		return line.kind == "text" and line.level == "error"
+	end
 	local keep: { boolean } = {}
 	local any = false
 	for i in lines do
-		if errors[i] then
+		if isError(i) then
 			any = true
-			for k = math.max(1, i - BEFORE), math.min(#lines, i + AFTER) do keep[k] = true end
+			keep[i] = true
+			for k = math.max(start, i - BEFORE), math.min(#lines, i + AFTER) do keep[k] = true end
 		end
 	end
 	if not any then
-		for k = math.max(1, #lines - TAIL + 1), #lines do keep[k] = true end
+		for k = math.max(start, #lines - TAIL + 1), #lines do keep[k] = true end
 	end
-	local out: { string } = {}
+	local out: { Log.Line } = {}
 	local skipped = 0
-	for i, text in lines do
+	for i, line in lines do
 		if keep[i] then
-			if skipped > 0 then table.insert(out, "… " .. skipped .. (if skipped == 1 then " line omitted" else " lines omitted")) end
+			if skipped > 0 then
+				local gap: Log.Line = { kind = "gap", count = skipped }
+				table.insert(out, gap)
+			end
 			skipped = 0
-			if #out < MAX_LINES then table.insert(out, text) end
+			if #out < MAX_LINES then table.insert(out, line) end
 		else
 			skipped += 1
 		end
@@ -63,7 +76,7 @@ end
 -- `gh run view --log-failed` prints "job<TAB>step<TAB>timestamp text" per line; a section per job.
 function M.parse(stdout: string): Log.Log
 	local order: { string } = {}
-	local byJob: { [string]: { lines: { string }, errors: { boolean } } } = {}
+	local byJob: { [string]: { lines: { Log.Line }, start: number? } } = {}
 	for raw in string.gmatch(stdout, "([^\n]*)\n?") do
 		local job, rest = string.match(raw, "^([^\t]*)\t[^\t]*\t(.*)$")
 		if job == nil then job, rest = "", raw end
@@ -72,26 +85,21 @@ function M.parse(stdout: string): Log.Log
 		text = string.gsub(text, "^%d%d%d%d%-%d%d%-%d%dT[%d:%.]+Z ?", "")
 		text = string.gsub(text, "\27%[[%d;]*[A-Za-z]", "")
 		text = string.gsub(text, "\r$", "")
-		local flagged = false
-		if string.sub(text, 1, 8) == "##[error" then
-			text, flagged = string.gsub(text, "^##%[error%]", ""), true
-		end
-		text = string.gsub(text, "^##%[%a+%]", "")
-		if raw ~= "" and not string.find(rest :: string, "##[endgroup]", 1, true) then
+		if raw ~= "" and not string.find(text, "##[endgroup]", 1, true) then
 			local name = job :: string
 			if byJob[name] == nil then
-				byJob[name] = { lines = {}, errors = {} }
+				byJob[name] = { lines = {}, start = nil }
 				table.insert(order, name)
 			end
 			local entry = byJob[name]
-			table.insert(entry.lines, text)
-			entry.errors[#entry.lines] = isError(text, flagged)
+			table.insert(entry.lines, Log.line(text))
+			if entry.start == nil and string.sub(text, 1, 13) == "##[group]Run " then entry.start = #entry.lines end
 		end
 	end
 	local sections: { Log.Section } = {}
 	for _, name in order do
 		local entry = byJob[name]
-		table.insert(sections, { title = name, lines = cut(entry.lines, entry.errors) })
+		table.insert(sections, { title = name, lines = cut(entry.lines, entry.start or 1) })
 	end
 	return { sections = sections }
 end
@@ -103,12 +111,21 @@ function M.provider(run: Log.Run): Log.Provider
 		end,
 		read = function(check: Log.Check, repo: string, done: (Log.Log?, string?) -> ())
 			run(M.command(repo, check), { timeout_ms = LOG_MS }, function(out)
-				if out.timed_out then return done(nil, "gh timed out") end
-				if out.status ~= 0 then return done(nil, (string.match(out.stderr, "[^\n]+") or ("gh exited " .. out.status))) end
+				local why = reason(out)
+				if why then return done(nil, why) end
 				local log = M.parse(out.stdout)
 				if #log.sections == 0 then return done(nil, "the run has no failed steps") end
 				done(log, nil)
 			end)
+		end,
+		retry = function(checks: { Log.Check }, repo: string, done: (number?, string?) -> ())
+			local ids: { number } = {}
+			for _, check in checks do
+				if check.runId and table.find(ids, check.runId) == nil then table.insert(ids, check.runId) end
+			end
+			Log.each(ids, function(id, after)
+				run(M.retryCommand(repo, id), { timeout_ms = LOG_MS }, function(out) after(reason(out)) end)
+			end, done)
 		end,
 	}
 end

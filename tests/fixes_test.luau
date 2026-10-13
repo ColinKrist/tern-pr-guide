@@ -185,7 +185,9 @@ local function commands_()
 	assert(value.threads[1].replies == 1 and value.threads[1].bot == false and value.changedPaths[1] == "smoke/conflict.txt")
 	fake.expectOnly(1)
 	local call = fake.calls[1].argv
-	assert(#call == 7 and call[5]:find("query Details", 1, true) == 7 and call[6] == "-f" and call[7] == "id=" .. pr.id, table.concat(call, " "))
+	assert(#call == 9 and call[5]:find("query Details", 1, true) == 7 and call[6] == "-f" and call[7] == "id=" .. pr.id, table.concat(call, " "))
+	-- The base comparison names the pull ref, which a fork's PR has in the base repository too.
+	assert(call[8] == "-f" and call[9] == "head=refs/pull/6/head", call[9])
 	assert(call[5]:find("annotations(first: 20)", 1, true) ~= nil)
 
 	-- A failing check parses with its run id and workflow; a response without the node is an error value.

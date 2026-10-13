@@ -2,6 +2,7 @@
 -- The hub page: header (title, search, freshness, settings), the tab row, the board's columns, the
 -- card folds and the hint bar. Everything it draws was decided by `State.project`.
 local Card = require("./card")
+local ChecksView = require("./checks")
 local Help = require("./help")
 local Hints = require("./hints")
 local Link = require("./link")
@@ -124,7 +125,7 @@ local function cards(s: State.State, list: { State.Card }): { Node }
 				span("gp-hub-repo-n", tostring(count)),
 			}))
 		end
-		table.insert(out, Card.view(card, s.now))
+		table.insert(out, Card.view(card, s.now, s.checks ~= nil and s.checks.key == card.pr.key))
 	end
 	return out
 end
@@ -292,9 +293,14 @@ function M.view(s: State.State, motion: Ui.Motion): Node
 	return el("div", {}, { el("div", { class = rootClass(s), key = "hub" }, { header(s), body(s, motion), Hints.view(s) }) })
 end
 
--- The layer: while a menu or the key panel is open, a scrim that closes it on a click outside, and the overlay.
+-- The layer: while a menu, the checks popover or the key panel is open, a scrim that closes it on a click outside,
+-- and the overlay. The fixes page shows it for the checks popover.
 function M.layer(s: State.State): Node?
-	if s.mode == "menu" and s.menu then
+	if s.mode == "checks" then
+		local popover = ChecksView.view(s)
+		if popover == nil then return nil end
+		return el("div", {}, { el("div", { class = "gp-md-scrim", key = "scrim", actions = { click = "checks-close" } }), popover })
+	elseif s.mode == "menu" and s.menu then
 		return el("div", {}, { el("div", { class = "gp-md-scrim", key = "scrim", actions = { click = "hub-menu-close" } }), Menus.view(s) })
 	elseif s.mode == "confirm" then
 		local selection = State.selection(s)

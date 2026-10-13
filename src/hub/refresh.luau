@@ -1,7 +1,9 @@
 --!strict
 -- The board's live data: the probe, refresh and checks timers armed from `Sync.schedule` (`rearm`), each answer laid onto
--- the newest shared cache there is before it is stored, a refresh asked for now (`refetch`), and the sample board's ⌘R,
--- which steps through recorded refreshes instead.
+-- the newest shared cache there is before it is stored, a refresh asked for now (`refetch`), the sample board's ⌘R,
+-- which steps through recorded refreshes instead, and a pull request's check list for the checks popover and the fixes
+-- page (`loadCheckList`), read again on the checks timer while the popover is open and a check is unfinished.
+local Checks = require("./checks")
 local FilterStore = require("./filter-store")
 local CheckFilter = require("./check-filter")
 local Host = require("../host")
@@ -28,11 +30,23 @@ local loadTandem = HubTandem.loadTandem
 -- Visibility is not observable from a block, so the hub polls for as long as the block exists (parked or in a
 -- background tab). A closed block is found out by a failing render, which ends every chain.
 
-local function running(b: Block): { string }
+-- The open popover's pull request while its list has a check unfinished: the checks timer reads it again.
+local function watchedList(b: Block): Model.HubPR?
+	local pop = b.s.checks
+	if pop == nil then return nil end
+	local load = State.checkLoad(b.s, pop.key)
+	if load == nil or load.state ~= "loaded" or not Checks.unfinished(load.list) then return nil end
+	return State.prOf(b.s, pop.key)
+end
+
+-- The pull requests whose checks are running, for the checks timer; `popover` adds the popover's while its list waits.
+local function running(b: Block, popover: boolean?): { string }
 	local ids = {}
 	for _, pr in b.s.prs do
 		if pr.checks.state == "pending" then table.insert(ids, pr.id) end
 	end
+	local watched = if popover then watchedList(b) else nil
+	if watched and table.find(ids, watched.id) == nil then table.insert(ids, watched.id) end
 	return ids
 end
 
@@ -64,13 +78,38 @@ local function rearm(b: Block, cx: BlockCx)
 	local plan = Sync.schedule({
 		now = Host.time(), refreshedAt = if last and tried then math.max(last, tried) else (last or tried),
 		refreshing = b.flights.refresh, probedAt = sched.probedAt, probeChanged = sched.probeChanged,
-		focusedAt = sched.focusedAt, checksAt = sched.checksAt, running = running(b),
+		focusedAt = sched.focusedAt, checksAt = sched.checksAt, running = running(b, true),
 	})
 	local early = sched.probeChanged or sched.focusedAt ~= nil
 	arm(b, cx, "probe", plan.probe, onProbe)
 	arm(b, cx, "refresh", if early then nil else plan.refresh, onRefresh)
 	arm(b, cx, "debounce", if early then plan.refresh else nil, onRefresh)
 	arm(b, cx, "checks", plan.checks, onChecks)
+end
+
+-- Reads the check list of `key` at its head commit, unless a read is under way or (without `again`) it is already
+-- loaded. The sample board answers from `fixtures/hub/check-lists.luau`.
+local function loadCheckList(b: Block, cx: BlockCx, key: string, again: boolean?)
+	local s = b.s
+	local pr = State.prOf(s, key)
+	if pr == nil or b.closed then return end
+	local load = State.checkLoad(s, key)
+	if load and load.state == "loading" then return end
+	if load and load.state == "loaded" and not again then return end
+	local head = pr.headOid
+	if b.fixture then
+		local sample: any = require("../../fixtures/hub/check-lists")
+		return State.setCheckLoad(s, key, head, { state = "loaded", list = sample.forPr(pr) })
+	end
+	-- A list on show stays while it is read again; only a first read shows the placeholder rows.
+	if not (load and load.state == "loaded") then State.setCheckLoad(s, key, head, { state = "loading" }) end
+	b.github.checkList(pr.id, function(list, err)
+		if b.closed then return end
+		s.now = Host.time()
+		State.setCheckLoad(s, key, head, if list then { state = "loaded", list = list } else { state = "failed", reason = if err then reasonOf(err.message) else "no answer" })
+		rearm(b, cx)
+		draw(b, cx)
+	end)
 end
 
 onProbe = function(b, cx)
@@ -201,6 +240,10 @@ startRefresh = function(b: Block, cx: BlockCx)
 			detectMerges(b, cx)
 			loadFlakes(b, cx)
 			if not b.closed then CheckFilter.read(b, cx, nil) end
+			-- An open fixes page whose head moved (an Update branch, an empty commit) reads the new head's check list, so its
+			-- failing checks show "Re-running".
+			local route = b.s.route
+			if route and route.kind == "fixes" then loadCheckList(b, cx, route.key) end
 		end
 		if b.refetch then
 			b.refetch = false
@@ -236,8 +279,13 @@ end
 
 onChecks = function(b, cx)
 	if b.flights.checks then return end
+	local watched = watchedList(b)
+	if watched then loadCheckList(b, cx, watched.key, true) end
 	local ids = running(b)
-	if #ids == 0 then return rearm(b, cx) end
+	if #ids == 0 then
+		if watched then b.sched.checksAt = Host.time() end
+		return rearm(b, cx)
+	end
 	b.flights.checks = true
 	local readChecks = if next(State.ignoredRepositories(b.s)) ~= nil then b.github.checkNames else b.github.checks
 	readChecks(ids, function(update, err)
@@ -356,6 +404,7 @@ local function stepFixture(b: Block, cx: BlockCx)
 end
 
 return {
+	loadCheckList = loadCheckList,
 	rearm = rearm,
 	refetch = refetch,
 	refetchSoon = refetchSoon,

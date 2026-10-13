@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Checks popover</title>
+<link rel="stylesheet" href="../../tern-tokens.css">
+<link rel="stylesheet" href="../../../guide.css">
+<style>
+/* The approved checks popover (variant A of three). `?open=1` opens it, `?page=fixes` shows the fixes page, `?load=loading|error` the other states, `?theme=light|dark`, `?w=split`. */
+/* Tern window frame (Tern draws this) */
+html, body { margin: 0; height: 100%; }
+body { font: 400 14px/1.5 var(--sans); color: var(--t1); background: var(--page); -webkit-font-smoothing: antialiased; overflow: hidden; display: flex; flex-direction: column; }
+::selection { background: light-dark(rgba(47,111,224,0.18), rgba(138,180,255,0.28)); }
+button { font: inherit; color: inherit; }
+.win { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; padding: 6px; box-sizing: border-box; }
+.pane { position: relative; flex: 1 1 auto; min-height: 0; border-radius: 11px; background: var(--panel); overflow: hidden; display: flex; flex-direction: column; }
+.gp-root { gap: 0; height: 100%; }
+
+/* mockup controls (not product) */
+.mock { flex-shrink: 0; margin: 6px 6px 0; display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; padding: 3px 4px 3px 10px; border-radius: var(--r-ctl); border: 1px dashed var(--l4); background: var(--pop-bg); font-size: 12px; color: var(--t3); }
+.mseg { display: flex; gap: 2px; padding: 2px; border-radius: var(--r-ctl); background: var(--chip-bg); }
+.mseg button { border: 0; background: transparent; padding: 2px 9px; border-radius: var(--r-chip); cursor: pointer; font-size: 12px; font-weight: 600; color: var(--t3); }
+.mseg button.on { background: var(--card); color: var(--t1); box-shadow: 0 1px 2px light-dark(rgba(16,24,40,0.12), rgba(0,0,0,0.4)); }
+
+/* hub page (approximation of the real one) */
+.hub { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.hb-head { flex-shrink: 0; padding: 14px 20px 0; display: flex; flex-direction: column; gap: 10px; box-shadow: inset 0 -1px 0 var(--l2); }
+.hb-title { font-size: 21px; font-weight: 650; }
+.hb-tabs { display: flex; gap: 14px; font-size: 13px; color: var(--t3); }
+.hb-tabs span { padding-bottom: 8px; }
+.hb-tabs .on { color: var(--t1); box-shadow: inset 0 -2px 0 var(--accent); }
+.hb-main { flex: 1 1 auto; min-height: 0; display: flex; }
+.board { flex: 1 1 auto; min-width: 0; overflow-y: auto; display: flex; flex-wrap: wrap; align-content: flex-start; gap: 16px; padding: 16px 20px 24px; align-items: flex-start; }
+.col { flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.col-h { display: flex; gap: 8px; align-items: baseline; padding: 0 2px 2px; font-size: 13px; font-weight: 650; }
+.col-h .n { font-size: 12px; font-weight: 400; color: var(--t3); }
+.hintbar { flex-shrink: 0; display: flex; gap: 16px; align-items: center; padding: 7px 20px; font-size: 12.5px; color: var(--t3); background: var(--panel); box-shadow: inset 0 1px 0 var(--l2); white-space: nowrap; overflow: hidden; }
+.hintbar span { display: inline-flex; gap: 6px; align-items: center; }
+
+/* icon stand-ins: in Tern these are the native `icon` node (check, close, chev-r) */
+.ic { flex-shrink: 0; width: 14px; height: 14px; display: inline-flex; align-items: center; justify-content: center; }
+.ic svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.ic-fail { color: var(--gp-removed); }
+.ic-pass { color: var(--gp-added); }
+.ic-skip { color: var(--t4); }
+.ic-queue::before { content: ''; width: 8px; height: 8px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--t4); }
+.ic .gp-hc-spin { width: 9px; height: 9px; }
+.ic-chev { color: var(--t3); }
+
+/* the card's checks mark: right after repo #num, where nothing moves on hover; the split button takes only the age's place */
+.gp-hc-chk { display: inline-flex; gap: 6px; align-items: center; height: 22px; padding: 0 6px; margin: 0 -4px; border-radius: var(--r-chip); cursor: pointer; transition: background-color 140ms ease; }
+.gp-hc-chk:hover, .gp-hc-chk.open { background: var(--l1); }
+.gp-hc-chk .gp-hc-ci { gap: 4px; }
+.gp-hc-chk .ic { width: 12px; height: 12px; }
+.gp-hc-chk .ic svg { width: 11px; height: 11px; }
+.gp-hc-ci-run { color: var(--gp-changed); }
+.ci-sep { color: var(--t4); }
+
+/* the checks list in the popover */
+.cl { display: flex; flex-direction: column; gap: 1px; }
+.cl-h { display: flex; gap: 8px; align-items: baseline; padding: 10px 8px 3px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--t3); }
+.cl-h:first-child { padding-top: 2px; }
+.cl-h .n { font-variant-numeric: tabular-nums; }
+.cl-row { display: flex; gap: 10px; align-items: center; min-width: 0; height: 28px; padding: 0 8px; border-radius: var(--r-ctl); cursor: pointer; font-size: 13px; transition: background-color 140ms ease; }
+.cl-row:hover { background: var(--l1); }
+.cl-row.hl { background: var(--gp-blue-wash); }
+.cl-row.hl .cl-name { color: var(--gp-blue-ink); }
+.cl-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--tv-font); font-size: 12.5px; color: var(--t1); }
+.cl-skip .cl-name { color: var(--t3); }
+.cl-wf { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--t3); }
+.cl-t { flex-shrink: 0; min-width: 52px; text-align: right; font-size: 12px; color: var(--t3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cl-two { height: auto; align-items: flex-start; padding-top: 5px; padding-bottom: 5px; }
+.cl-two .ic { margin-top: 2px; }
+.cl-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.cl-sub { font-size: 12px; color: var(--t3); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cl-row.hl .cl-sub { color: var(--t2); }
+.cl-more .cl-name { font-family: var(--sans); font-size: 13px; color: var(--t3); }
+.cl-more:hover .cl-name, .cl-more.hl .cl-name { color: var(--t1); }
+/* a check that finishes while the list is open: its row settles from a green wash, color only */
+.cl-row.cl-new { background: var(--gp-success-wash); }
+.cl-row.cl-new.cl-settle { background: transparent; transition: background-color 900ms ease; }
+.cl-row.cl-new.hl.cl-settle { background: var(--gp-blue-wash); }
+.cl-skel { display: flex; gap: 10px; align-items: center; height: 28px; padding: 0 8px; }
+.cl-skel i { display: block; height: 8px; border-radius: 4px; background: var(--l2); }
+.cl-skel i:first-child { width: 10px; height: 10px; border-radius: 50%; }
+.cl-load .cl-skel { animation: cl-pulse 1200ms ease-in-out infinite alternate; }
+@keyframes cl-pulse { from { opacity: 1; } to { opacity: 0.5; } }
+.cl-err { margin: 2px 2px 4px; padding: 9px 12px; border-radius: var(--r-ctl); background: var(--gp-danger-wash); box-shadow: inset 0 0 0 1px var(--gp-danger-wash-line); color: var(--gp-danger-text); font-size: 13px; line-height: 1.45; }
+.cl-empty { padding: 6px 8px 8px; font-size: 13px; color: var(--t3); }
+
+/* the popover, Tern's overlay card anchored under the checks mark it came from */
+.pop { position: absolute; z-index: 30; width: 440px; max-width: calc(100% - 24px); box-sizing: border-box; display: flex; flex-direction: column; border-radius: var(--r-card); background: var(--card); box-shadow: inset 0 0 0 1px var(--l3), 0 1px 2px light-dark(rgba(20, 30, 60, 0.06), rgba(0, 0, 0, 0.5)), 0 16px 40px -18px light-dark(rgba(30, 42, 90, 0.3), rgba(0, 0, 0, 0.7)); }
+.pop.anim { animation: pop-in var(--gp-dur-in) var(--gp-ease-out); }
+@keyframes pop-in { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: none; } }
+.pop-top { display: flex; gap: 8px; align-items: baseline; padding: 12px 14px 6px; white-space: nowrap; }
+.pop-t { font-size: 13px; font-weight: 650; }
+.pop-sha { font-family: var(--tv-font); font-size: 12px; color: var(--t3); }
+.pop-body { max-height: 380px; overflow-y: auto; padding: 0 6px 8px; scrollbar-width: thin; scrollbar-color: var(--l3) transparent; }
+
+/* fixes page */
+.fx { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.fx-hdr { flex-shrink: 0; padding: 14px 20px 12px; display: flex; flex-direction: column; gap: 6px; box-shadow: inset 0 -1px 0 var(--l2); }
+.fx-title { font-size: 21px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fx-status { display: flex; gap: 10px; align-items: center; font-size: 13px; color: var(--t3); }
+.fx-body { flex: 1 1 auto; min-height: 0; display: flex; gap: 28px; padding: 20px; overflow-y: auto; }
+.fx-left { flex: 0 0 360px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+.fx-right { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.fx-g { display: flex; flex-direction: column; gap: 2px; }
+.fx-gh { padding: 0 8px 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--t3); }
+.fx-step { display: flex; gap: 10px; align-items: flex-start; padding: 7px 8px; border-radius: var(--r-ctl); cursor: pointer; }
+.fx-step:hover { background: var(--l1); }
+.fx-step.on { background: var(--gp-blue-wash); box-shadow: inset 3px 0 0 var(--gp-blue-fill); }
+.fx-step .ic { margin-top: 3px; }
+.fx-st { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.fx-st-top { display: flex; gap: 10px; align-items: baseline; min-width: 0; }
+.fx-st-top .fx-state { margin: 0 0 0 auto; }
+.fx-st-a { font-family: var(--tv-font); font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fx-step.on .fx-st-top { display: flex; gap: 10px; align-items: baseline; min-width: 0; }
+.fx-st-top .fx-state { margin: 0 0 0 auto; }
+.fx-st-a { color: var(--gp-blue-ink); }
+.fx-st-b { font-family: var(--tv-font); font-size: 12px; color: var(--t3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fx-step.on .fx-st-b { color: var(--t2); }
+.fx-state { flex-shrink: 0; display: inline-flex; gap: 6px; align-items: center; font-size: 12px; font-weight: 600; white-space: nowrap; margin-top: 2px; color: var(--gp-changed); font-variant-numeric: tabular-nums; }
+.fx-state .gp-hc-spin { width: 8px; height: 8px; }
+.fx-all { display: flex; gap: 8px; align-items: center; min-width: 0; height: 32px; padding: 0 8px; border-radius: var(--r-ctl); cursor: pointer; font-size: 13px; color: var(--t2); box-shadow: inset 0 0 0 1px var(--l2); transition: background-color 140ms ease; white-space: nowrap; }
+.fx-all:hover, .fx-all.open { background: var(--l1); }
+.fx-all .kbd { margin-left: auto; }
+.fx-all .gp-hc-ci { font-size: 12.5px; }
+.fx-log { border-radius: var(--r-card); box-shadow: inset 0 0 0 1px var(--l2); overflow: hidden; }
+.fx-log-h { display: flex; gap: 10px; align-items: center; padding: 8px 12px; font-size: 13px; background: var(--sf-shade); box-shadow: inset 0 -1px 0 var(--l2); white-space: nowrap; }
+.fx-log-h b { font-family: var(--tv-font); font-size: 12.5px; }
+.fx-log-h .m { color: var(--t3); overflow: hidden; text-overflow: ellipsis; }
+.fx-stale { padding: 8px 12px 0; font-size: 12.5px; color: var(--t3); }
+.fx-log pre { margin: 0; padding: 10px 12px 12px; font: 12.5px/19px var(--tv-font); color: var(--t2); white-space: pre-wrap; }
+.fx-log .err { color: var(--gp-removed); }
+
+.flash { position: absolute; bottom: 44px; left: 50%; transform: translateX(-50%); padding: 6px 12px; border-radius: var(--r-ctl); background: var(--pop-bg); box-shadow: inset 0 0 0 1px var(--l3); font-size: 12.5px; color: var(--t2); white-space: nowrap; animation: gp-fade-in var(--gp-dur-in) ease; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pop.anim { animation: gp-fade-in var(--gp-dur-in) ease; }
+  .cl-load .cl-skel { animation: none; }
+}
+</style>
+</head>
+<body>
+
+
+<div class="mock">
+  <span>Page</span><div class="mseg" data-key="page"><button data-v="board">Board</button><button data-v="fixes">Fixes page</button></div>
+  <span>State</span><div class="mseg" data-key="load"><button data-v="ok">Loaded</button><button data-v="loading">Loading</button><button data-v="error">Error</button></div>
+  <span>Theme</span><div class="mseg" data-key="theme"><button data-v="light">Light</button><button data-v="dark">Dark</button></div>
+  <span>Width</span><div class="mseg" data-key="w"><button data-v="wide">Wide</button><button data-v="split">Split</button></div>
+</div>
+<div class="win"><div class="pane" id="pane"><div class="gp-root gp-soft" id="root"></div></div></div>
+
+<script>
+const ICON = {
+  check: '<svg viewBox="0 0 12 12"><path d="M2.5 6.4 5 8.8 9.6 3.4"/></svg>',
+  close: '<svg viewBox="0 0 12 12"><path d="M3.2 3.2l5.6 5.6M8.8 3.2 3.2 8.8"/></svg>',
+  chev: '<svg viewBox="0 0 12 12"><path d="M4.6 2.8 7.8 6 4.6 9.2"/></svg>',
+  skip: '<svg viewBox="0 0 12 12"><path d="M3 6h6"/></svg>',
+};
+const icon = s => s === 'run' ? '<span class="ic"><span class="gp-hc-spin"></span></span>'
+  : s === 'queue' ? '<span class="ic ic-queue"></span>'
+  : s === 'fail' ? `<span class="ic ic-fail">${ICON.close}</span>`
+  : s === 'skip' ? `<span class="ic ic-skip">${ICON.skip}</span>`
+  : `<span class="ic ic-pass">${ICON.check}</span>`;
+
+const t0 = Date.now();
+const S = { page: 'board', load: 'ok', theme: 'dark', w: 'wide', sel: '482', open: false, anim: false, hl: 0, passedOpen: false, flash: '' };
+const q = new URLSearchParams(location.search);
+for (const k of ['page', 'load', 'theme', 'w', 'sel']) if (q.get(k)) S[k] = q.get(k);
+if (q.get('open')) S.open = true;
+if (q.get('passed')) S.passedOpen = true;
+
+// t: seconds running at load; d: seconds a finished check took; finishAt: seconds after load it passes
+const PRS = [
+  { n: '471', col: 'fix', repo: 'tagalingo/app', sha: '4f2a91c', title: 'Persist the query cache across reloads so the dashboard opens warm', age: '3h', checks: [
+    { name: 'typecheck', wf: 'CI', prov: 'GitHub Actions', s: 'run', t: 72, rerun: true },
+    { name: 'e2e (chromium)', wf: 'app', prov: 'Buildkite', s: 'run', t: 318 },
+    { name: 'deploy-preview', wf: 'Deploy', prov: 'GitHub Actions', s: 'queue' },
+    ...pass(11) ] },
+  { n: '482', col: 'rev', repo: 'tagalingo/app', sha: '9c01e7b', title: 'Add streak freeze to the progress screen', age: '2h', checks: [
+    { name: 'e2e (chromium)', wf: 'app', prov: 'Buildkite', s: 'run', t: 384 },
+    { name: 'e2e (webkit)', wf: 'app', prov: 'Buildkite', s: 'run', t: 371, finishAt: 12 },
+    { name: 'deploy-preview', wf: 'Deploy', prov: 'GitHub Actions', s: 'queue' },
+    ...pass(14), { name: 'ios build', wf: 'Mobile', prov: 'GitHub Actions', s: 'skip' }, { name: 'android build', wf: 'Mobile', prov: 'GitHub Actions', s: 'skip' } ] },
+  { n: '129', col: 'rev', repo: 'jubbydev/tandem-orchestrator', sha: 'b77d0aa', title: 'Cache node_modules between Buildkite steps and drop the duplicate install in the lint job that runs before tests', age: '5h', checks: [
+    { name: 'test / linux-arm64-node-24-with-integration-suite', wf: 'tandem', prov: 'Buildkite', s: 'run', t: 1265 },
+    ...pass(6) ] },
+  { n: '88', col: 'rev', repo: 'jubbydev/tern-pr-guide', sha: '1e0c442', title: 'Fix the flaky clock test', age: '1d', checks: pass(9) },
+  { n: '91', col: 'rev', repo: 'jubbydev/tern-pr-guide', sha: '70ab3d1', title: 'Docs: describe the hub budget', age: '1d', checks: [] },
+  { n: '476', col: 'ready', repo: 'tagalingo/app', sha: 'e3f9120', title: 'Bump expo to 54', age: '2d', checks: pass(18) },
+];
+function pass(n) {
+  const names = ['lint', 'typecheck', 'unit (node 22)', 'unit (node 24)', 'build', 'storybook', 'a11y', 'bundle size', 'license scan', 'codeql', 'format', 'i18n keys', 'migrations', 'api contract', 'web build', 'docs', 'smoke', 'sbom'];
+  return names.slice(0, n).map((name, i) => ({ name, wf: i % 3 ? 'CI' : 'Checks', prov: 'GitHub Actions', s: 'pass', d: 38 + (i * 53) % 400 }));
+}
+const pr = n => PRS.find(p => p.n === n);
+const sec = () => Math.floor((Date.now() - t0) / 1000);
+const clock = s => s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s` : `${Math.floor(s / 3600)}h ${String(Math.floor(s % 3600 / 60)).padStart(2, '0')}m`;
+const kbd = k => `<span class="kbd">${k}</span>`;
+const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+
+function counts(p) {
+  const c = { fail: 0, run: 0, queue: 0, pass: 0, skip: 0 };
+  for (const x of p.checks) c[x.s]++;
+  return c;
+}
+
+// the card's mark: failing in red, unfinished in amber with the spinner, all done in green
+function ciMark(p) {
+  if (!p.checks.length) return '';
+  const c = counts(p), bits = [];
+  if (c.fail) bits.push(`<span class="gp-hc-ci gp-hc-ci-bad">${icon('fail')}${c.fail}</span>`);
+  if (c.run + c.queue) bits.push(`<span class="gp-hc-ci gp-hc-ci-run"><span class="gp-hc-spin"></span>${c.run + c.queue} pending</span>`);
+  if (!bits.length) bits.push(`<span class="gp-hc-ci gp-hc-ci-ok">${icon('pass')}${c.pass}</span>`);
+  const open = S.open && S.sel === p.n && S.page === 'board' ? 'open' : '';
+  return `<span class="gp-hc-chk ${open}" data-chk="${p.n}" title="Checks (V)">${bits.join('<span class="ci-sep">·</span>')}</span>`;
+}
+
+// rows in reading order: what needs you, what's moving, what's waiting, then what's done (folded)
+function list(p, o) {
+  if (S.load === 'loading') return `<div class="cl cl-load">${[62, 48, 70].map(w => `<div class="cl-skel"><i></i><i style="width:${w}%"></i></div>`).join('')}</div>`;
+  if (S.load === 'error') return `<div class="cl"><div class="cl-err">Couldn't load checks: GitHub's rate limit resets at 14:05</div></div>`;
+  if (!p.checks.length) return `<div class="cl"><div class="cl-empty">No checks on ${p.sha}</div></div>`;
+  const e = sec(), out = [];
+  let i = 0;
+  const row = (c, cls, inner) => `<div class="cl-row ${cls} ${o.hl === i ? 'hl' : ''}" data-row="${i++}" ${c ? `title="${esc(c.name)} · ${c.prov}"` : ''}>${inner}</div>`;
+  const check = c => {
+    const t = c.s === 'run' ? `<span data-since="${c.t}">${clock(c.t + e)}</span>` : c.s === 'queue' ? 'Queued' : c.s === 'skip' ? 'Skipped' : `took ${clock(c.d)}`;
+    return row(c, `cl-two ${c.s === 'skip' ? 'cl-skip' : ''} ${c.fresh ? 'cl-new' : ''}`, `${icon(c.s)}<span class="cl-text"><span class="cl-name">${esc(c.name)}</span><span class="cl-sub">${esc(c.wf)} · ${t}</span></span>`);
+  };
+  const by = s => p.checks.filter(c => c.s === s);
+  for (const [s, label] of [['fail', 'Failing'], ['run', 'Running'], ['queue', 'Queued']]) {
+    const xs = by(s);
+    if (xs.length) out.push(`<div class="cl-h">${label} <span class="n">${xs.length}</span></div>`, ...xs.map(check));
+  }
+  const done = [...by('pass'), ...by('skip')], fresh = done.filter(c => c.doneAt != null), rest = done.filter(c => c.doneAt == null);
+  if (done.length) {
+    out.push(`<div class="cl-h">Passed <span class="n">${by('pass').length}</span>${by('skip').length ? `<span>· Skipped <span class="n">${by('skip').length}</span></span>` : ''}</div>`, ...fresh.map(check));
+    if (S.passedOpen || !o.fold) out.push(...rest.map(check));
+    else if (rest.length) out.push(row(null, 'cl-more', `<span class="ic ic-chev">${ICON.chev}</span><span class="cl-name">Show ${fresh.length ? `${rest.length} more` : rest.length}</span>`));
+  }
+  return `<div class="cl">${out.join('')}</div>`;
+}
+const rowsIn = el => el ? el.querySelectorAll('.cl-row').length : 0;
+
+function split(p) {
+  const [label, key] = p.col === 'fix' ? ['Fix with agent', 'A'] : p.col === 'ready' ? ['Merge', 'M'] : ['Copy link', 'C'];
+  return `<span class="gp-hc-acts"><span class="gp-sb ${S.sel === p.n ? 'gp-sb-on' : ''} gp-sb-split"><span class="gp-sb-main">${label}<span class="sf-kbd ${S.sel === p.n ? '' : 'gp-sb-nokey'}">${kbd(key)}</span></span><span class="gp-sb-more">▾</span></span></span>`;
+}
+function card(p) {
+  const sel = S.sel === p.n;
+  const chip = p.col === 'fix' ? '<span class="gp-hc-chip gp-hc-chip-bad">Checks failing</span><span class="gp-hc-why gp-hc-why-bad">typecheck failed</span>'
+    : p.col === 'ready' ? '<span class="gp-hc-chip gp-hc-chip-done">Ready</span>' : '<span class="gp-hc-chip gp-hc-chip-wait">Waiting on review</span>';
+  const kind = p.col === 'fix' ? 'gp-hc-bad' : p.col === 'ready' ? 'gp-hc-done' : 'gp-hc-wait';
+  return `<div class="gp-hc gp-hc-act ${kind} ${sel ? 'gp-hc-on' : ''}" data-card="${p.n}"><div class="gp-hc-body">
+    <div class="gp-hc-chips">${chip}</div>
+    <div class="gp-hc-title">${esc(p.title)}</div>
+    <div class="gp-hc-meta"><span class="gp-hc-lead"><span class="gp-hc-repo"><span class="gp-hc-repo-name">${p.repo}</span><span class="gp-hc-num">#${p.n}</span></span>${p.checks.length ? `<span class="ci-sep">·</span>${ciMark(p)}` : ''}</span><span class="gp-hc-stats"><span class="gp-hc-age">${p.age}</span></span>${split(p)}</div>
+    </div></div>`;
+}
+
+const head = p => `<span class="pop-t">Checks</span><span class="pop-sha">${p.sha}</span>`;
+const popover = p => `<div class="pop ${S.anim ? 'anim' : ''}" id="pop"><div class="pop-top">${head(p)}</div><div class="pop-body" data-list>${list(p, { hl: S.hl, fold: true, wf: true })}</div></div>`;
+const cur = () => S.page === 'fixes' ? pr('471') : pr(S.sel);
+
+function hints() {
+  const listOpen = S.open;
+  let keys;
+  if (!listOpen) {
+    keys = S.page === 'fixes' ? [['⏎', 'Open log'], ['V', 'All checks'], ['⇧R', 'Re-run failed'], ['?', 'Keys']]
+      : [['⏎', 'Open'], ['V', 'Checks'], ['C', 'Copy link'], ['?', 'Keys']];
+  } else {
+    const p = cur(), hl = document.querySelector(`[data-list] .cl-row[data-row="${S.hl}"]`);
+    const enter = S.load === 'error' ? 'Try again' : S.load === 'loading' || !p.checks.length ? null : hl && hl.classList.contains('cl-more') ? 'Show passed' : 'Open log';
+    keys = [...(enter && S.load !== 'error' ? [['↑↓', 'Move']] : []), ...(enter ? [['⏎', enter]] : []), ...(counts(p).fail ? [['⇧R', 'Re-run failed']] : []), ['Esc', 'Close']];
+  }
+  return `<div class="hintbar" data-hints>${keys.map(([k, l]) => `<span>${kbd(k)}${l}</span>`).join('')}</div>`;
+}
+
+function board() {
+  const narrow = S.w === 'split';
+  const col = (id, name) => { const xs = PRS.filter(p => p.col === id); return `<div class="col"><div class="col-h">${name}<span class="n">${xs.length}</span></div>${xs.map(card).join('')}</div>`; };
+  const p = pr(S.sel);
+  return `<div class="hub"><div class="hb-head"><span class="hb-title">Pull requests</span><div class="hb-tabs"><span class="on">Your pull requests</span><span>Review requests</span></div></div>
+    <div class="hb-main"><div class="board">${col('fix', 'Needs fixes')}${col('rev', 'In review')}${narrow ? '' : col('ready', 'Ready to merge')}</div></div>
+    <div data-hints></div></div>${S.open ? popover(p) : ''}`;
+}
+
+function fixes() {
+  const p = pr('471'), c = counts(p), e = sec(), tc = p.checks[0];
+  const pending = c.run + c.queue;
+  return `<div class="fx"><div class="fx-hdr"><span class="fx-title">${esc(p.title)}</span>
+    <div class="fx-status"><span class="gp-hc-chip gp-hc-chip-bad">Checks failing</span><span>${p.repo} #${p.n}</span></div></div>
+    <div class="fx-body"><div class="fx-left">
+      <div class="fx-g"><div class="fx-gh">Failing checks</div>
+        <div class="fx-step on">${icon('fail')}<span class="fx-st"><span class="fx-st-top"><span class="fx-st-a">typecheck</span>${tc.s === 'run' ? `<span class="fx-state"><span class="gp-hc-spin"></span>Re-running <span data-since="${tc.t}">${clock(tc.t + e)}</span></span>` : ''}</span><span class="fx-st-b">src/lib/query-persister.ts:39</span></span></div>
+      </div>
+      <div class="fx-g"><div class="fx-gh">All checks</div>
+        <div class="fx-all ${S.open ? 'open' : ''}" data-all>${pending ? `<span class="gp-hc-ci gp-hc-ci-run"><span class="gp-hc-spin"></span>${pending} pending</span><span class="ci-sep">·</span>` : ''}<span class="gp-hc-ci gp-hc-ci-ok">${icon('pass')}${c.pass} passed</span>${kbd('V')}</div>
+      </div>
+    </div>
+    <div class="fx-right"><div class="fx-log">
+      <div class="fx-log-h">${icon('fail')}<b>typecheck</b><span class="m">CI · failed on ${p.sha}</span></div>
+      ${tc.s === 'run' ? '<div class="fx-stale">Log from the failed run</div>' : ''}
+      <pre>src/lib/query-persister.ts(39,7): <span class="err">error TS2322: Type 'string | undefined' is not assignable to type 'string'.</span>
+  Type 'undefined' is not assignable to type 'string'.
+
+   37 |   const key = storage.getItem(KEY)
+   38 |   if (!key) return
+<span class="err">   39 |   const value: string = parsed.at</span>
+   40 |   return JSON.parse(value)</pre></div></div>
+    </div><div data-hints></div></div>${S.open ? popover(p) : ''}`;
+}
+
+// full render on a state change; the 1 s tick only rewrites clocks, so hover and scroll survive
+function render() {
+  const keepScroll = document.querySelector('.pop-body')?.scrollTop || 0;
+  document.documentElement.style.colorScheme = S.theme;
+  document.querySelector('.win').style.maxWidth = S.w === 'split' ? '760px' : '';
+  document.querySelectorAll('.mseg').forEach(m => m.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === S[m.dataset.key])));
+  const root = document.getElementById('root');
+  root.innerHTML = (S.page === 'board' ? board() : fixes()) + (S.flash ? `<div class="flash">${S.flash}</div>` : '');
+  const body = document.querySelector('.pop-body');
+  if (body) body.scrollTop = keepScroll;
+  place();
+  root.querySelector('[data-hints]').outerHTML = hints();
+  const fresh = root.querySelectorAll('.cl-new');
+  if (fresh.length) requestAnimationFrame(() => requestAnimationFrame(() => fresh.forEach(r => r.classList.add('cl-settle'))));
+  S.anim = false;
+}
+function place() {
+  const pop = document.getElementById('pop');
+  if (!pop) return;
+  const from = S.page === 'fixes' ? document.querySelector('[data-all]') : document.querySelector(`[data-card="${S.sel}"] .gp-hc-chk`) || document.querySelector(`[data-card="${S.sel}"] .gp-hc-meta`);
+  const r = from.getBoundingClientRect(), box = document.getElementById('pane').getBoundingClientRect();
+  let left = r.left - box.left, top = r.bottom - box.top + 6, origin = 'top left';
+  if (left + pop.offsetWidth > box.width - 12) { left = Math.max(12, r.right - box.left - pop.offsetWidth); origin = 'top right'; }
+  if (top + pop.offsetHeight > box.height - 44) { top = r.top - box.top - pop.offsetHeight - 6; origin = origin.replace('top', 'bottom'); }
+  Object.assign(pop.style, { left: left + 'px', top: top + 'px', transformOrigin: origin });
+}
+function tick() {
+  const e = sec();
+  let changed = false;
+  for (const p of PRS) for (const c of p.checks) if (c.finishAt && c.s === 'run' && e >= c.finishAt) { c.s = 'pass'; c.d = c.t + e; c.doneAt = e; c.fresh = true; changed = true; }
+  if (changed) { render(); for (const p of PRS) for (const c of p.checks) c.fresh = false; return; }
+  document.querySelectorAll('[data-since]').forEach(el => { el.textContent = clock(+el.dataset.since + e); });
+}
+
+function openList(byKey) { S.open = true; S.anim = !byKey; S.hl = 0; S.passedOpen = false; }
+function choose() {
+  if (S.load === 'error') { S.load = 'loading'; setTimeout(() => { S.load = 'ok'; render(); }, 900); return; }
+  const row = document.querySelector(`[data-list] .cl-row[data-row="${S.hl}"]`);
+  if (!row) return;
+  if (row.classList.contains('cl-more')) { S.passedOpen = true; return; }
+  S.flash = `Opens the log for ${row.querySelector('.cl-name').textContent}`;
+  setTimeout(() => { S.flash = ''; render(); }, 1600);
+}
+const order = () => PRS.filter(p => S.w === 'split' ? p.col !== 'ready' : true).map(p => p.n);
+
+document.addEventListener('keydown', e => {
+  const k = e.key, listOpen = S.open;
+  const n = rowsIn(document.querySelector('[data-list]'));
+  if (k === 'Escape') { if (!S.open) return; S.open = false; }
+  else if (k === 'v' || k === 'V') { if (S.open) S.open = false; else openList(true); }
+  else if (listOpen && (k === 'j' || k === 'ArrowDown')) S.hl = Math.min(S.hl + 1, Math.max(0, n - 1));
+  else if (listOpen && (k === 'k' || k === 'ArrowUp')) S.hl = Math.max(S.hl - 1, 0);
+  else if (listOpen && k === 'Enter') choose();
+  else if (S.page === 'board' && ['j', 'k', 'h', 'l', 'ArrowDown', 'ArrowUp'].includes(k)) {
+    const o = order(), i = o.indexOf(S.sel), d = ['j', 'l', 'ArrowDown'].includes(k) ? 1 : -1;
+    S.sel = o[Math.max(0, Math.min(o.length - 1, i + d))];
+  } else return;
+  e.preventDefault(); render();
+});
+// mockup controls get their own listener, so nothing in the page can swallow their clicks
+document.querySelectorAll('.mseg button').forEach(b => b.addEventListener('click', () => {
+  const key = b.parentElement.dataset.key;
+  S[key] = b.dataset.v;
+  if (key === 'page' || key === 'w') S.open = false;
+  render();
+}));
+document.getElementById('root').addEventListener('click', e => {
+  const chk = e.target.closest('[data-chk]');
+  if (chk) { const same = S.open && S.sel === chk.dataset.chk; S.sel = chk.dataset.chk; if (same) S.open = false; else openList(false); return render(); }
+  if (e.target.closest('[data-all]')) { if (S.open) S.open = false; else openList(false); return render(); }
+  const row = e.target.closest('[data-list] .cl-row');
+  if (row) { S.hl = +row.dataset.row; choose(); return render(); }
+  if (S.open && !e.target.closest('.pop')) { S.open = false; if (!e.target.closest('[data-card]')) return render(); }
+  const c = e.target.closest('[data-card]');
+  if (c) { S.sel = c.dataset.card; return render(); }
+});
+window.addEventListener('resize', place);
+setInterval(tick, 1000);
+render();
+</script>
+</body>
+</html>

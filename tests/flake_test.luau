@@ -50,14 +50,10 @@ return function()
 	assert(busy.release.failed == 2 and busy.release.total == 4, "cancelled and skipped runs say nothing")
 	assert(#Github.parseRuns({}) == 0 and #Github.parseRuns({ workflow_runs = { { id = 1 }, "x" } }) == 0)
 
-	-- The re-run command.
-	assert(table.concat(Github.commands.rerun("acme/web", 5107).argv, " ") == "gh run rerun 5107 --failed --repo acme/web")
-
 	-- History and runs: one call each, exact argv; errors are values.
 	local fake = Fake.new({
 		{ prefix = { "gh", "api" }, contains = "runs?branch=main", reply = { stdout = "busy" } },
 		{ prefix = { "gh", "api" }, contains = "runs?head_sha=", reply = { stdout = "rerun" } },
-		{ prefix = { "gh", "run", "rerun" }, reply = { stdout = "" } },
 	})
 	local client = Github.client(fake.run, function(text: string): any
 		if text == "busy" then return Fixture.rawBusy end
@@ -97,15 +93,6 @@ return function()
 	for _, at in { 10, 20 } do retry.read("acme/web", "main", at, function(value) answered += if value == nil then 1 else 0 end) end
 	assert(#broken.calls == 1 and answered == 2, "a failed read is not retried inside the hour")
 
-	-- Re-run: the argv, once per press.
-	local done = 0
-	client.run(Github.commands.rerun("acme/web", 5107), function(_, err)
-		assert(err == nil)
-		done += 1
-	end)
-	assert(done == 1 and #fake.calls == 3)
-	assert(table.concat(fake.calls[3].argv, " ") == "gh run rerun 5107 --failed --repo acme/web")
-
 	-- A rate-limited history is an error value.
 	local limited = Fake.new({ { prefix = { "gh", "api" }, reply = { status = 1, stderr = "gh: API rate limit exceeded for user" } } })
 	local reason: string? = nil
@@ -134,20 +121,20 @@ return function()
 	assert((card.main :: State.CardAction).label == "Fix with agent" and card.flake == nil)
 	assert(#card.more == 1 and card.more[1].act == "card-rerun" and card.more[1].label == "Re-run failed checks" and card.more[1].key == "⇧R")
 	local head = (State.prOf(s, "acme/web#111") :: Model.HubPR).headOid
-	State.setFlake(s, "acme/web#111", { flaky = true, reason = "failed 3 of the last 20 runs on main", runs = { 5107 }, headOid = head })
+	State.setFlake(s, "acme/web#111", { flaky = true, reason = "failed 3 of the last 20 runs on main", headOid = head })
 	card = State.card(s, "acme/web#111") :: State.Card
 	assert((card.main :: State.CardAction).act == "card-rerun" and (card.main :: State.CardAction).key == "⇧R")
 	assert(card.more[1].label == "Fix with agent" and card.more[1].key == "A" and #card.more == 1)
 	assert(card.flake == "Likely flaky: failed 3 of the last 20 runs on main")
-	State.setFlake(s, "acme/web#111", { flaky = false, reason = "Error in a.ts, which this PR changed", runs = { 5107 }, headOid = head })
+	State.setFlake(s, "acme/web#111", { flaky = false, reason = "Error in a.ts, which this PR changed", headOid = head })
 	card = State.card(s, "acme/web#111") :: State.Card
 	assert((card.main :: State.CardAction).label == "Fix with agent" and card.flake == nil, "a real failure is not labelled")
-	State.setFlake(s, "acme/web#111", { flaky = true, reason = "x", runs = { 1 }, headOid = "old" })
+	State.setFlake(s, "acme/web#111", { flaky = true, reason = "x", headOid = "old" })
 	card = State.card(s, "acme/web#111") :: State.Card
 	assert((card.main :: State.CardAction).label == "Fix with agent" and card.flake == nil and State.flakeOf(s, "acme/web#111") == nil, "evidence for an older commit is ignored")
 	-- Flaky checks beside a conflict: the agent stays first, the re-run is in the menu.
 	local both = State.prOf(s, "acme/api#112") :: Model.HubPR
-	State.setFlake(s, both.key, { flaky = true, reason = "x", runs = { 1 }, headOid = both.headOid })
+	State.setFlake(s, both.key, { flaky = true, reason = "x", headOid = both.headOid })
 	local mixed = State.card(s, both.key) :: State.Card
 	assert((mixed.main :: State.CardAction).label == "Fix with agent" and mixed.more[#mixed.more].act == "card-rerun")
 	-- Feedback alone has no failing check, so no re-run: only Summarize is behind the agent.

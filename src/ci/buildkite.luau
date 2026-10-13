@@ -1,8 +1,8 @@
 --!strict
--- Buildkite logs for the fixes page: which failing checks are Buildkite builds, the `bk` commands that find a build's
--- failed jobs (`bk build view --recursive --json`) and read each one (`bk job log --agent`, which already keeps the
--- lines around the errors), and the readers of their output. It reaches Buildkite only through the runner it is
--- given, and `bk` signs in with its own saved credentials.
+-- Buildkite for the fixes page and Re-run failed checks: which failing checks are Buildkite builds, the `bk` commands
+-- that find a build's failed jobs (`bk build view --recursive --json`), read each one (`bk job log --agent`, which
+-- already keeps the lines around the errors) and retry it (`bk job retry`), and the readers of their output. It
+-- reaches Buildkite only through the runner it is given, and `bk` signs in with its own saved credentials.
 local Log = require("./log")
 
 export type Decode = (text: string) -> any
@@ -36,6 +36,10 @@ function M.logCommand(job: string): { string }
 	return { "bk", "job", "log", job, "--agent", "--max-tokens", MAX_TOKENS }
 end
 
+function M.retryCommand(job: string): { string }
+	return { "bk", "job", "retry", job }
+end
+
 -- `bk build view --recursive --json`: the failed command jobs across the build and the builds it triggered.
 function M.parseFailures(doc: any): { Failure }?
 	if type(doc) ~= "table" or type(doc.failures) ~= "table" then return nil end
@@ -49,13 +53,18 @@ function M.parseFailures(doc: any): { Failure }?
 	return out
 end
 
--- `bk job log --agent`: plain text, Buildkite's group markers ("+++ Run tests") kept as plain headings.
-function M.parseLog(stdout: string): { string }
-	local out: { string } = {}
-	for line in string.gmatch(stdout, "([^\n]*)\n?") do
-		table.insert(out, (string.gsub(line, "^[~+%-^][~+%-^][~+%-^] ", "")))
+-- `bk job log --agent`: plain text, Buildkite's group markers ("+++ Run tests") read as headings, and the runs it
+-- left out ("[… 212 lines omitted …]") as gaps.
+function M.parseLog(stdout: string): { Log.Line }
+	local raw: { string } = {}
+	for line in string.gmatch(stdout, "([^\n]*)\n?") do table.insert(raw, line) end
+	while #raw > 0 and string.match(raw[#raw], "^%s*$") do table.remove(raw) end
+	local out: { Log.Line } = {}
+	for _, line in raw do
+		local omitted = string.match(line, "^%[… (%d+) lines? omitted …%]$")
+		local gap: Log.Line? = if omitted then { kind = "gap", count = tonumber(omitted) :: number } else nil
+		table.insert(out, gap or Log.line(line))
 	end
-	while #out > 0 and string.match(out[#out], "^%s*$") do table.remove(out) end
 	return out
 end
 
@@ -85,24 +94,77 @@ function M.provider(run: Log.Run, decode: Decode): Log.Provider
 		nextJob()
 	end
 
+	-- The build's failed jobs: the one its link names, else every failed job `bk` lists.
+	local function failures(check: Log.Check, done: ({ Failure }?, string?) -> ())
+		local build = M.build(check.url) :: Build
+		if build.job then return done({ { id = build.job, name = check.name, org = build.org } }, nil) end
+		run(M.failuresCommand(build), { timeout_ms = BK_MS, env = env(build.org) }, function(out)
+			local why = failed(out)
+			if why then return done(nil, why) end
+			local ok, doc = pcall(decode, out.stdout)
+			local jobs = if ok then M.parseFailures(doc) else nil
+			if jobs == nil then return done(nil, "bk returned output this version can't read") end
+			if #jobs == 0 then return done(nil, "the build has no failed jobs") end
+			for _, job in jobs do
+				if job.org == "" then job.org = build.org end
+			end
+			done(jobs, nil)
+		end)
+	end
+
 	return {
 		owns = function(check: Log.Check): boolean
 			return M.build(check.url) ~= nil
 		end,
 		read = function(check: Log.Check, _repo: string, done: (Log.Log?, string?) -> ())
-			local build = M.build(check.url) :: Build
-			if build.job then return readJobs({ { id = build.job, name = check.name, org = build.org } }, done) end
-			run(M.failuresCommand(build), { timeout_ms = BK_MS, env = env(build.org) }, function(out)
-				local why = failed(out)
-				if why then return done(nil, why) end
-				local ok, doc = pcall(decode, out.stdout)
-				local jobs = if ok then M.parseFailures(doc) else nil
-				if jobs == nil then return done(nil, "bk returned output this version can't read") end
-				if #jobs == 0 then return done(nil, "the build has no failed jobs") end
-				for _, job in jobs do
-					if job.org == "" then job.org = build.org end
-				end
+			failures(check, function(jobs, why)
+				if jobs == nil then return done(nil, why) end
 				readJobs(jobs, done)
+			end)
+		end,
+		-- Each build once: the jobs its links name, or every failed job when a link names the whole build.
+		retry = function(checks: { Log.Check }, _repo: string, done: (number?, string?) -> ())
+			local order: { string } = {}
+			local named: { [string]: { Failure } } = {}
+			local whole: { [string]: Log.Check } = {}
+			for _, check in checks do
+				local build = M.build(check.url) :: Build
+				local id = build.org .. "/" .. build.pipeline .. "/" .. build.number
+				if named[id] == nil then
+					named[id] = {}
+					table.insert(order, id)
+				end
+				if build.job then
+					table.insert(named[id], { id = build.job, name = check.name, org = build.org })
+				else
+					whole[id] = check
+				end
+			end
+			local jobs: { Failure } = {}
+			local taken: { [string]: boolean } = {}
+			local function add(list: { Failure })
+				for _, job in list do
+					if not taken[job.id] then
+						taken[job.id] = true
+						table.insert(jobs, job)
+					end
+				end
+			end
+			Log.each(order, function(id, after)
+				local check = whole[id]
+				if check == nil then
+					add(named[id])
+					return after(nil)
+				end
+				failures(check, function(found, why)
+					if found then add(found) end
+					after(why)
+				end)
+			end, function(_, why)
+				if why then return done(nil, why) end
+				Log.each(jobs, function(job, after)
+					run(M.retryCommand(job.id), { timeout_ms = BK_MS, env = env(job.org) }, function(out) after(failed(out)) end)
+				end, done)
 			end)
 		end,
 	}

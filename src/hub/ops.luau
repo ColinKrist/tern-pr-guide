@@ -9,6 +9,7 @@ local Details = require("./details")
 local FilterStore = require("./filter-store")
 local Fixes = require("./fixes")
 local Github = require("../github")
+local Log = require("../ci/log")
 local Lookups = require("./lookups")
 local Model = require("./model")
 local Refresh = require("./refresh")
@@ -372,18 +373,20 @@ local function confirm(b: Block, cx: BlockCx, _: string)
 	runMerge(b, cx, card.pr, nil)
 end
 
--- Update branch (U): a Ready card that is behind main. Its checks run again, so the card waits on them.
+-- Update branch (U): a Ready card that is behind main, or a fixes page whose details count commits behind the base
+-- (GitHub says BEHIND only where branch protection requires an up-to-date branch). Its checks run again, so the card
+-- waits on them.
 local UPDATE_BUSY = "Updating…"
 
 local function updateBranch(b: Block, cx: BlockCx, key: string)
 	local s = b.s
-	local card = State.card(s, key)
-	if not card or s.busy[key] then return end
-	local pr = card.pr
+	local pr = State.prOf(s, key)
+	if pr == nil or s.busy[key] then return end
 	if not ownershipChecked(b, cx, "update #" .. pr.number) then return end
 	-- One owner per branch: a queued Update branch for a PR Tandem took meanwhile sends nothing.
 	if pr.tandem then return cx:toast("error", "Couldn't update #" .. pr.number .. ": " .. TANDEM_OWNS, pr.repo) end
-	if not pr.behind or pr.conflicts then return cx:toast("info", "#" .. pr.number .. " isn't behind " .. pr.baseBranch, pr.key) end
+	local action = State.branchAction(s, key)
+	if not (pr.behind or (action and action.kind == "update")) or pr.conflicts then return cx:toast("info", "#" .. pr.number .. " isn't behind " .. pr.baseBranch, pr.key) end
 	if b.fixture then return cx:toast("info", "The sample board doesn't update branches", pr.key) end
 	local head = pr.headOid
 	State.setBusy(s, key, UPDATE_BUSY)
@@ -408,8 +411,53 @@ local function updateBranch(b: Block, cx: BlockCx, key: string)
 	end)
 end
 
--- Re-run failed checks (⇧R, behind Fix checks ▾): `gh run rerun <id> --failed` for each failing workflow run of the
--- card, one at a time. Only a press runs it. The runs come from the evidence on hand, else from the details.
+-- Push empty commit (U, after the inline question): a fixes page whose branch is up to date with its base gets a commit
+-- that changes nothing, so every check runs again, for a check that can't be re-run on its own.
+local PUSH_BUSY = "Pushing…"
+
+local function pushEmpty(b: Block, cx: BlockCx, key: string)
+	local s = b.s
+	local pr = State.prOf(s, key)
+	if pr == nil or s.busy[key] then return end
+	if not ownershipChecked(b, cx, "push to #" .. pr.number) then return end
+	if pr.tandem then return cx:toast("error", "Couldn't push an empty commit: " .. TANDEM_OWNS, pr.repo) end
+	local action = State.branchAction(s, key)
+	if action == nil or action.kind ~= "empty" then return cx:toast("info", "#" .. pr.number .. " isn't up to date with " .. pr.baseBranch, pr.key) end
+	if b.fixture then return cx:toast("info", "The sample board doesn't push commits", pr.key) end
+	local branch, head = action.branch, pr.headOid
+	local function fail(err: Model.Error?)
+		if b.closed then return end
+		State.setBusy(s, key, nil)
+		local message = if err then err.message else "no answer"
+		local reason = if string.find(message, "fast forward", 1, true) then "the branch moved; refresh and try again" else reasonOf(message)
+		cx:toast("error", "Couldn't push an empty commit: " .. reason, pr.repo)
+		draw(b, cx)
+	end
+	State.setBusy(s, key, PUSH_BUSY)
+	draw(b, cx)
+	b.github.run(Github.commands.headTree(branch.repo, head), function(tree, err)
+		if err or tree == nil then return fail(err) end
+		b.github.run(Github.commands.emptyCommit(branch.repo, string.match(tree, "%S+") or "", head), function(sha, err2)
+			if err2 or sha == nil then return fail(err2) end
+			b.github.run(Github.commands.moveBranch(branch.repo, branch.name, string.match(sha, "%S+") or ""), function(_, err3)
+				if err3 then return fail(err3) end
+				if b.closed then return end
+				if s.busy[key] == PUSH_BUSY then State.setBusy(s, key, nil) end
+				keepCache(b, cx, function()
+					s.acted[key] = true
+					State.branchUpdated(s, key)
+				end, key, head)
+				if b.closed then return end
+				cx:toast("success", "Pushed an empty commit to #" .. pr.number, pr.repo)
+				refetchSoon(b, cx)
+				draw(b, cx)
+			end)
+		end)
+	end)
+end
+
+-- Re-run failed checks (⇧R, behind Fix checks ▾): the card's failing checks, read from the details, go to the CI
+-- module that owns them, which re-runs each of its runs or builds once. Only a press runs it.
 local function rerun(b: Block, cx: BlockCx, key: string)
 	local s = b.s
 	local pr = State.prOf(s, key)
@@ -421,41 +469,38 @@ local function rerun(b: Block, cx: BlockCx, key: string)
 		cx:toast("error", "Couldn't re-run checks on #" .. pr.number .. ": " .. reasonOf(reason), pr.repo)
 		draw(b, cx)
 	end
-	local function go(ids: { number })
-		if #ids == 0 then return fail("GitHub lists no workflow run for the failing checks") end
-		State.setBusy(s, key, "Re-running…")
-		draw(b, cx)
-		local function step(i: number)
-			if b.closed then return end
-			if i > #ids then
-				State.setBusy(s, key, nil)
-				b.flakeTried[pr.key .. "@" .. pr.headOid] = nil
-				State.setFlake(s, key, nil)
-				cx:toast("success", "Re-running failed checks on #" .. pr.number, pr.repo)
-				refetchSoon(b, cx)
-				return draw(b, cx)
-			end
-			b.github.run(Github.commands.rerun(pr.repo, ids[i]), function(_, err)
-				if b.closed then return end
-				if err then return fail(err.message) end
-				step(i + 1)
-			end)
-		end
-		step(1)
-	end
-	local known = State.flakeOf(s, key)
-	if known and #known.runs > 0 then return go(known.runs) end
 	State.setBusy(s, key, "Reading checks…")
 	draw(b, cx)
 	b.github.details(pr, function(d, err)
 		if b.closed then return end
-		State.setBusy(s, key, nil)
 		if d == nil then return fail(if err then err.message else "no answer") end
-		local ids: { number } = {}
-		for _, check in d.checks do
-			if check.runId and table.find(ids, check.runId) == nil then table.insert(ids, check.runId) end
+		local failing: { Log.Check } = {}
+		for _, check in d.checks do table.insert(failing, check) end
+		if #failing == 0 then return fail("GitHub lists no failing checks") end
+		local groups, unowned = Log.byProvider(b.ci, failing)
+		if #unowned > 0 then
+			local more = if #unowned > 1 then " and " .. (#unowned - 1) .. " more" else ""
+			cx:toast("error", "Couldn't re-run " .. unowned[1].name .. more .. ": no CI module reads " .. (if #unowned > 1 then "them" else "it"), pr.repo)
 		end
-		go(ids)
+		if #groups == 0 then
+			State.setBusy(s, key, nil)
+			return draw(b, cx)
+		end
+		State.setBusy(s, key, "Re-running…")
+		draw(b, cx)
+		Log.each(groups, function(group: Log.Group, after)
+			local ok, thrown = pcall(group.provider.retry, group.checks, pr.repo, function(_, why) after(why) end)
+			if not ok then after(tostring(thrown)) end
+		end, function(_, why)
+			if b.closed then return end
+			if why then return fail(why) end
+			State.setBusy(s, key, nil)
+			b.flakeTried[pr.key .. "@" .. pr.headOid] = nil
+			State.setFlake(s, key, nil)
+			cx:toast("success", "Re-running failed checks on #" .. pr.number, pr.repo)
+			refetchSoon(b, cx)
+			draw(b, cx)
+		end)
 	end)
 end
 
@@ -689,6 +734,7 @@ return {
 	confirmCancel = confirmCancel,
 	confirm = confirm,
 	updateBranch = updateBranch,
+	pushEmpty = pushEmpty,
 	rerun = rerun,
 	addByLink = addByLink,
 	remove = remove,

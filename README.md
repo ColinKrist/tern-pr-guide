@@ -66,6 +66,11 @@ The **Next up** bar above the board shows the most urgent PR. Drafts and PRs wit
 A PR leaves the board once it merges, from the hub or anywhere else. The folded **Recently merged**
 list at the bottom (`R`) keeps your 20 latest merges from the past 7 days, and ⏎ opens one.
 
+**Checks.** Each card shows its checks as one mark: failing checks in red, unfinished ones as "3
+pending" in amber, and otherwise the passed count in green. Click it or press `V` to list every
+check on the latest commit, grouped Failing, Running, Queued and Passed, with how long each ran.
+`⏎` opens a check's page. While the list is open, running checks update every 30 seconds.
+
 When a PR lands in Needs fixes, its card is outlined in red and the hub's status-line segment
 flashes. Failed merges, failing checks and feedback from a person also show a toast. Conflicts
 don't, because they arrive in bursts when other PRs merge. The segment stays visible while the hub
@@ -127,10 +132,21 @@ and conflicts, each next to its code. Reply to a thread, resolve it, read a chec
 failed checks from the same page.
 
 - **Check logs.** A failing check with no annotations shows its log, cut to the lines around the
-  error, with the changed lines it names shown in their files. This works for GitHub Actions
+  error, with the changed lines it names shown in their files. Error lines are marked in red, with
+  their count in the log's header, and the runner's setup is left out. This works for GitHub Actions
   (through `gh`) and Buildkite (through the [`bk` CLI](https://github.com/buildkite/cli), signed in
   with `bk auth login`; PR Guide asks for the organization in the check's link). Other CI shows the
   check's summary, and `⇧L` opens its page.
+- **Re-run failed checks.** `⇧R` re-runs the failed GitHub Actions runs (`gh run rerun --failed`)
+  and the failed Buildkite jobs (`bk job retry`). A failing check from any other CI is named in the
+  error, since PR Guide can't re-run it.
+  A check that is running again reads "Re-running" with its time, and its log is the failed run's.
+- **Run checks again on a new commit.** For a check that can't be re-run, `U` gives the branch a
+  new head. When the branch is behind its base, **Update branch** merges the base in and the panel
+  says how many commits behind it is. When it is up to date, **Push empty commit** asks first
+  (`⌘⏎` confirms), then adds a commit that changes nothing, through GitHub's API. Neither shows
+  when the branch conflicts with its base.
+  **All checks**, under the steps, opens the checks list (`V`).
 
 - **Agent fixes.** Your OMP agent resolves a conflict or addresses a bot review in an isolated
   worktree, never in your checkout. You follow its progress on the card.
@@ -288,6 +304,7 @@ Press `?` for shortcuts that apply to the current page. In the hub, the panel fo
 | `,` | Choose the repository's merge method |
 | `U` | Update the branch |
 | `⇧R` | Re-run failed checks |
+| `V` | Show the selected card's checks: `j` `k` move, `⏎` opens a check, `Esc` closes |
 | `Q` | Re-request review |
 | `O` | Choose a clone or open a retained worktree |
 | `Space` or ⌘-click | Select cards for a batch action |
@@ -342,6 +359,8 @@ Replies and resolves write to GitHub right away.
 | `E` | Resolve the thread |
 | `⇧L` | Open the check's log |
 | `⇧R` | Re-run failed checks |
+| `U` | Update branch, or push an empty commit when the branch is up to date (`⌘⏎` confirms) |
+| `V` | Show all checks |
 | `G` | Open GitHub's conflict editor |
 | `B` | Show bot comments |
 | `Esc` | Back to the hub with the same card selected |

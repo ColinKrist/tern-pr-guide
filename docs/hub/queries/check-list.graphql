@@ -1,0 +1,14 @@
+# The checks popover: every check on the PR's head commit, with its state, times, details link, and the workflow or
+# app that ran it. Read when the popover or the fixes page opens, and every 30 s while the popover is open and a
+# check is unfinished. Measured 1 point, 0.5-0.6 s (2026-10-12, jubbydev/tern-pr-guide-hub-smoke #17 and a
+# vercel/next.js PR); the cost follows the query's shape, not how many checks come back.
+query CheckList($ids: [ID!]!) {
+  rateLimit { cost remaining limit resetAt }
+  nodes(ids: $ids) { ... on PullRequest { id headRefOid
+    commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes {
+      __typename
+      ... on CheckRun { name status conclusion startedAt completedAt detailsUrl checkSuite { app { name } workflowRun { workflow { name } } } }
+      ... on StatusContext { context state targetUrl createdAt }
+    } } } } } }
+  } }
+}

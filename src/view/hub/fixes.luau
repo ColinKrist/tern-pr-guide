@@ -4,6 +4,8 @@
 -- right shows the code for the step on show with the thread, annotation or conflict pinned in it, and a failed
 -- check's log when it has no annotations.
 -- Everything it draws was decided by `State.fix*` and `Fixes.steps`.
+local Checks = require("../../hub/checks")
+local ChecksView = require("./checks")
 local Log = require("../../ci/log")
 local Fixes = require("../../hub/fixes")
 local Model = require("../../hub/model")
@@ -14,6 +16,8 @@ local Ui = require("../ui")
 local el, span = Ui.el, Ui.span
 
 type Step = Fixes.Step
+
+local rerunning: (s: State.State, check: Fixes.FailingCheck) -> Checks.CheckRow?
 
 local M = {}
 
@@ -109,6 +113,42 @@ end
 
 -- Steps ----------------------------------------------------------------------------------------------------
 
+-- The failing check `check` while it runs again, from the pull request's check list.
+function rerunning(s: State.State, check: Fixes.FailingCheck): Checks.CheckRow?
+	local route = s.route :: State.Route
+	local load = State.checkLoad(s, route.key)
+	return Checks.rerunning(if load and load.state == "loaded" then load.list else nil, check.name)
+end
+
+-- The All checks row under the failing checks: what is still running and what passed, opening the checks popover.
+-- Failing checks count here only when the page lists none of them as steps.
+local function allChecks(s: State.State, pr: Model.HubPR, steps: { Step }): { Node }
+	local listed = false
+	for _, step in steps do
+		if step.check then listed = true end
+	end
+	local load = State.checkLoad(s, pr.key)
+	local mark: Checks.Mark
+	if load and load.state == "loaded" then
+		local c = Checks.counts(load.list)
+		mark = { failing = if listed then 0 else c.failing, pending = c.running + c.queued, passed = c.passed }
+	elseif pr.checks.state ~= "none" then
+		mark = { failing = if listed then 0 else pr.checks.failing, pending = pr.checks.pending, passed = pr.checks.passing }
+	else
+		return {}
+	end
+	local kids = ChecksView.summary(mark, true)
+	table.insert(kids, Ui.spacer())
+	table.insert(kids, Ui.keys("V"))
+	local open = s.checks ~= nil and s.checks.key == pr.key
+	return {
+		span("gp-ccard-h", "All checks"),
+		el("div", { class = "gp-ccard-steps", key = "all" }, {
+			el("div", { class = "gp-fx-all" .. (if open then " gp-fx-all-open" else ""), key = "row", actions = { click = "hub-checks=" .. pr.key } }, kids),
+		}),
+	}
+end
+
 local function stepRow(s: State.State, step: Step, index: number): Node
 	local route = s.route :: State.Route
 	local here = index == route.cur
@@ -118,6 +158,10 @@ local function stepRow(s: State.State, step: Step, index: number): Node
 	if step.path then where = step.path .. (if step.line then ":" .. step.line else "") end
 	local foot: { Node } = { span("gp-fx-pth", where) }
 	if done then table.insert(foot, span("gp-fx-state gp-fx-state-done", "Resolved")) end
+	local again = if step.check then rerunning(s, step.check) else nil
+	if again then
+		table.insert(foot, el("span", { class = "gp-fx-state gp-fx-state-run" }, { span("gp-hc-spin", ""), span("", Checks.rerunText(again, s.now)) }))
+	end
 	local lead: Node = if dot then el("span", { class = "gp-ol-dot gp-fx-dot-done" }, { dot }) else span("gp-ol-dot gp-fx-dot-open", "○")
 	return el("div", { class = "gp-fx-step" .. (if here then " gp-ol-herebox" else ""), key = "s" .. index, actions = { click = "fixes-step=" .. index } }, {
 		el("div", { class = "gp-ol-step" .. (if here then " gp-ol-here" else ""), key = "row" }, {
@@ -130,7 +174,7 @@ local function stepRow(s: State.State, step: Step, index: number): Node
 	})
 end
 
-local function outline(s: State.State, steps: { Step }, bots: { { author: string, count: number } }): Node
+local function outline(s: State.State, pr: Model.HubPR, steps: { Step }, bots: { { author: string, count: number } }): Node
 	local route = s.route :: State.Route
 	local kids: { Node } = {}
 	local first = true
@@ -150,6 +194,7 @@ local function outline(s: State.State, steps: { Step }, bots: { { author: string
 	if #steps == 0 then
 		table.insert(kids, span("gp-fx-muted", if route.loading then "Loading what needs fixing…" else "Nothing left to fix."))
 	end
+	for _, node in allChecks(s, pr, steps) do table.insert(kids, node) end
 	if #bots > 0 then
 		local names: { string } = {}
 		local count = 0
@@ -378,8 +423,13 @@ local function pinned(check: Fixes.FailingCheck, marks: { Fixes.Annotation }, de
 	return out
 end
 
--- A failed job's log in the excerpt's frame: its name, then its lines in the terminal font; the runs a CI left out
--- are muted bars like the excerpt's hidden lines.
+-- A failed job's log in the excerpt's frame: its name and error count, then its lines in the terminal font, errors
+-- marked in Removed Red and step headings as quiet labels; the runs a CI left out are muted bars like the excerpt's
+-- hidden lines.
+local LEVEL_CLASS: { [Log.Level]: string } = {
+	error = "gp-row gp-fx-lerr", heading = "gp-row gp-fx-lhead", command = "gp-row gp-fx-lcmd", plain = "gp-row gp-fx-lplain",
+}
+
 local function logBlock(section: Log.Section, index: number): Node
 	local body: { Node } = {}
 	local run: { Node } = {}
@@ -388,21 +438,22 @@ local function logBlock(section: Log.Section, index: number): Node
 		table.insert(body, lineRun(run, "h" .. #body))
 		run = {}
 	end
-	for k, text in section.lines do
-		local omitted = string.match(text, "^%[?… (%d+) lines? omitted")
-		if omitted then
+	for k, line in section.lines do
+		if line.kind == "gap" then
 			flush()
-			local count = tonumber(omitted) :: number
 			table.insert(body, el("div", { class = "gp-gap gp-fx-gap gp-fx-logskip", key = "skip" .. k }, {
-				span("gp-gap-gut", "⋯"), span("gp-gap-count", count .. " " .. (if count == 1 then "line" else "lines") .. " left out"),
+				span("gp-gap-gut", "⋯"), span("gp-gap-count", line.count .. " " .. (if line.count == 1 then "line" else "lines") .. " left out"),
 			}))
 		else
-			table.insert(run, el("div", { class = "gp-row", key = "r" .. k }, { el("span", { class = "gp-code", text = text }) }))
+			table.insert(run, el("div", { class = LEVEL_CLASS[line.level], key = "r" .. k }, { el("span", { class = "gp-code", text = line.text }) }))
 		end
 	end
 	flush()
+	local errors = Log.errors(section)
+	local head: { Node } = { span("gp-fbase", if section.title ~= "" then section.title else "Log"), Ui.spacer() }
+	if errors > 0 then table.insert(head, span("gp-fx-lcount", errors .. (if errors == 1 then " error" else " errors"))) end
 	return el("div", { class = "gp-excerpt gp-fx-log", key = "log" .. index }, {
-		el("div", { class = "gp-fhead", key = "fhead" }, { span("gp-fbase", if section.title ~= "" then section.title else "Log") }),
+		el("div", { class = "gp-fhead", key = "fhead" }, head),
 		el("div", { class = "gp-body", key = "body" }, body),
 	})
 end
@@ -411,13 +462,30 @@ local function checkPanel(s: State.State, step: Step, pr: Model.HubPR, details: 
 	local check = step.check :: Fixes.FailingCheck
 	local total = pr.checks.passing + pr.checks.failing + pr.checks.pending
 	local meta = (if check.workflow then check.workflow .. " · " else "") .. pr.checks.failing .. " of " .. total .. (if total == 1 then " check failing" else " checks failing")
-	local kids: { Node } = {
-		el("div", { class = "gp-fx-chk", key = "strip" }, {
-			span("gp-fx-cname", check.name), span("gp-fx-cfail", "Failed"), span("gp-fx-cmeta", meta), Ui.spacer(),
-			keyed("", "View log", "⇧L", "fixes-log", itemOn(s, "log")),
-			keyed("", "Re-run failed checks", "⇧R", "fixes-rerun", itemOn(s, "rerun")),
-		}),
-	}
+	-- A check that can't be re-run runs again on a new head: the base merged in, or an empty commit.
+	local branch = State.branchAction(s, pr.key)
+	-- The question takes the strip's whole line, so it never wraps under the other actions.
+	local asking = branch ~= nil and branch.kind ~= "update" and (s.route :: State.Route).ask == true
+	local strip: { Node } = { span("gp-fx-cname", check.name), span("gp-fx-cfail", "Failed") }
+	if not asking then
+		table.insert(strip, span("gp-fx-cmeta", meta))
+		table.insert(strip, Ui.spacer())
+		table.insert(strip, keyed("", "View log", "⇧L", "fixes-log", itemOn(s, "log")))
+		table.insert(strip, keyed("", "Re-run failed checks", "⇧R", "fixes-rerun", itemOn(s, "rerun")))
+	end
+	if branch and branch.kind == "update" then
+		table.insert(strip, span("gp-fx-cmeta", branch.behind .. (if branch.behind == 1 then " commit" else " commits") .. " behind " .. pr.baseBranch))
+		table.insert(strip, keyed("", "Update branch", "U", "fixes-update", itemOn(s, "update")))
+	elseif branch and asking then
+		table.insert(strip, Ui.spacer())
+		table.insert(strip, span("gp-fx-ask", "Push an empty commit to " .. branch.branch.name .. "?"))
+		table.insert(strip, keyed("gp-fx-confirm", "Confirm", "⌘⏎", "fixes-empty-confirm", false))
+		table.insert(strip, keyed("", "Cancel", "esc", "fixes-empty-cancel", false))
+	elseif branch then
+		table.insert(strip, span("gp-fx-cmeta", "Up to date with " .. pr.baseBranch))
+		table.insert(strip, keyed("", "Push empty commit", "U", "fixes-update", itemOn(s, "update")))
+	end
+	local kids: { Node } = { el("div", { class = "gp-fx-chk", key = "strip" }, strip) }
 	-- The evidence, when it says flaky; a real failure says nothing here, its annotations speak.
 	local flake = State.flakeOf(s, pr.key)
 	if flake and flake.flaky and flake.reason then
@@ -438,6 +506,7 @@ local function checkPanel(s: State.State, step: Step, pr: Model.HubPR, details: 
 		for _, ref in Log.refs(load.log, details.changedPaths) do
 			table.insert(marks, { path = ref.path, line = ref.line, level = "failure", title = nil, message = ref.text })
 		end
+		if rerunning(s, check) then table.insert(kids, span("gp-fx-stale", "Log from the failed run")) end
 		for index, section in load.log.sections do table.insert(kids, logBlock(section, index)) end
 		for _, node in pinned(check, marks, details) do table.insert(kids, node) end
 	else
@@ -558,7 +627,12 @@ local function hints(s: State.State, steps: { Step }): Node
 		return el("span", { class = "gp-hb-item gp-hb-opt gp-hb-more", actions = { click = "hub-help" } }, { Ui.keys("?"), span("gp-hb-label", "Shortcuts") })
 	end
 	local kids: { Node } = {}
-	if route.reply and step and step.thread then
+	if s.mode == "checks" then
+		kids = { span("gp-hb-mode", "Checks"), Ui.spacer() }
+		for _, key in ChecksView.hints(s) do table.insert(kids, item(key[1], string.lower(key[2]), true)) end
+	elseif route.ask then
+		kids = { span("gp-hb-mode", "Push an empty commit?"), Ui.spacer(), item("⌘⏎", "push", true), item("esc", "cancel", true) }
+	elseif route.reply and step and step.thread then
 		kids = { span("gp-hb-mode", "Replying to @" .. step.thread.author), Ui.spacer(), item("⌘⏎", "post reply"), item("esc", "cancel") }
 	else
 		local short = if step == nil then "Nothing left to fix" elseif step.check then step.check.name elseif step.path then Text.baseName(step.path) else step.who
@@ -576,6 +650,8 @@ local function hints(s: State.State, steps: { Step }): Node
 		if step and step.check and not (main and main.key == "⇧R") then table.insert(kids, item("⇧L", "view log")) end
 		-- The card's own action already says ⇧R when Re-run moved first.
 		if step and step.check and not (main and main.key == "⇧R") then table.insert(kids, item("⇧R", "re-run")) end
+		local branch = State.branchAction(s, route.key)
+		if step and step.check and branch then table.insert(kids, item("U", if branch.kind == "update" then "update branch" else "push empty commit")) end
 		local card = State.card(s, route.key)
 		if main and main.act == "card-rerun" and card then
 			for _, more in card.more do
@@ -588,6 +664,7 @@ local function hints(s: State.State, steps: { Step }): Node
 			end
 		end
 		if step then table.insert(kids, item("G", if step.group == "conflict" then "resolve on GitHub" else "open on GitHub")) end
+		table.insert(kids, item("V", "all checks"))
 		if #Fixes.bots(State.fixDetails(s) :: Fixes.FixDetails) > 0 then table.insert(kids, item("B", "bot comments")) end
 		table.insert(kids, shortcuts())
 	end
@@ -606,7 +683,7 @@ function M.view(s: State.State, motion: Ui.Motion): Node
 	return el("div", {}, { el("div", { class = rootClass(s), key = "fixes" }, {
 		header(s, pr, steps),
 		el("div", { class = "gp-guide gp-fx-cols" .. (if route.focus == "panel" then " gp-fx-pf" else ""), key = "cols" }, {
-			outline(s, steps, Fixes.bots(details)),
+			outline(s, pr, steps, Fixes.bots(details)),
 			panel(s, motion, pr, details, step),
 		}),
 		hints(s, steps),

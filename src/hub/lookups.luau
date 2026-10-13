@@ -110,15 +110,11 @@ local FLAKE_PRS = 10 -- the most cards read in one pass
 
 local function flakeOf(pr: Model.HubPR, d: Fixes.FixDetails, history: Github.RepoHistory?, runs: { Github.RunRow }?): State.Flake
 	local verdicts: { Model.FlakeVerdict } = {}
-	local ids: { number } = {}
 	for _, check in d.checks do
-		if check.runId then
-			table.insert(verdicts, Model.flake(Github.evidenceFor(check, d.changedPaths, history, runs)))
-			if table.find(ids, check.runId) == nil then table.insert(ids, check.runId) end
-		end
+		if check.runId then table.insert(verdicts, Model.flake(Github.evidenceFor(check, d.changedPaths, history, runs))) end
 	end
 	local verdict = Model.flakeAll(verdicts)
-	return { flaky = verdict.flaky and #ids > 0, reason = verdict.reason, runs = ids, headOid = d.headOid }
+	return { flaky = verdict.flaky and #verdicts > 0, reason = verdict.reason, headOid = d.headOid }
 end
 
 local function loadFlakes(b: Block, cx: BlockCx)

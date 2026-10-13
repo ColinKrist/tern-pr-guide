@@ -42,7 +42,7 @@ type Handler = Runtime.Handler
 local FIXTURES, frameLater, revealSelected, draw = Runtime.FIXTURES, Runtime.frameLater, Runtime.revealSelected, Runtime.draw
 local readCache, storedId, flagged, writeStatus, syncOwnership = Store.readCache, Store.storedId, Store.flagged, Store.writeStatus, Store.syncOwnership
 local loadMerges, detectRepo, setUserMethod = Lookups.loadMerges, Lookups.detectRepo, Lookups.setUserMethod
-local rearm, refetch, stepFixture = Refresh.rearm, Refresh.refetch, Refresh.stepFixture
+local rearm, refetch, stepFixture, loadCheckList = Refresh.rearm, Refresh.refetch, Refresh.stepFixture, Refresh.loadCheckList
 local openFixes, openReviewFix = Details.openFixes, Details.openReviewFix
 local beginAgent, advanceAgentFixture = AgentRun.beginAgent, AgentRun.advanceAgentFixture
 local reviewEffect, fixTarget = Ops.reviewEffect, Ops.fixTarget
@@ -527,6 +527,40 @@ ACTIONS["review-fix-discard-cancel"] = function(b) State.reviewAsk(b.s, false) e
 ACTIONS["review-fix-push"] = function(b, cx) reviewEffect(b, cx, "push") end
 ACTIONS["review-fix-discard-confirm"] = function(b, cx) reviewEffect(b, cx, "discard") end
 
+-- The checks popover: V or a click on a card's checks mark (or the fixes page's All checks row) opens it on that pull
+-- request, and a second press closes it.
+ACTIONS["hub-checks"] = function(b: Block, cx: BlockCx, key: string)
+	local s = b.s
+	local target: string? = if key ~= "" then key elseif s.route then s.route.key else s.selected
+	if target == nil then return end
+	if s.checks and s.checks.key == target then return State.closeChecks(s) end
+	if not s.route then State.select(s, target) end
+	if State.openChecks(s, target) then loadCheckList(b, cx, target) end
+end
+ACTIONS["checks-close"] = function(b)
+	State.closeChecks(b.s)
+end
+ACTIONS["checks-move"] = function(b, cx, delta)
+	State.checksMove(b.s, tonumber(delta) or 0)
+end
+-- ⏎ or a click on a row: a check opens its page where links open (Settings), "Show N" unfolds Passed, and a list that
+-- failed to load is read again.
+local function checksPressed(b: Block, cx: BlockCx, press: State.ChecksPress?)
+	local pop = b.s.checks
+	if press == nil or pop == nil then return end
+	if press.kind == "retry" then return loadCheckList(b, cx, pop.key) end
+	if press.kind == "open" then
+		if press.url == "" then return cx:toast("error", "Couldn't open the check: GitHub gave no link for " .. press.name, pop.key) end
+		openLink(b, cx, press.url)
+	end
+end
+ACTIONS["checks-press"] = function(b, cx)
+	checksPressed(b, cx, State.checksPress(b.s))
+end
+ACTIONS["checks-pick"] = function(b, cx, index)
+	checksPressed(b, cx, State.checksPick(b.s, tonumber(index) or 1))
+end
+
 ACTIONS["fixes-close"] = function(b)
 	State.closeFixes(b.s)
 end
@@ -559,6 +593,24 @@ ACTIONS["fixes-resolve"] = Ops.resolveThread
 ACTIONS["fixes-rerun"] = function(b, cx)
 	local route = b.s.route
 	if route then ACTIONS["card-rerun"](b, cx, route.key) end
+end
+-- U on a failing check: Update branch when the branch is behind its base, or the Push empty commit question when it is
+-- up to date, which ⌘⏎ answers.
+ACTIONS["fixes-update"] = function(b, cx)
+	local route = b.s.route
+	if route == nil then return end
+	local action = State.branchAction(b.s, route.key)
+	if action and action.kind == "empty" then return State.fixAsk(b.s, true) end
+	Ops.updateBranch(b, cx, route.key)
+end
+ACTIONS["fixes-empty-confirm"] = function(b, cx)
+	local route = b.s.route
+	if route == nil or not route.ask then return end
+	State.fixAsk(b.s, false)
+	Ops.pushEmpty(b, cx, route.key)
+end
+ACTIONS["fixes-empty-cancel"] = function(b)
+	State.fixAsk(b.s, false)
 end
 ACTIONS["fixes-log"] = function(b, cx)
 	local _, pr, step = fixTarget(b)
@@ -715,7 +767,7 @@ local block: BlockDef<Block> = {
 				for _, case in evidence.cases do
 					if pr and case.name == name then
 						local verdict = Model.flake(evidence.evidence(case))
-						s.flakes[key] = { flaky = verdict.flaky, reason = verdict.reason, runs = evidence.runIds[key], headOid = pr.headOid }
+						s.flakes[key] = { flaky = verdict.flaky, reason = verdict.reason, headOid = pr.headOid }
 					end
 				end
 			end

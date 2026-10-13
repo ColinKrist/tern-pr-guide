@@ -75,7 +75,7 @@ Rules and functions to drop:
 - `src/hub/model.luau`: the first rule of `classify` (a PR with `pr.tandem` goes to In review), `parseTandemWatch`, `tandemFlags` and `handoffReason`.
 - `src/hub/state.luau`: the `card-handoff` actions ("Hand off to Tandem"), the "Waiting on Tandem" chip, the `pr.tandem` branches in the card builders and `dropObsoleteAgents`'s watched-PR rule.
 - `src/hub/store.luau`: `storedNow`, `joinOwnership`, `renewed`, `flagPrs`, `flagged`, `joinShared`, `joinOwned`, `applyOwnership`, `syncOwnership`, `ownershipChecked`, `reconcileFlight`, `UNCHECKED`, `TANDEM_OWNS`, the `answered` parameter of `reconcileStore` and `persistWhole`, and the `b.retired` check in `sharedCache`. `carryOn` keeps only its `currentFlight` check.
-- `src/hub/ops.luau`: the `TANDEM_OWNS` and `ownershipChecked` guards in `runMerge`, `cancelMerge`, `autoMerge`, `updateBranch` and `reviewEffect`, and the `syncOwnership` call inside `reviewEffect`'s `canPush`.
+- `src/hub/ops.luau`: the `TANDEM_OWNS` and `ownershipChecked` guards in `runMerge`, `cancelMerge`, `autoMerge`, `updateBranch`, `pushEmpty` and `reviewEffect`, and the `syncOwnership` call inside `reviewEffect`'s `canPush`.
 - `src/hub/refresh.luau`: the `loadTandem` call and the `joinOwnership`, `joinShared`, `applyOwnership`, `reconcileFlight` and `flagged` calls in `startRefresh` and `stepFixture`.
 - `src/hub/agent-run.luau`: the `pr.tandem` guard in `beginAgent`, the `owner.tandem` cleanup branch in `retryAgent`, and the `carryOn` ownership half.
 - `src/hub/block.luau`: `ACTIONS["card-handoff"]`, the `pr.tandem` guard in `ACTIONS["card-agent"]`, the `syncOwnership` call in `dispatch`, and the `watched` set and `raw-tandem-watch` fixture in `init`.
@@ -190,6 +190,7 @@ Each module's one job comes from its header comment. A verdict says what the por
 | `src/hub/state.luau` | The hub's interaction state (tab, selection, filter, sort, search, open menus) and the board built from it. | Port 1:1 with its tests, minus Tandem actions. | `state_test`, `selection_test`, `merge_test`, `rereview_test`, `flake_test`, `agent_state_test`, `review_fix_test` |
 | `src/hub/sync.luau` | The pure sync decisions: the cache's shape, the merge-method record, the recent store, what changed between two refreshes, and when each poll is due. | Port 1:1 with its tests, minus `Local.tandem`. | `sync_test`, `merge_test` |
 | `src/hub/fixes.luau` | What the fixes page shows: the details model, the noise filter, the steps, the code excerpts, and the readers of local git output. | Port 1:1 with its tests. The git readers (`parseMergeTree`) matter only with a worker. | `fixes_test` |
+| `src/hub/checks.luau` | What the checks popover shows: the check list's shapes (`CheckRow`, `CheckList`, `Load`, `Popover`), the groups (Failing, Running, Queued, Passed behind a fold) as `lines`, each row's time, the card's checks mark, and a failing check running again. | Port 1:1 with its tests. | `checks_test` |
 | `src/hub/summary.luau` | Feedback-only prompts, conservative summary parsing and the comments-only action rule. | Port 1:1 with its tests. | `summary_test` |
 | `src/hub/agent-fix.luau` | The agent fix's pure transitions and injected effect pipeline. | Port 1:1 with its tests, on the worker. Drop `CloneLookup.tandem`. | `agent_fix_test`, `agent_state_test` |
 | `src/hub/review-fix.luau` | Conflict-only excerpts from an immutable fix commit, and the plans that gate Push and Discard. | Port 1:1 with its tests. | `review_fix_test` |
@@ -197,7 +198,7 @@ Each module's one job comes from its header comment. A verdict says what the por
 | `src/hub/store.luau` | The shared cache (`hub.cache`), write ids, edit replay, adoption, and the Tandem ownership guard. Also `hub.added` and `hub.status`. | Rewrite for the web host, minus Tandem. Keep the write-id and replay rules. | `tandem_test` (cache scenarios), `summary_test` |
 | `src/hub/lookups.luau` | How each repo merges (`hub.merge.<owner>/<repo>`, else GitHub's answer) and flake evidence for a failing check. | Port the logic. Swap `Host.kv` for the store. | `merge_test`, `flake_test` (pure parts) |
 | `src/hub/prepare.luau` | Background guides (Settings, off by default): after each refresh and once on start, review requests of the viewer whose saved guide is missing or for another head are explained one at a time, through the `hub.preparing` lease so two windows don't take the same PR. Explanation only. | Rewrite as a worker job queued after a refresh; the lease becomes a job lock. | `prepare_test` |
-| `src/hub/refresh.luau` | The probe, refresh and checks timers armed from `Sync.schedule`, each answer laid onto the newest shared cache, `refetch`, and the sample board's ⌘R. | Rewrite for the web host. Keep `Sync.schedule` as the only timing rule. | via `tandem_test` |
+| `src/hub/refresh.luau` | The probe, refresh and checks timers armed from `Sync.schedule`, each answer laid onto the newest shared cache, `refetch`, the sample board's ⌘R, and `loadCheckList` (a PR's check list, read again on the checks timer while the popover is open and a check is unfinished). | Rewrite for the web host. Keep `Sync.schedule` as the only timing rule. | via `tandem_test` |
 | `src/hub/details.luau` | Reading what a PR's pages show: feedback details, the fixes page's details, local git and failed-check logs (`readLogs`, through `b.ci`), the review fix page's files. | Rewrite for the web host. The log reads go to the server ([B.3.1](#b31-ci-logs)). | via `summary_test` |
 | `src/hub/agent-run.luau` | An agent fix's flight: clone lookup (asking for a folder when there is none), refs, engine start, settle, stop, retry, open worktree. | Rewrite for the web host. The folder prompt (`osascript`) and `open` drop. The flight becomes a worker job. | via `tandem_test`, `summary_test` |
 | `src/hub/ops.luau` | The actions that reach GitHub or the agent: merge, cancel, merge when ready, batches, re-request, Update branch, re-run, add and remove by link, reply, resolve, Summarize, push or discard a fix. | Rewrite for the web host, minus the Tandem guards. Keep the order of each action's checks. | via `tandem_test`, `summary_test` |
@@ -206,13 +207,13 @@ Each module's one job comes from its header comment. A verdict says what the por
 
 ### CI logs
 
-A failing check with no usable annotation shows its log on the fixes page. Each CI is its own module that meets one contract, and `ciProviders` in `src/hub/block.luau` is the only place they meet.
+A failing check with no usable annotation shows its log on the fixes page, and Re-run failed checks re-runs it. Each CI is its own module that meets one contract, and `ciProviders` in `src/hub/block.luau` is the only place they meet.
 
 | Module | One job | Verdict | Tests |
 |---|---|---|---|
-| `src/ci/log.luau` | The shape of a failed-check log (`Log`, `Section`, `Load`), the `Provider` contract (`owns`, `read`), `providerFor` and `refs` (the changed files a log names). Pure. | Port 1:1. | `ci_log_test` |
-| `src/ci/actions.luau` | GitHub Actions logs: which checks are Actions jobs, the `gh run view --log-failed` command (`command`), and the cut that keeps 12 lines before and 3 after each error, 120 a job at most (`parse`). | Port `jobId` and `parse` 1:1. Replace the command with the Actions API ([B.3.1](#b31-ci-logs)). | `ci_log_test` |
-| `src/ci/buildkite.luau` | Buildkite logs: which checks are Buildkite builds, the `bk build view` and `bk job log` commands, and the readers of their output. | Port `build`, `parseFailures` and `parseLog` 1:1. Replace `bk` with the Buildkite REST API ([B.3.1](#b31-ci-logs)). | `ci_log_test` |
+| `src/ci/log.luau` | The shape of a failed-check log (`Log`, `Section`, typed `Line`s, `Load`), `classify` and `line` (a raw line's level, its CI marker dropped), `errors`, the `Provider` contract (`owns`, `read`, `retry`), `providerFor`, `byProvider` (failing checks by the module that owns them), `each` (one call after another) and `refs` (the changed files a log names). Pure. | Port 1:1. | `ci_log_test` |
+| `src/ci/actions.luau` | GitHub Actions logs: which checks are Actions jobs, the `gh run view --log-failed` command (`command`), the cut that keeps 12 lines before and 3 after each error, 120 a job at most (`parse`), and `gh run rerun --failed` once per run (`retryCommand`). | Port `jobId` and `parse` 1:1. Replace the commands with the Actions API ([B.3.1](#b31-ci-logs)). | `ci_log_test` |
+| `src/ci/buildkite.luau` | Buildkite logs: which checks are Buildkite builds, the `bk build view`, `bk job log` and `bk job retry` commands, and the readers of their output. | Port `build`, `parseFailures` and `parseLog` 1:1. Replace `bk` with the Buildkite REST API ([B.3.1](#b31-ci-logs)). | `ci_log_test` |
 
 ### Boundaries and the host
 
@@ -251,6 +252,7 @@ A failing check with no usable annotation shows its log on the fixes page. Each 
 | `src/view/hub/fixes.luau` | The fixes page. | Rewrite as React views. |
 | `src/view/hub/review-fix.luau` | The retained agent fix as review steps. | Rewrite as React views. |
 | `src/view/hub/menus.luau`, `selection.luau`, `link.luau`, `help.luau`, `hints.luau`, `paths.luau` | Menus, the selection bar, the add-by-link box, the `?` panel, the hint bar, node ids for scroll and focus. | Rewrite as React views. |
+| `src/view/hub/checks.luau` | The checks popover, the card's checks mark, and the popover's hint keys. | Rewrite as a React popover. |
 | `guide.css` | Every style, `gp-` classes over Tern's tokens. | Reuse in the React views. `docs/tern-tokens.css` holds the token values. |
 
 ### Tools
@@ -368,6 +370,9 @@ type Detected = {
 	checkedAt: string // "" here; the caller stamps it
 }
 type RunRow = { id: number; workflow: string; sha: string; conclusion: string }
+type CheckState = "failing" | "running" | "queued" | "passed" | "skipped"
+type CheckRow = { name: string; source?: string; state: CheckState; startedAt?: string; completedAt?: string; url: string }
+type CheckList = { headOid: string; rows: CheckRow[] }
 type RepoHistory = { base: string; byWorkflow: Record<string, { failed: number; total: number }> }
 
 interface GithubClient {
@@ -378,6 +383,7 @@ interface GithubClient {
 	detect(repo: string): Promise<Result<Detected, Error>>
 	history(repo: string, base: string): Promise<Result<RepoHistory, Error>>
 	runs(repo: string, sha: string): Promise<Result<RunRow[], Error>>
+	checkList(prId: string): Promise<Result<CheckList, Error>>
 	run(command: GithubCommand): Promise<Result<string, Error>>
 }
 ```
@@ -387,7 +393,8 @@ interface GithubClient {
 | `refresh` | `gh api graphql` with `HUB_QUERY` (`docs/hub/queries/hub-f.graphql`), once per search in `SEARCHES` (`mine`, `requested`, `reviewed`), all three at once. Each search pages with `q`, `n` and `after`: 20 PRs a page (`PAGE_SIZE`) up to 50 (`SEARCH_MAX`), and a page that fails transiently is asked again at half the size, down to 5 (`PAGE_MIN`). The first page of `mine` carries one `added<N>: repository { pullRequest(number:) }` alias per PR in `req.added` (`hubQuery`). The first failure ends the refresh. Beside them, `MERGED_QUERY` (`merged.graphql`) with `q = MERGED_SEARCH` fills `merged` (`parseMerged`); its failure only leaves `merged` unset. Then `THREADS_QUERY` (`threads.graphql`) for PRs with unresolved threads whose activity changed, at most 100 ids (`threadsFor`). Then `MERGE_FAILURE_QUERY` (`merge-failure.graphql`) for PRs with a comment or label merge pending on the same head (`inFlightMerges`). | `POST /graphql`, the same queries and variables. Keep the paging, `pageInfo.hasNextPage` as `truncated`, and one `RateLimit` per page in `calls`. A threads or merge-failure failure sets `partial` and keeps `prs`. |
 | `probe` | `gh api -i notifications?per_page=1`, with `-H If-Modified-Since: <since>`. `parseProbe` reads the status line. | `GET /notifications?per_page=1` with `If-Modified-Since`. 200 is a change, 304 is none. Keep `Last-Modified` and `X-Poll-Interval`. |
 | `checks` | `gh api graphql` with `CHECKS_QUERY` (`checks.graphql`), `ids[]=` per node. Empty `ids` answers at once. | `POST /graphql`, same query. |
-| `details` | `gh api graphql` with `DETAILS_QUERY` (`details.graphql`), `id=<node id>`. | `POST /graphql`, same query. |
+| `details` | `gh api graphql` with `DETAILS_QUERY` (`details.graphql`), `id=<node id>`, `head=refs/pull/<number>/head`. `parseDetails` reads `baseRef.compare(headRef: $head).behindBy` into `behindBy` (nil for null) and `headRefName` with `headRepository.nameWithOwner` into `branch` (nil when the fork is gone). | `POST /graphql`, same query and variables. |
+| `checkList` | `gh api graphql` with `CHECK_LIST_QUERY` (`docs/hub/queries/check-list.graphql`, 1 point): every check on the head commit, `nodes(ids:)` on the PR's node id, parsed by `parseCheckList` (conclusions and statuses mapped to the five `CheckState`s). Read when the checks popover or the fixes page opens, and again on the checks timer while the popover is open and a check is unfinished. | `POST /graphql`, the same query. |
 | `detect` | `gh api graphql` with `MERGE_DETECT_QUERY` (`merge-detect.graphql`), `owner`, `name`. | `POST /graphql`, same query. |
 | `history` | `gh api repos/<repo>/actions/runs?branch=<base>&status=completed&per_page=100`. | `GET` the same path. One page. |
 | `runs` | `gh api repos/<repo>/actions/runs?head_sha=<sha>&status=completed&per_page=50`. | `GET` the same path. One page. |
@@ -418,7 +425,9 @@ type GithubCommand =
 	| { kind: "close"; pr: HubPR }
 	| { kind: "refs"; pr: HubPR } // returns { headRefName, baseRefName, headRefOid }
 	| { kind: "updateBranch"; pr: HubPR }
-	| { kind: "rerun"; repo: string; runId: number }
+	| { kind: "headTree"; repo: string; oid: string } // returns the commit's tree sha
+	| { kind: "emptyCommit"; repo: string; tree: string; parent: string } // returns the new commit's sha
+	| { kind: "moveBranch"; repo: string; branch: string; sha: string }
 	| { kind: "reply"; pr: HubPR; threadId: string; body: string }
 	| { kind: "resolve"; threadId: string }
 ```
@@ -439,7 +448,9 @@ type GithubCommand =
 | `close` | `gh pr close N --repo R` | `PATCH /repos/{o}/{r}/pulls/{n}` with `{ state: "closed" }`. |
 | `refs` | `gh pr view N --repo R --json headRefName,baseRefName,headRefOid` | `GET /repos/{o}/{r}/pulls/{n}`: `head.ref`, `base.ref`, `head.sha`. `hub/agent-run` reads it just before an engine starts and refuses when the head or base moved. |
 | `updateBranch` | `gh pr update-branch N --repo R` | `PUT /repos/{o}/{r}/pulls/{n}/update-branch` (a merge, not a rebase). |
-| `rerun` | `gh run rerun <runId> --failed --repo R` | `POST /repos/{o}/{r}/actions/runs/{id}/rerun-failed-jobs`. |
+| `headTree` | `gh api repos/R/git/commits/OID --jq .tree.sha` | `GET /repos/{o}/{r}/git/commits/{sha}`: `tree.sha`. R is the head repository, a fork's for a fork PR. |
+| `emptyCommit` | `gh api repos/R/git/commits -X POST -f message=… -f tree=T -f parents[]=OID --jq .sha` | `POST /repos/{o}/{r}/git/commits`: `sha`. |
+| `moveBranch` | `gh api repos/R/git/refs/heads/B -X PATCH -f sha=S -F force=false` | `PATCH /repos/{o}/{r}/git/refs/heads/{branch}` with `force: false`, so only a fast-forward lands; a moved branch answers 422 "Update is not a fast forward". |
 | `reply` | `gh api graphql` with `REPLY_MUTATION` | GraphQL `addPullRequestReviewThreadReply`, unchanged. |
 | `resolve` | `gh api graphql` with `RESOLVE_MUTATION` | GraphQL `resolveReviewThread`, unchanged. |
 
@@ -447,16 +458,20 @@ type GithubCommand =
 
 ### B.3.1 CI logs
 
-From `Provider` in `src/ci/log.luau`. `hub/details.luau` asks the first provider in `b.ci` that `owns` a failing check to `read` its log, once per check URL and commit. The plugin builds `b.ci` over `Fetch.runner` (`ciProviders`); the sample board builds it over `fixtures/hub/ci-logs.luau`.
+From `Provider` in `src/ci/log.luau`. `hub/details.luau` asks the first provider in `b.ci` that `owns` a failing check to `read` its log, once per check URL and commit. `hub/ops.luau`'s `rerun` reads the card's failing checks from the details, splits them with `Log.byProvider`, and calls each provider's `retry` once with all of its checks; a check no provider owns is named in the failure toast. The plugin builds `b.ci` over `Fetch.runner` (`ciProviders`); the sample board builds it over `fixtures/hub/ci-logs.luau`.
 
 ```ts
 type Check = { name: string; url: string; runId?: number }
-type Section = { title: string; lines: string[] }
+type Level = "error" | "heading" | "command" | "plain"
+type Line = { kind: "text"; text: string; level: Level } | { kind: "gap"; count: number }
+type Section = { title: string; lines: Line[] }
 type Log = { sections: Section[] }
 type Load = { state: "loading" } | { state: "loaded"; log: Log } | { state: "failed"; reason: string }
 interface Provider {
 	owns(check: Check): boolean
 	read(check: Check, repo: string): Promise<Result<Log>>
+	// Every failing check this provider owns, at once, so it re-runs each run or build once. Resolves to how many it started.
+	retry(checks: Check[], repo: string): Promise<Result<number>>
 }
 ```
 
@@ -465,6 +480,8 @@ interface Provider {
 | Actions log | `gh run view <runId> --repo R --log-failed [--job <job>]`, 60 s (`Actions.command`). The job comes from the check's link. `Actions.parse` keeps 12 lines before and 3 after each error line, the last 30 when none reads as one, and 120 a job at most. | `GET /repos/{o}/{r}/actions/runs/{run_id}/jobs` for the failed jobs and their steps, then `GET /repos/{o}/{r}/actions/jobs/{job_id}/logs` (a redirect to the plain-text log). That log is the whole job, so cut it to the failed steps before `Actions.parse`. |
 | Buildkite failed jobs | `bk build view <org>/<pipeline>/<n> --recursive --json`, 60 s, with `BUILDKITE_ORGANIZATION_SLUG=<org>` so `bk` uses that org's saved token (`Buildkite.failuresCommand`). | `GET https://api.buildkite.com/v2/organizations/{org}/pipelines/{pipeline}/builds/{number}` with a Buildkite API token, then its failed `jobs`. |
 | Buildkite job log | `bk job log <job> --agent --max-tokens 1500` for the first 3 failed jobs, or the one the link names (`Buildkite.logCommand`). `--agent` already keeps the lines around the errors. | `GET .../builds/{number}/jobs/{job_id}/log`. That is the whole log, so cut it as `Actions.parse` does. |
+| Actions re-run | `gh run rerun <runId> --failed --repo R`, once per workflow run (`Actions.retryCommand`). | `POST /repos/{o}/{r}/actions/runs/{id}/rerun-failed-jobs`. |
+| Buildkite re-run | `bk job retry <job>` with `BUILDKITE_ORGANIZATION_SLUG=<org>`, for the job a link names, else for each failed job of the build (`Buildkite.retryCommand`). | `PUT .../builds/{number}/jobs/{job_id}/retry`. |
 
 `Log.refs` finds `path:line` mentions of the PR's changed files in a log (at most 5), and `hub/details.luau`'s `readLogFiles` reads those files with `Prdata.readFixes`, so the page can pin the lines like annotations. In the port those reads are contents API calls or worker reads, as for annotated files.
 
@@ -649,7 +666,7 @@ The rules, all in `src/hub/store.luau`:
 | `botKeys` | Which cards' fix is a bot fix, across stop and retry. | Keep. |
 | `github` | The `GithubClient`. | Keep. |
 | `timers` | `probe`, `refresh`, `checks`, `debounce`, `ring` handles. | Keep. |
-| `ci` | Who reads a failing check's log: Buildkite, then GitHub Actions (`ciProviders`). | Keep, as server calls ([B.3.1](#b31-ci-logs)). |
+| `ci` | Who reads a failing check's log and re-runs it: Buildkite, then GitHub Actions (`ciProviders`). | Keep, as server calls ([B.3.1](#b31-ci-logs)). |
 | `flights` | One call of each kind at a time: `refresh`, `checks`, `probe`, `flake`, `tandem`. | Keep, minus `tandem`. |
 | `watched` | The PRs Tandem watches. | Drop: Tandem. |
 | `handoffs` | Hand-offs Tandem took this session. | Drop: Tandem. |
@@ -757,6 +774,13 @@ Port the table as is, as a `Record<string, (b, cx, value) => void>` and one `dis
 | `fixes-post` | `Ops.postReply` |
 | `fixes-resolve` | `Ops.resolveThread` |
 | `fixes-rerun` | `ACTIONS["card-rerun"]` for the open PR |
+| `fixes-update` | U or the strip's button: `State.branchAction` for the open PR, then `Ops.updateBranch` (behind its base) or `State.fixAsk(s, true)` (up to date: the Push empty commit question) |
+| `fixes-empty-confirm` | `State.fixAsk(s, false)`, then `Ops.pushEmpty` (`commands.headTree`, `emptyCommit`, `moveBranch` on the head repository) |
+| `fixes-empty-cancel` | `State.fixAsk(s, false)` |
+| `hub-checks` | The checks popover on a card (its checks mark or V) or on the fixes page's PR (All checks or V): `State.openChecks` and `Refresh.loadCheckList`, or `State.closeChecks` when it is open on that PR |
+| `checks-close` | `State.closeChecks` |
+| `checks-move` | `State.checksMove` |
+| `checks-press`, `checks-pick` | `State.checksPress` or `State.checksPick`, then `openLink` on the check's link, unfolding Passed, or `Refresh.loadCheckList` again after a failed read |
 | `fixes-log` | `Fixes.logUrl`, then `openLink` (`cx.open`, or `Fetch.openInBrowser` when Settings say so) |
 | `fixes-github` | `openLink` on the step's GitHub page |
 | `fixes-press` | `State.fixPress`, then the step's own `fixes-*` action or the card's main action |
@@ -769,13 +793,14 @@ The guide page has its own `ACTIONS` table in `src/block.luau`, with the same `d
 
 | Mode | Keys |
 |---|---|
-| `board` | `?` help. `/` search. ⌘R or Ctrl+R refresh. Esc `hub-escape`. ⏎ `hub-open`, ⇧⏎ `hub-open-generate`. Space `hub-mark`. ⇧X `hub-mark-stale` on the mine tab. With marks, M `hub-batch-merge` and X `hub-batch-close`. h j k l and the arrows `hub-move`. `.` `hub-next`. T `hub-tab`. I `hub-fold inactive`. R `hub-fold merged` on the mine tab and `hub-fold recent` on the review tab (`State.ROW_FOLD`). ⇧T `hub-fold team` and A `hub-fold approved` on the review tab. F `hub-menu filters`. S `hub-menu sort`. ⇧S or ⇧M `hub-menu settings`. N `hub-link`. Any other letter runs the selected card's main or alternative action whose `key` matches (⇧A also runs a main `card-summarize`). |
+| `board` | `?` help. `/` search. ⌘R or Ctrl+R refresh. Esc `hub-escape`. ⏎ `hub-open`, ⇧⏎ `hub-open-generate`. Space `hub-mark`. ⇧X `hub-mark-stale` on the mine tab. With marks, M `hub-batch-merge` and X `hub-batch-close`. h j k l and the arrows `hub-move`. `.` `hub-next`. T `hub-tab`. I `hub-fold inactive`. R `hub-fold merged` on the mine tab and `hub-fold recent` on the review tab (`State.ROW_FOLD`). ⇧T `hub-fold team` and A `hub-fold approved` on the review tab. F `hub-menu filters`. S `hub-menu sort`. ⇧S or ⇧M `hub-menu settings`. N `hub-link`. V `hub-checks` on the selected card. Any other letter runs the selected card's main or alternative action whose `key` matches (⇧A also runs a main `card-summarize`). |
 | `menu` | j k and the arrows `hub-menu-move`. ⏎ `hub-menu-enter`. Space `hub-menu-select`. Esc `hub-menu-close`. In Settings, the review page's model menu keys (`Keys` `modelsKey`: ↑↓ `models-move`, ←→ `models-effort`, ⇧←→ `models-lens`, Tab `models-slot`, ⏎ `models-pick`, ⌃E `edit-lenses`), other keys type into its search field (`models-filter`), and L sends `hub-links` and ⇧G `hub-guides` while that field is empty. In Filter, Space toggles a saved rule and Enter edits it. In filter editors, Tab switches text/options, Enter applies text and Esc returns without saving; ordinary letters type. While a merge method is typed, ⏎ `hub-method-save` and Esc `hub-method-cancel`. |
 | `search` | ⏎ `hub-search-done`. Esc `hub-search-clear`. Up and down `hub-move`. Other keys type, and a change sends `hub-searched` (`Keys.hubAfterTyping`). |
 | `link` | ⏎ `hub-link-add`. ⇧⏎ `hub-link-open`. Esc `hub-link-clear`. Other keys type. |
 | `confirm` | ⌘⏎ `hub-confirm`. Esc `hub-confirm-cancel`. |
 | `help` | Esc or `?` `hub-help-close`. |
-| `fixes` | Esc `fixes-close`. ⇧L `fixes-log`. ⇧R `fixes-rerun`. j k `fixes-move`. h l `fixes-focus`. ⏎ `fixes-press`. R `fixes-reply`. E `fixes-resolve`. G `fixes-github`. B `fixes-bots`. The card's main action key, and A, ⇧A or O for its alternatives. |
+| `fixes` | While the Push empty commit question is open, only ⌘⏎ `fixes-empty-confirm` and Esc `fixes-empty-cancel`. Esc `fixes-close`. ⇧L `fixes-log`. ⇧R `fixes-rerun`. U `fixes-update` on a failing check when `State.branchAction` offers one. V `hub-checks`. j k `fixes-move`. h l `fixes-focus`. ⏎ `fixes-press`. R `fixes-reply`. E `fixes-resolve`. G `fixes-github`. B `fixes-bots`. The card's main action key, and A, ⇧A or O for its alternatives. |
+| `checks` | j k and the arrows `checks-move`. ⏎ `checks-press`. ⇧R `card-rerun` while a check fails. Esc or V `checks-close`. |
 | `reply` | ⌘⏎ `fixes-post`. Esc `fixes-cancel`. ⏎ is a new line. |
 | `review-fix` | Esc `review-fix-close`. ⏎ `review-fix-reviewed`. j k `review-fix-move`. B `review-fix-original`. D `review-fix-discard`. P `review-fix-push`. While asking, ⌘⏎ `review-fix-discard-confirm` and Esc `review-fix-discard-cancel`. Nothing while busy. |
 
@@ -797,7 +822,7 @@ Run all of them with `/opt/homebrew/bin/luau tests/run.luau`. `tests/run.luau` l
 | `tests/merge_test.luau` | `github`, `hub/model`, `hub/state`, `hub/sync` | Merge-method resolution and detection, merge-failure sources, the refresh carrying pending merges, merge commands and cards. |
 | `tests/fixes_test.luau` | `github`, `hub/fixes`, `hub/model` | The fixes page's details, noise filter, steps, excerpts, `git merge-tree` and `git log` readers. |
 | `tests/selection_test.luau` | `github`, `hub/model`, `hub/state` | Marks, Merge selected, Close stale, the confirm. |
-| `tests/flake_test.luau` | `github`, `hub/model`, `hub/state` | The flake verdict matrix, run parsing, `historyCache` (one read per repo per hour), the re-run command, and where Re-run sits on a card. |
+| `tests/flake_test.luau` | `github`, `hub/model`, `hub/state` | The flake verdict matrix, run parsing, `historyCache` (one read per repo per hour), and where Re-run sits on a card. |
 | `tests/rereview_test.luau` | `github`, `hub/model`, `hub/state` | Re-request review after new commits, and where Merge when ready is offered. |
 | `tests/agent_fix_test.luau` | `hub/agent-fix` | The engine's exact command sequence for conflicts and bot fixes, and the lease take and return. |
 | `tests/agent_state_test.luau` | `hub/agent-fix`, `hub/state`, `keys`, `text-field` | The agent card lifecycle, its keys and clicks, lease effects. |
@@ -809,7 +834,10 @@ Run all of them with `/opt/homebrew/bin/luau tests/run.luau`. `tests/run.luau` l
 | `tests/hub_settings_test.luau` | the real `hub/block`, `Host` stubbed, `view/ui`'s `tern.ui` stubbed | Settings: opening focuses the search, typing filters, Tab to Review, a click, the lens, the saved choice, and L only with an empty search. |
 | `tests/agent_diff_test.luau` | `agent`, `pr` | What the explanation's diff shows as one line (generated, vendored, minified and snapshot files) and the whitespace-only hunks it counts instead of showing, outside Python and YAML. |
 | `tests/fold_test.luau` | the real `hub/block`, `Host` stubbed, `view/ui`'s `tern.ui` stubbed | Opening a fold scrolls its header to the top of the board; closing one doesn't scroll. |
-| `tests/ci_log_test.luau` | `ci/actions`, `ci/buildkite`, `ci/log` | The log contract and both CI modules on recorded output (`fixtures/hub/ci-logs.luau`): which checks each owns, the exact commands and env, the cut, failures, and `Log.refs`. |
+| `tests/ci_log_test.luau` | `ci/actions`, `ci/buildkite`, `ci/log` | The log contract and both CI modules on recorded output (`fixtures/hub/ci-logs.luau`): which checks each owns, the exact commands and env, the cut, failures, `Log.refs`, and each module's re-run (once per run or build). |
+| `tests/checks_test.luau` | `github`, `hub/checks`, `hub/state`, `keys` | The check list parsed from GitHub (every state mapped), the client's one read, the popover's groups, times and fold, a check that finishes while open, its state on the hub, and its keys. |
+| `tests/rerun_test.luau` | `hub/block`, `ci/log` | Re-run failed checks on the hub block: each CI module gets its own failing checks, and a check none owns is named in the toast. |
+| `tests/branch_test.luau` | `hub/block`, `github`, `hub/state`, `view/hub/fixes`, `keys` | U on a failing check: the parsed base comparison, the strip's Update branch or Push empty commit, the key, and the question Push empty commit asks before its three GitHub calls. |
 | `tests/summary_test.luau` | the real `hub/block` and `agent-host`, `Host` stubbed | Summarize and bot fixes end to end through `ACTIONS`: stale refs, edited comments, timeouts, a closed block, duplicate callbacks. |
 | `tests/tandem_test.luau` | the real `hub/block`, `agent-host`, `tandem`, `Host` stubbed | Tandem ownership, and the shared cache rules it exercises. |
 | `tests/prepare_test.luau` | the real `hub/prepare`, `Fetch`, `Prdata` and `AgentHost` functions and `Host` stubbed; `keys`, `hub/state` | Which PRs want a background guide, one at a time, explanation only, a failure not retried at its head, stopping when turned off or closed, the `hub.preparing` lease, and ⇧G in Settings (plain g types into its search). |
