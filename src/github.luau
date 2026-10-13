@@ -6,6 +6,7 @@
 -- envelope; the caller sums them. Failures are `Error` values, never thrown.
 --
 -- Flake evidence is REST (the Actions runs API), so it is the one place here that decodes a body without `data`.
+local Checks = require("./hub/checks")
 local Fixes = require("./hub/fixes")
 local Model = require("./hub/model")
 
@@ -47,6 +48,7 @@ export type Client = {
 	detect: (repo: string, done: (value: Detected?, err: Error?) -> ()) -> (),
 	history: (repo: string, base: string, done: (value: RepoHistory?, err: Error?) -> ()) -> (),
 	runs: (repo: string, sha: string, done: (value: { RunRow }?, err: Error?) -> ()) -> (),
+	checkList: (prId: string, done: (value: Checks.CheckList?, err: Error?) -> ()) -> (),
 	run: (command: Command, done: (stdout: string?, err: Error?) -> ()) -> (),
 }
 
@@ -177,6 +179,19 @@ query Details($id: ID!) {
         annotations(first: 20) { nodes { path annotationLevel title message location { start { line } } } }
       }
       ... on StatusContext { context state targetUrl }
+    } } } } } }
+  } }
+}]=]
+
+-- This one mirrors docs/hub/queries/check-list.graphql the same way.
+local CHECK_LIST_QUERY = [=[
+query CheckList($ids: [ID!]!) {
+  rateLimit { cost remaining limit resetAt }
+  nodes(ids: $ids) { ... on PullRequest { id headRefOid
+    commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes {
+      __typename
+      ... on CheckRun { name status conclusion startedAt completedAt detailsUrl checkSuite { app { name } workflowRun { workflow { name } } } }
+      ... on StatusContext { context state targetUrl createdAt }
     } } } } } }
   } }
 }]=]
@@ -479,6 +494,57 @@ function M.parseChecks(raw: any): ChecksUpdate?
 		end
 	end
 	return { byId = byId, rateLimit = rateLimitOf(data.rateLimit) or NO_LIMIT }
+end
+
+-- check list
+
+local CONCLUSIONS: { [string]: Checks.CheckState } = {
+	SUCCESS = "passed", NEUTRAL = "passed", SKIPPED = "skipped", STALE = "skipped",
+	FAILURE = "failing", TIMED_OUT = "failing", CANCELLED = "failing", ACTION_REQUIRED = "failing", STARTUP_FAILURE = "failing",
+}
+local STATUSES: { [string]: Checks.CheckState } = {
+	IN_PROGRESS = "running", QUEUED = "queued", PENDING = "queued", WAITING = "queued", REQUESTED = "queued",
+}
+local CONTEXT_STATES: { [string]: Checks.CheckState } = {
+	SUCCESS = "passed", FAILURE = "failing", ERROR = "failing", PENDING = "running", EXPECTED = "queued",
+}
+
+local function checkRow(node: any): Checks.CheckRow?
+	if str(node.__typename) == "StatusContext" then
+		local name = str(node.context)
+		if name == nil then return nil end
+		local state = CONTEXT_STATES[str(node.state) or ""] or "queued"
+		return { name = name, source = nil, state = state, startedAt = if state == "running" then str(node.createdAt) else nil, completedAt = nil, url = str(node.targetUrl) or "" }
+	end
+	local name = str(node.name)
+	if name == nil then return nil end
+	local status = str(node.status) or ""
+	local state: Checks.CheckState = if status == "COMPLETED" then (CONCLUSIONS[str(node.conclusion) or ""] or "passed") else (STATUSES[status] or "queued")
+	local suite = tbl(node.checkSuite)
+	local run = suite and tbl(suite.workflowRun)
+	local workflow = run and tbl(run.workflow)
+	local app = suite and tbl(suite.app)
+	return {
+		name = name, source = (workflow and str(workflow.name)) or (app and str(app.name)), state = state,
+		startedAt = str(node.startedAt), completedAt = if status == "COMPLETED" then str(node.completedAt) else nil,
+		url = str(node.detailsUrl) or "",
+	}
+end
+
+-- check-list.graphql: every check on the head commit. nil when GitHub sent no pull request.
+function M.parseCheckList(raw: any): Checks.CheckList?
+	local data = tbl(raw) and tbl(raw.data)
+	local node = data and list(data.nodes)[1]
+	if node == nil or str(node.headRefOid) == nil then return nil end
+	local rows: { Checks.CheckRow } = {}
+	local commit = list(tbl(node.commits) and node.commits.nodes)[1]
+	local rollup = commit and tbl(commit.commit) and tbl(commit.commit.statusCheckRollup)
+	local contexts = rollup and tbl(rollup.contexts)
+	for _, context in list(contexts and contexts.nodes) do
+		local row = checkRow(context)
+		if row then table.insert(rows, row) end
+	end
+	return { headOid = str(node.headRefOid) :: string, rows = rows }
 end
 
 -- probe
@@ -1307,6 +1373,16 @@ function M.client(run: Runner, decode: Decode): Client
 		end)
 	end
 
+	local function checkList(prId: string, done: (value: Checks.CheckList?, err: Error?) -> ())
+		local operation, what = "gh api graphql: check list", "load checks"
+		graphql(CHECK_LIST_QUERY, { "-f", "ids[]=" .. prId }, operation, what, function(doc, err)
+			if err then return done(nil, err) end
+			local found = M.parseCheckList(doc)
+			if found == nil then return done(nil, failure(operation, what, "GitHub has no pull request with that id", nil)) end
+			done(found, nil)
+		end)
+	end
+
 	local function detect(repo: string, done: (value: Detected?, err: Error?) -> ())
 		local owner, name = string.match(repo, "^([%w_.%-]+)/([%w_.%-]+)$")
 		if owner == nil or name == nil then
@@ -1372,7 +1448,7 @@ function M.client(run: Runner, decode: Decode): Client
 		end)
 	end
 
-	return { refresh = refresh, probe = probe, checks = checks, checkNames = checkNames, details = details, detect = detect, history = history, runs = runs, run = runCommand }
+	return { refresh = refresh, probe = probe, checks = checks, checkNames = checkNames, details = details, detect = detect, history = history, runs = runs, checkList = checkList, run = runCommand }
 end
 
 return M

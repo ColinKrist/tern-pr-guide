@@ -3,6 +3,7 @@
 -- built from it. Views read `State.board` and never filter, sort or classify: every rule is `model`'s.
 -- Pure: no clock, no network, no Tern. `now` is passed in.
 local Agent = require("../agent")
+local Checks = require("./checks")
 local Fields = require("../text-field")
 local AgentFix = require("./agent-fix")
 local Fixes = require("./fixes")
@@ -21,7 +22,7 @@ export type Opened = Model.Opened
 export type Summary = Summary.Summary
 export type FixDetails = Fixes.FixDetails
 
-export type Mode = "board" | "search" | "link" | "menu" | "confirm" | "help" | "fixes" | "reply" | "review-fix"
+export type Mode = "board" | "search" | "link" | "menu" | "confirm" | "help" | "fixes" | "reply" | "review-fix" | "checks"
 export type HelpPage = "board" | "fixes" | "review-fix"
 export type MenuId = "filters" | "title-filter" | "check-repository" | "check-filter" | "repositories" | "sort" | "merge" | "actions" | "settings"
 export type Ring = "bad" | "good" | "bad-out" | "good-out" -- red ring, green wash, then the same fading
@@ -36,8 +37,8 @@ export type AgentFixState =
 	| { kind: "pushing", fix: AgentFix.Fix }
 	| { kind: "failed", reason: string, worktree: string?, held: boolean? } -- `held`: the engine still holds the worktree's lease, so its return can be retried
 
--- A pill on a card's chip line. `kind` picks its look; `running` carries the amber spinner.
-export type Chip = { text: string, kind: "bad" | "bad-soft" | "info" | "wait" | "done" | "agent" | "running" }
+-- A pill on a card's chip line. `kind` picks its look.
+export type Chip = { text: string, kind: "bad" | "bad-soft" | "info" | "wait" | "done" | "agent" }
 
 export type Card = {
 	pr: HubPR,
@@ -122,6 +123,8 @@ export type State = {
 	mode: Mode,
 	helpPage: HelpPage?, -- the page to return to, and show shortcuts for, while help is open
 	route: Route?, -- the fixes page, while it is open
+	checks: Checks.Popover?, -- the checks popover, while it is open (mode "checks")
+	checkLists: { [string]: Checks.Load }, -- check lists by "key@headOid"
 	menu: MenuId?,
 	menuCursor: number,
 	confirm: { kind: string, keys: { string } }?, -- kind "merge" (a GitHub method) or "learned" (a suggested comment command)
@@ -366,7 +369,7 @@ function M.new(prs: { HubPR }, now: number, saved: any): State
 		prs = prs, now = now, board = emptyBoard(tab), tab = tab, selected = nil, marked = {},
 		repositories = repositories, repositoriesEnabled = not (type(saved) == "table" and saved.repositoriesEnabled == false),
 		titleRules = {}, ignoredChecks = {}, filterEdit = nil, sort = sort, search = Fields.create(""), link = Fields.create(""),
-		mode = "board", helpPage = nil, route = nil, menu = nil, menuCursor = 1, confirm = nil, methodEdit = nil, folded = folded, recent = {}, merged = {}, walking = false,
+		mode = "board", helpPage = nil, route = nil, checks = nil, checkLists = {}, menu = nil, menuCursor = 1, confirm = nil, methodEdit = nil, folded = folded, recent = {}, merged = {}, walking = false,
 		ringed = {}, agents = {}, details = {}, flakes = {}, summaries = {}, merges = {}, autoMerge = {}, acted = {}, busy = {},
 		refreshedAt = nil, loading = false, error = nil, agent = nil, models = nil, links = "tern", prepareGuides = false,
 		keyed = false, born = {}, booted = false,
@@ -587,7 +590,7 @@ local function actionsFor(pr: HubPR, column: Column, reasons: { Model.Reason }, 
 	return nil, {}
 end
 
-local function chip(text: string, kind: "bad" | "bad-soft" | "info" | "wait" | "done" | "agent" | "running"): Chip
+local function chip(text: string, kind: "bad" | "bad-soft" | "info" | "wait" | "done" | "agent"): Chip
 	return { text = text, kind = kind }
 end
 
@@ -648,9 +651,7 @@ local function chipsFor(pr: HubPR, placement: Model.Placement, now: number): ({ 
 			table.insert(chips, chip("Waiting on Tandem", "agent"))
 		elseif again then
 			table.insert(chips, chip("Waiting on " .. Model.reviewerList(again.waiting) .. " to re-review", "wait"))
-		elseif pr.checks.state == "pending" then
-			table.insert(chips, chip("Waiting on checks", "running"))
-		elseif pr.checks.state == "failing" and pr.reviews.decision == "approved" then
+		elseif pr.checks.state == "pending" or (pr.checks.state == "failing" and pr.reviews.decision == "approved") then
 			table.insert(chips, chip("Waiting on checks", "wait"))
 		else
 			table.insert(chips, chip("Waiting on review", "wait"))
@@ -1863,6 +1864,103 @@ function M.openPlan(slug: string, number: number, generate: boolean, root: strin
 	return { kind = "open", url = Links.openLink(slug, number, dir, generate, true) }
 end
 
+-- The checks popover -------------------------------------------------------------------------------------------
+-- Opened from a card's checks mark (or V), or from the fixes page's All checks row, over whichever page is open.
+-- Its list is read once per commit and again while a check is unfinished; the block does the reading.
+
+export type ChecksPress = { kind: "open", url: string, name: string } | { kind: "expand" } | { kind: "retry" }
+
+local function checksKey(pr: HubPR): string
+	return pr.key .. "@" .. pr.headOid
+end
+
+-- The check list for `key` at the commit now at its head: loading, loaded or failed, or nil before any read.
+function M.checkLoad(s: State, key: string): Checks.Load?
+	local pr = M.prOf(s, key)
+	return if pr then s.checkLists[checksKey(pr)] else nil
+end
+
+-- Whether `key`'s list should be read now: never read at this commit, or the last read failed.
+function M.checksWanted(s: State, key: string): boolean
+	local load = M.checkLoad(s, key)
+	return load == nil or load.state == "failed"
+end
+
+-- Opens the popover on `key`; false when no such PR is on hand. The highlight starts on the first row.
+function M.openChecks(s: State, key: string): boolean
+	if M.prOf(s, key) == nil then return false end
+	local pop: Checks.Popover = { key = key, hl = 1, passedOpen = false, seen = {}, from = if s.route then "fixes" else "board" }
+	s.checks, s.mode, s.menu = pop, "checks", nil
+	local load = M.checkLoad(s, key)
+	if load and load.state == "loaded" then Checks.observe(pop, load.list) end
+	return true
+end
+
+function M.closeChecks(s: State)
+	s.checks = nil
+	if s.mode == "checks" then s.mode = if s.route then "fixes" else "board" end
+end
+
+-- Records a read of `key`'s list at `headOid`. While the popover shows it, unfinished checks are noted as seen.
+function M.setCheckLoad(s: State, key: string, headOid: string, load: Checks.Load)
+	s.checkLists[key .. "@" .. headOid] = load
+	local pop = s.checks
+	if pop and pop.key == key and load.state == "loaded" then
+		Checks.observe(pop, load.list)
+		pop.hl = math.clamp(pop.hl, 1, math.max(1, #Checks.choices(Checks.lines(load.list, pop, s.now))))
+	end
+end
+
+-- The open popover's lines (empty unless its list is loaded) and its load.
+function M.checkLines(s: State): ({ Checks.Line }, Checks.Load?)
+	local pop = s.checks
+	if pop == nil then return {}, nil end
+	local load = M.checkLoad(s, pop.key)
+	if load == nil or load.state ~= "loaded" then return {}, load end
+	return Checks.lines(load.list, pop, s.now), load
+end
+
+function M.checksMove(s: State, delta: number)
+	local pop = s.checks
+	if pop == nil then return end
+	local lines = M.checkLines(s)
+	pop.hl = math.clamp(pop.hl + delta, 1, math.max(1, #Checks.choices(lines)))
+end
+
+-- What ⏎ does on the highlighted row: open a check's link, unfold Passed, or read a failed list again.
+function M.checksPress(s: State): ChecksPress?
+	local pop = s.checks
+	if pop == nil then return nil end
+	local lines, load = M.checkLines(s)
+	if load and load.state == "failed" then return { kind = "retry" } end
+	local line = Checks.choices(lines)[pop.hl]
+	if line == nil then return nil end
+	if line.kind == "more" then
+		pop.passedOpen = true
+		return { kind = "expand" }
+	end
+	if line.kind == "check" then return { kind = "open", url = line.row.url, name = line.row.name } end
+	return nil
+end
+
+-- Highlights row `index` and presses it, as a click does.
+function M.checksPick(s: State, index: number): ChecksPress?
+	local pop = s.checks
+	if pop == nil then return nil end
+	pop.hl = index
+	return M.checksPress(s)
+end
+
+-- Whether the popover's pull request has a failing check: what its list says, else the board's count.
+function M.checksFailing(s: State): boolean
+	local pop = s.checks
+	local pr = if pop then M.prOf(s, pop.key) else nil
+	if pop == nil or pr == nil then return false end
+	local load = M.checkLoad(s, pop.key)
+	if load and load.state == "loaded" then return Checks.counts(load.list).failing > 0 end
+	return pr.checks.failing > 0
+end
+
 -- The fixes page ------------------------------------------------------------------------------------------------
 -- A route over the board: Esc returns to it with the card still selected. All pure; the block reads the
 -- details, runs git and the writes.
@@ -1883,7 +1981,7 @@ function M.openFixes(s: State, key: string): boolean
 end
 
 function M.closeFixes(s: State)
-	s.route, s.mode = nil, "board"
+	s.route, s.mode, s.checks = nil, "board", nil
 end
 
 -- The PR with `key`, on the board or not.

@@ -42,7 +42,7 @@ type Handler = Runtime.Handler
 local FIXTURES, frameLater, revealSelected, draw = Runtime.FIXTURES, Runtime.frameLater, Runtime.revealSelected, Runtime.draw
 local readCache, storedId, flagged, writeStatus, syncOwnership = Store.readCache, Store.storedId, Store.flagged, Store.writeStatus, Store.syncOwnership
 local loadMerges, detectRepo, setUserMethod = Lookups.loadMerges, Lookups.detectRepo, Lookups.setUserMethod
-local rearm, refetch, stepFixture = Refresh.rearm, Refresh.refetch, Refresh.stepFixture
+local rearm, refetch, stepFixture, loadCheckList = Refresh.rearm, Refresh.refetch, Refresh.stepFixture, Refresh.loadCheckList
 local openFixes, openReviewFix = Details.openFixes, Details.openReviewFix
 local beginAgent, advanceAgentFixture = AgentRun.beginAgent, AgentRun.advanceAgentFixture
 local reviewEffect, fixTarget = Ops.reviewEffect, Ops.fixTarget
@@ -526,6 +526,40 @@ ACTIONS["review-fix-discard-cancel"] = function(b) State.reviewAsk(b.s, false) e
 
 ACTIONS["review-fix-push"] = function(b, cx) reviewEffect(b, cx, "push") end
 ACTIONS["review-fix-discard-confirm"] = function(b, cx) reviewEffect(b, cx, "discard") end
+
+-- The checks popover: V or a click on a card's checks mark (or the fixes page's All checks row) opens it on that pull
+-- request, and a second press closes it.
+ACTIONS["hub-checks"] = function(b: Block, cx: BlockCx, key: string)
+	local s = b.s
+	local target: string? = if key ~= "" then key elseif s.route then s.route.key else s.selected
+	if target == nil then return end
+	if s.checks and s.checks.key == target then return State.closeChecks(s) end
+	if not s.route then State.select(s, target) end
+	if State.openChecks(s, target) then loadCheckList(b, cx, target) end
+end
+ACTIONS["checks-close"] = function(b)
+	State.closeChecks(b.s)
+end
+ACTIONS["checks-move"] = function(b, cx, delta)
+	State.checksMove(b.s, tonumber(delta) or 0)
+end
+-- ⏎ or a click on a row: a check opens its page where links open (Settings), "Show N" unfolds Passed, and a list that
+-- failed to load is read again.
+local function checksPressed(b: Block, cx: BlockCx, press: State.ChecksPress?)
+	local pop = b.s.checks
+	if press == nil or pop == nil then return end
+	if press.kind == "retry" then return loadCheckList(b, cx, pop.key) end
+	if press.kind == "open" then
+		if press.url == "" then return cx:toast("error", "Couldn't open the check: GitHub gave no link for " .. press.name, pop.key) end
+		openLink(b, cx, press.url)
+	end
+end
+ACTIONS["checks-press"] = function(b, cx)
+	checksPressed(b, cx, State.checksPress(b.s))
+end
+ACTIONS["checks-pick"] = function(b, cx, index)
+	checksPressed(b, cx, State.checksPick(b.s, tonumber(index) or 1))
+end
 
 ACTIONS["fixes-close"] = function(b)
 	State.closeFixes(b.s)

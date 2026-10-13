@@ -20,6 +20,7 @@ local GROUPS: { [Page]: { Group } } = {
 			{ "E", "Resolve the thread" },
 			{ "⇧L", "View the check's log" },
 			{ "⇧R", "Re-run failed checks" },
+			{ "V", "All checks" },
 			{ "G", "Open on GitHub, or resolve a conflict there" },
 			{ "B", "Show or hide bot comments" },
 			{ "Esc", "Back to the board" },
@@ -70,6 +71,7 @@ local function boardGroups(s: State.State): { Group }
 		for _, more in card.more do
 			if more.key and more.key ~= "⏎" then table.insert(keys, { more.key, more.label }) end
 		end
+		table.insert(keys, { "V", "Checks: j k move, ⏎ opens a check, Esc closes" })
 		if #keys > 0 then table.insert(groups, { title = "The selected card", keys = keys }) end
 	end
 	local board: { { string } } = {

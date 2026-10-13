@@ -15,6 +15,7 @@ A hub page for PR Guide. It shows every open PR you wrote and every PR waiting o
    | http://localhost:61440/docs/hub/mockups/index.html?tab=rev | The Review requests tab, with the add-by-link field |
    | http://localhost:61440/docs/hub/mockups/pr-fixes.html?pr=418 | ⏎ on a Needs fixes card: what needs fixing, at the code |
    | http://localhost:61440/docs/hub/mockups/review-fix.html | Review fix: checking the agent's conflict resolution before pushing |
+   | http://localhost:61440/docs/hub/mockups/checks.html?open=1 | The checks popover under a card's checks mark (`?page=fixes&open=1` from the fixes page, `?load=loading` or `?load=error` for those states) |
 
 3. Before touching `src/view/` or `guide.css`, read the repo's `AGENTS.md`, `DESIGN.md` and `docs/ui.md`. Mockups link `docs/tern-tokens.css` and `guide.css` inside a `.gp-root` wrapper.
 
@@ -94,10 +95,11 @@ Each PR appears exactly once.
 
 ### Cards and actions
 
-- **Anatomy:** chip line (the job), title, an optional note (what the agent found or why a fix failed), and the repo line (repo #num, checks, age).
+- **Anatomy:** chip line (the job), title, an optional note (what the agent found or why a fix failed), and the repo line (repo #num, the checks mark, age). The repo name ellipsizes before the number.
+- **Checks mark:** failing checks as a red ✕ and count, unfinished ones (running and queued) as the amber spinner and "N pending", and with neither, a green ✓ and the passed count. A click or `V` opens the **checks popover** under it (`checks.html`): "Checks" and the head commit's short sha, then the checks grouped Failing, Running, Queued, Passed ("· Skipped N" in the Passed header), each row the check's name and "<workflow or app> · <time>" (elapsed while running, "Queued", "Skipped", or "took 1m 31s"). Passed and skipped fold behind "Show N"; a check that finishes while the popover is open stays at the top of Passed. j/k move, ⏎ opens the check's page (or unfolds Passed), ⇧R re-runs failed checks when any fail, Esc closes. While open and a check is unfinished, the list is read again on the 30 s checks timer.
 - **Action placement (one rule for every card):**
   - Resting cards show no actions. The chip already names the job.
-  - While a card is hovered or selected, its **split button** replaces the checks and age on the repo line, the way Gmail swaps a row's date for its actions.
+  - While a card is hovered or selected, its **split button** takes the age's place on the repo line, the way Gmail swaps a row's date for its actions. The checks mark stays: it is state.
   - Hovered, the button is quiet. Selected, it's filled and shows its key.
   - Alternatives sit behind the attached ▾. Card heights never change.
 - **Clicks:** a click opens, like ⏎; ⌘-click or ⇧-click selects for a batch.
@@ -125,9 +127,10 @@ This opens the PR at what needs fixing, in the guided review layout.
 | Step | Shows | Actions |
 |---|---|---|
 | Comment or requested change | The thread pinned at its line in the diff | Reply (R), Resolve (E) |
-| Failing check | The annotation pinned at its line; with no usable annotation, the log cut to its errors, then the changed lines it names pinned in their files | View log (⇧L), Re-run failed checks (⇧R) |
+| Failing check | The annotation pinned at its line; with no usable annotation, the log cut to its errors, then the changed lines it names pinned in their files. A check running again reads "Re-running 1m 12s" in amber, and its log "Log from the failed run" | View log (⇧L), Re-run failed checks (⇧R) |
 | Merge conflict | "Your branch" and "main" blocks, plus "Main changed this in #415 by @devon" | Fix with agent (A), Resolve on GitHub (G) |
 
+- **All checks:** under the steps, one row ("◌ 2 pending · ✓ 11 passed", with `V`) opens the checks popover under it. The page reads the check list when it opens (1 point), which is also how a failing check that is running again is known.
 - **Keys:** h/l move between the steps and the code panel; j/k move within either one; ⏎ goes into the panel, then chooses the highlighted action; R reply, E resolve, ⇧L view log, G open on GitHub (the conflict editor for a conflict), B bot comments, A the card's own action, Esc back to the board with the card still selected.
 - **Re-run failed checks (⇧R):** reads the card's failing checks from the details and hands each CI module the ones it owns, all at once: GitHub Actions runs `gh run rerun <run> --failed --repo <repo>` once per workflow run; Buildkite retries the job a check's link names, or lists the build's failed jobs (`bk build view … --recursive --json`) and runs `bk job retry <job>` for each, once per build, with the org in `BUILDKITE_ORGANIZATION_SLUG`. A failing check no module owns shows "Couldn't re-run deploy/preview: no CI module reads it". The sample board doesn't re-run.
 - **Check logs:** a failing check with no usable annotation has its log read when the page opens, once per commit, by the CI module that owns it (`src/ci/`): GitHub Actions runs `gh run view <run> --repo <repo> --log-failed --job <job>` and keeps 12 lines before and 3 after each error line (the last 30 when none reads as one, 120 a job at most), dropping the runner's setup before the job's first step unless it holds an error; Buildkite runs `bk build view <org>/<pipeline>/<n> --recursive --json`, then `bk job log <job> --agent --max-tokens 1500` for the first 3 failed jobs (one job when the link names it), with `BUILDKITE_ORGANIZATION_SLUG` set to the link's org so `bk` uses that org's saved token. Each line is typed (`Log.Line`): `Log.classify` reads it as an error, a heading (Actions' `##[group]`, Buildkite's `---`, `+++`, `~~~`, marker dropped), a command (`$ `) or plain, and a left-out run is a gap. The page draws errors on the removed-row tint with a Removed Red bar, headings as muted sans labels, and the error count in the log's header. `Log.refs` finds `path:line` mentions of changed files (a build machine's folder prefix allowed) and the page pins up to 5 of them like annotations, reading those files with `Prdata.readFixes`. The sample board's #111 runs both modules on `fixtures/hub/ci-logs.luau` (the Actions log recorded from the smoke repo; the Buildkite output synthetic in `bk`'s documented shape).
@@ -223,6 +226,7 @@ To review has its own field: "Paste a pull request link to review" (`N`, from ei
 | A | Show or hide Approved (Review requests; no Review requests card uses A) |
 | R | Show or hide Recently merged (Your pull requests) or Recently opened (Review requests) |
 | F / S | Filter / Sort menu (menus: j/k, ⏎ or Space, Esc) |
+| V | The selected card's checks (on the fixes page, all checks): j/k move, ⏎ opens a check, ⇧R re-runs failed checks, Esc closes |
 | ⇧S, ⇧M | Settings: typing searches, ↑↓ model, ←→ effort, ⇧←→ lens, Tab Explanation or Review, ⏎ choose and close, ⌃E edit lenses, L where links open and ⇧G background guides (empty search only) |
 | N | Add a PR by link |
 | / | Search |
@@ -242,6 +246,7 @@ To review has its own field: "Paste a pull request link to review" (`N`, from ei
 | `merged.graphql`: the viewer's 20 most recently updated merged PRs (`is:pr is:merged author:@me archived:false sort:updated-desc`; search can't sort by merge time, and a merge updates the PR), run beside hub-f's three searches. Measured 2026-10-12 on jubbydev's account (194 merges in 7 days) | 1 pt | 0.7–0.8 s | With every refresh. A failure leaves the cached list |
 | `threads.graphql`: thread authors via `nodes(ids:)`, only for PRs with an unresolved thread whose `updatedAt` changed | 5 pts for 17 PRs (the first 30 threads of each; 9 pts at 50) | 0.7–0.8 s | After hub-f |
 | `checks.graphql`: CI state for PRs with running checks | 1 pt for 5 or 42 PRs | 1–1.6 s | Every 30 s while any check is running |
+| `check-list.graphql`: every check on one PR's head commit (name, state, times, details link, workflow or app), via `nodes(ids:)`. Measured 2026-10-12 on jubbydev/tern-pr-guide-hub-smoke #17 and a vercel/next.js PR | 1 pt (the cost follows the query's shape, not how many checks come back) | 0.5–0.6 s | When the checks popover or a fixes page opens, and every 30 s while the popover is open and a check is unfinished |
 | REST `/notifications` with `If-Modified-Since` | free (304) | | Every 60 s, as the change probe |
 | Fixes-page details: threads with path/line/body, changes-requested reviews, failing check runs with annotations | 1 pt | | When a Needs fixes PR is opened |
 | `merge-detect.graphql`: what a repo declares (`.aviator/config.yml`, a merge queue) and its last 8 merged PRs with `mergedBy` and comments. Measured on the smoke repo 2026-10-10 | 1 pt | | Once per repo, for repos with a Ready card; the result is cached in kv |
@@ -251,7 +256,7 @@ To review has its own field: "Paste a pull request link to review" (`N`, from ei
 - **Pages, not one query.** GitHub stops a GraphQL query at about 10 s and answers HTTP 502. Measured 2026-10-12 on busy repos (vscode, next.js): the three searches at 50 each in one query got 502 after about 11 s every time, and so did a single search at 50; a 20-PR page took 4.4–6.6 s. A page that fails with a 502, 503 or 504, GitHub's "Something went wrong" timeout body, or the 30 s client timeout is asked again with half the PRs, down to 5; later pages of that search keep the smaller size. Every other GraphQL read retries those failures once; writes never retry.
 - **Opt-in check names:** `check-names.graphql` reads names and aggregate counts for failing PRs in configured repositories. It adds calls beyond the ordinary budget below; live cost has not been measured. The default refresh budget is unchanged.
 - **Per refresh:** hub-f 4 (40 PRs) + merged 1 + threads 5 + checks 1 = 11, under the 18-point limit the tests hold. A cost depends on the connections a query selects times the PRs it can return (`first:` on a connection under a search doesn't change it), so a page's `$n` sets its cost and an added connection is paid 20 times per page. Alias-added PRs ride on the first `mine` page.
-- **Budget:** about 140 pts/hr while the hub block exists (12 refreshes at 11, plus checks). Even the 30 s debounce ceiling (about 2,200/hr at the 18-point limit) fits the 5,000/hr GraphQL budget, which Tandem's pr-watch shares.
+- **Budget:** about 140 pts/hr while the hub block exists (12 refreshes at 11, plus checks). Even the 30 s debounce ceiling (about 2,200/hr at the 18-point limit) fits the 5,000/hr GraphQL budget, which Tandem's pr-watch shares. An open checks popover with a check unfinished adds 1 point every 30 s (at most 120/hr), and only while it stays open.
 - **Latency is the real cost.** Always render from the kv cache first, then refresh in the background.
 - **Check annotations include noise.** Drop paths under `.github/` and messages like "Process completed with exit code". Measured on Tagalingo-App #1013, the useful one was `src/lib/query-persister.ts:39 Type …`.
 - **Conflicted files** come from local `git merge-tree --write-tree --name-only`, not GitHub.
@@ -276,15 +281,16 @@ Every issue builds against these types and signatures. An issue that needs a cha
 | `src/links.luau` | nothing |
 | `src/hub/model.luau` | nothing |
 | `src/hub/fixes.luau` | `model` |
-| `src/github.luau` | `model`, `fixes`. No `tern.*` at load; parsers take already decoded tables (`tern.json.decode` runs in the caller). |
+| `src/hub/checks.luau` | `model` |
+| `src/github.luau` | `model`, `fixes`, `checks`. No `tern.*` at load; parsers take already decoded tables (`tern.json.decode` runs in the caller). |
 | `src/hub/sync.luau` | `model` |
 | `src/hub/agent-fix.luau` | `model`, `fixes` |
 | `src/hub/review-fix.luau` | `agent-fix`, `fixes` (pure commit excerpts and effect plans) |
 | `src/hub/summary.luau` | `model`, `fixes` |
 | `window.luau` | `src/links.luau` |
-| `src/hub/state.luau` | `model`, `sync`, `fixes`, `agent-fix`, `review-fix`, `summary`, `src/text-field.luau`, `src/links.luau` (pure: link parsing and the `#prguide-open=` link). Never `fetch`, `github` or `block`. |
+| `src/hub/state.luau` | `model`, `sync`, `fixes`, `checks`, `agent-fix`, `review-fix`, `summary`, `src/text-field.luau`, `src/links.luau` (pure: link parsing and the `#prguide-open=` link). Never `fetch`, `github` or `block`. |
 | `src/keys.luau` | `src/hub/state.luau`, plus what it requires today minus `picker` |
-| `src/view/hub/*.luau` | `state`, `model`, `fixes`, `src/view/ui.luau`, `src/text.luau`. Never `sync` or `github`. |
+| `src/view/hub/*.luau` | `state`, `model`, `fixes`, `checks`, `src/view/ui.luau`, `src/text.luau`. Never `sync` or `github`. |
 | `src/fetch.luau`, `src/prdata.luau`, `src/agent-host.luau`, `src/tandem.luau` | `model` and `fixes` for types, `github` for the `Runner` type, `review-fix` for validated command plans, `src/links.luau`, `src/hub/sync.luau` (the recent store), plus what it requires today minus `picker`. prdata, agent-host and tandem run commands through fetch's runners. |
 | `src/hub/runtime.luau`, `store`, `lookups`, `tandem`, `prepare`, `refresh`, `details`, `agent-run`, `ops`, `block` | everything above, in that require order; `src/hub/block.luau` is the glue that wires them, and no module requires it |
 | `tools/conflicts` | nothing (a standalone script) |
@@ -451,6 +457,24 @@ export type MergeResolution = { method: MergeMethod, source: MergeSource, ask: b
 function M.resolveMergeMethod(evidence: MergeEvidence): MergeResolution   -- user, declared, learned (unless answered), viewer
 ```
 
+### `src/hub/checks.luau` (pure; what the checks popover shows)
+
+```luau
+export type CheckState = "failing" | "running" | "queued" | "passed" | "skipped"
+export type CheckRow = { name: string, source: string?, state: CheckState, startedAt: string?, completedAt: string?, url: string }
+export type CheckList = { headOid: string, rows: { CheckRow } }
+export type Load = { state: "loading" } | { state: "loaded", list: CheckList } | { state: "failed", reason: string }
+export type Popover = { key: string, hl: number, passedOpen: boolean, seen: { [string]: boolean }, from: "board" | "fixes" }
+export type Line = { kind: "header", label: string, count: number, skipped: number } | { kind: "check", row: CheckRow, sub: string } | { kind: "more", count: number, fresh: boolean }
+export type Mark = { failing: number, pending: number, passed: number }
+function M.clock(seconds: number): string                       -- "45s", "6m 24s", "1h 05m"
+function M.timeText(row: CheckRow, now: number): string          -- elapsed while running, "Queued", "Skipped", "took 1m 31s"
+function M.sub(row: CheckRow, now: number): string               -- "<workflow or app> · <time>"
+function M.counts(list: CheckList): Counts / M.unfinished(list): boolean / M.mark(checks: Model.Checks): Mark?
+function M.lines(list: CheckList, pop: Popover, now: number): { Line }   -- Failing, Running, Queued, then Passed with what finished while open first and the rest behind "Show N"
+function M.choices(lines): { Line } / M.observe(pop, list) / M.rerunning(list?, name): CheckRow? / M.rerunText(row, now): string
+```
+
 ### `src/hub/fixes.luau` (pure; what the fixes page shows)
 
 ```luau
@@ -533,6 +557,7 @@ export type Client = {
 	history: (repo: string, base: string, done: (value: RepoHistory?, err: Error?) -> ()) -> (),   -- gh api repos/<r>/actions/runs?branch=<base>&status=completed&per_page=100; keyed by workflow, not check, because the runs API has no job names
 	runs: (repo: string, sha: string, done: (value: { RunRow }?, err: Error?) -> ()) -> (),   -- gh api repos/<r>/actions/runs?head_sha=<sha>&status=completed&per_page=50 (the "passed earlier on this commit" basis)
 	detect: (repo: string, done: (value: Detected?, err: Error?) -> ()) -> (),
+	checkList: (prId: string, done: (value: Checks.CheckList?, err: Error?) -> ()) -> (),   -- check-list.graphql on one PR node id
 	run: (command: Command, done: (stdout: string?, err: Error?) -> ()) -> (),   -- executes a command from `commands`
 }
 export type Decode = (text: string) -> any      -- `tern.json.decode`, passed in so `github` never touches `tern`
@@ -549,6 +574,7 @@ function M.parseThreads(raw: any): { threads: { [string]: { OpenThread } }, rate
 function M.parseChecks(raw: any): ChecksUpdate?
 function M.parseProbe(stdout: string): Probe?             -- `gh api -i`: 200 or 304, Last-Modified, X-Poll-Interval
 function M.parseDetails(raw: any, pr: HubPR): FixDetails?
+function M.parseCheckList(raw: any): Checks.CheckList?   -- conclusions SUCCESS/NEUTRAL passed, SKIPPED/STALE skipped, FAILURE/TIMED_OUT/CANCELLED/ACTION_REQUIRED/STARTUP_FAILURE failing; statuses IN_PROGRESS running, QUEUED/PENDING/WAITING/REQUESTED queued; StatusContext SUCCESS passed, FAILURE/ERROR failing, PENDING running, EXPECTED queued
 function M.parseRuns(raw: any): { RunRow }                                  -- REST actions/runs
 function M.parseHistory(raw: any, base: string): RepoHistory                -- cancelled and skipped runs are not counted
 function M.evidenceFor(check: FailingCheck, changedPaths: { string }, history: RepoHistory?, runs: { RunRow }?): FlakeEvidence
@@ -733,7 +759,7 @@ function M.plan(command: string, model: string, effort: string?, prompt: string)
 
 ```luau
 export type FilterEdit = { index: number?, operator: Model.TitleOperator, repo: string?, field: Fields.Field, typing: boolean }
-export type Mode = "board" | "search" | "link" | "menu" | "confirm" | "help" | "fixes" | "reply" | "review-fix"
+export type Mode = "board" | "search" | "link" | "menu" | "confirm" | "help" | "fixes" | "reply" | "review-fix" | "checks"
 export type MenuId = "filters" | "title-filter" | "check-repository" | "check-filter" | "repositories" | "sort" | "settings" | "merge" | "actions"
 export type CardAction = { act: string, value: string?, label: string, key: string?, confirm: boolean }
 
@@ -745,8 +771,8 @@ export type AgentFixState =
 	| { kind: "failed", reason: string, worktree: string? }
 -- A ready fix is "reviewed" once `reviewed` holds every hunk id: State.reviewed(fix, reviewed): boolean.
 
--- A pill on a card's chip line; `kind` picks its look ("running" carries the amber spinner).
-export type Chip = { text: string, kind: "bad" | "bad-soft" | "info" | "wait" | "done" | "agent" | "running" }
+-- A pill on a card's chip line; `kind` picks its look. The checks spinner is on the meta line, never a chip.
+export type Chip = { text: string, kind: "bad" | "bad-soft" | "info" | "wait" | "done" | "agent" }
 
 export type Card = {
 	pr: HubPR, column: Column, reasons: { Reason },
@@ -832,6 +858,13 @@ function M.prOf(s: State, key: string): HubPR? / M.fixDetails(s) / M.fixSteps(s)
 function M.fixItems(s: State, step: Fixes.Step?): { string } / M.fixMain(s): CardAction?   -- the panel's actions; the card's own main action
 function M.fixSelect(s, index) / M.fixMove(s, delta) / M.fixFocus(s, "steps" | "panel") / M.fixPress(s): string? / M.fixToggleBots(s)
 function M.beginReply(s): boolean / M.cancelReply(s) / M.setDetails(s, details)
+
+-- The checks popover: mode "checks" over the board or the fixes page. `s.checks: Checks.Popover?` is { key, hl, passedOpen,
+-- seen, from }; loads are cached per "key@headOid" in `s.checkLists` as a Checks.Load (loading | loaded | failed).
+function M.openChecks(s, key): boolean / M.closeChecks(s)   -- closing returns to the fixes page when it is open
+function M.checkLoad(s, key): Checks.Load? / M.checksWanted(s, key): boolean / M.setCheckLoad(s, key, headOid, load)
+function M.checkLines(s): ({ Checks.Line }, Checks.Load?) / M.checksMove(s, delta) / M.checksFailing(s): boolean
+function M.checksPress(s): ChecksPress? / M.checksPick(s, index): ChecksPress?   -- { kind: "open", url, name } | { kind: "expand" } | { kind: "retry" }
 
 -- #16 extends Route.kind to "fixes" | "review-fix" and adds original: boolean?, ask: boolean?.
 -- All existing fixes/reply fields remain. ReviewPage is the prepared view data:

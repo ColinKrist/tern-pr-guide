@@ -158,6 +158,21 @@ local function hubMenuKey(s: HubState.State, key: Key): Action?
 	return nil
 end
 
+-- The checks popover: j and k (or the arrows) move, ⏎ opens the check or does the row's job, ⇧R re-runs failed
+-- checks when any fail, and Esc or V closes it.
+local function checksKey(s: HubState.State, key: Key): Action?
+	local name = key.name
+	if key.ctrl or key.meta or key.alt then return nil end
+	if name == "escape" then return act("checks-close") end
+	local label = cardKeyLabel(key)
+	if label == "V" then return act("checks-close") end
+	if name == "down" or name == "j" then return act("checks-move", 1) end
+	if name == "up" or name == "k" then return act("checks-move", -1) end
+	if name == "enter" then return act("checks-press") end
+	if label == "⇧R" and s.checks and HubState.checksFailing(s) then return act("card-rerun", s.checks.key) end
+	return nil
+end
+
 -- The fixes page: j and k move over the steps (or the panel's actions), h and l between the two, ⏎ goes in or
 -- chooses, Esc goes back to the board. A step's own keys follow the buttons it shows.
 local function fixesKey(s: HubState.State, key: Key): Action?
@@ -169,6 +184,7 @@ local function fixesKey(s: HubState.State, key: Key): Action?
 	local label = cardKeyLabel(key)
 	if label == "⇧L" then return act("fixes-log") end
 	if label == "⇧R" then return act("fixes-rerun") end
+	if label == "V" then return act("hub-checks", if s.route then s.route.key else nil) end
 	if name == "down" or name == "j" then return act("fixes-move", 1) end
 	if name == "up" or name == "k" then return act("fixes-move", -1) end
 	if name == "left" or name == "h" then return act("fixes-focus", "steps") end
@@ -223,6 +239,7 @@ local function hubBoardKey(s: HubState.State, key: Key): Action?
 	if label == "⇧S" or label == "⇧M" then return act("hub-menu", "settings") end
 	if label == "N" then return act("hub-link") end
 	local card = HubState.selectedCard(s)
+	if card and label == "V" then return act("hub-checks", card.pr.key) end
 	if card and label then
 		local main = card.main
 		if main and (main.key == label or (label == "⇧A" and main.act == "card-summarize")) then return act(main.act, card.pr.key) end
@@ -268,6 +285,7 @@ function M.hubAction(s: HubState.State, key: Key): Action?
 	end
 	if mode == "menu" then return hubMenuKey(s, key) end
 	if mode == "fixes" then return fixesKey(s, key) end
+	if mode == "checks" then return checksKey(s, key) end
 	if mode == "reply" then
 		if key.name == "enter" and (key.meta or key.ctrl) then return act("fixes-post") end
 		if key.name == "escape" then return act("fixes-cancel") end

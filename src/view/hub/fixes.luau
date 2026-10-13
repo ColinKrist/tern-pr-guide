@@ -4,6 +4,8 @@
 -- right shows the code for the step on show with the thread, annotation or conflict pinned in it, and a failed
 -- check's log when it has no annotations.
 -- Everything it draws was decided by `State.fix*` and `Fixes.steps`.
+local Checks = require("../../hub/checks")
+local ChecksView = require("./checks")
 local Log = require("../../ci/log")
 local Fixes = require("../../hub/fixes")
 local Model = require("../../hub/model")
@@ -14,6 +16,8 @@ local Ui = require("../ui")
 local el, span = Ui.el, Ui.span
 
 type Step = Fixes.Step
+
+local rerunning: (s: State.State, check: Fixes.FailingCheck) -> Checks.CheckRow?
 
 local M = {}
 
@@ -109,6 +113,42 @@ end
 
 -- Steps ----------------------------------------------------------------------------------------------------
 
+-- The failing check `check` while it runs again, from the pull request's check list.
+function rerunning(s: State.State, check: Fixes.FailingCheck): Checks.CheckRow?
+	local route = s.route :: State.Route
+	local load = State.checkLoad(s, route.key)
+	return Checks.rerunning(if load and load.state == "loaded" then load.list else nil, check.name)
+end
+
+-- The All checks row under the failing checks: what is still running and what passed, opening the checks popover.
+-- Failing checks count here only when the page lists none of them as steps.
+local function allChecks(s: State.State, pr: Model.HubPR, steps: { Step }): { Node }
+	local listed = false
+	for _, step in steps do
+		if step.check then listed = true end
+	end
+	local load = State.checkLoad(s, pr.key)
+	local mark: Checks.Mark
+	if load and load.state == "loaded" then
+		local c = Checks.counts(load.list)
+		mark = { failing = if listed then 0 else c.failing, pending = c.running + c.queued, passed = c.passed }
+	elseif pr.checks.state ~= "none" then
+		mark = { failing = if listed then 0 else pr.checks.failing, pending = pr.checks.pending, passed = pr.checks.passing }
+	else
+		return {}
+	end
+	local kids = ChecksView.summary(mark, true)
+	table.insert(kids, Ui.spacer())
+	table.insert(kids, Ui.keys("V"))
+	local open = s.checks ~= nil and s.checks.key == pr.key
+	return {
+		span("gp-ccard-h", "All checks"),
+		el("div", { class = "gp-ccard-steps", key = "all" }, {
+			el("div", { class = "gp-fx-all" .. (if open then " gp-fx-all-open" else ""), key = "row", actions = { click = "hub-checks=" .. pr.key } }, kids),
+		}),
+	}
+end
+
 local function stepRow(s: State.State, step: Step, index: number): Node
 	local route = s.route :: State.Route
 	local here = index == route.cur
@@ -118,6 +158,10 @@ local function stepRow(s: State.State, step: Step, index: number): Node
 	if step.path then where = step.path .. (if step.line then ":" .. step.line else "") end
 	local foot: { Node } = { span("gp-fx-pth", where) }
 	if done then table.insert(foot, span("gp-fx-state gp-fx-state-done", "Resolved")) end
+	local again = if step.check then rerunning(s, step.check) else nil
+	if again then
+		table.insert(foot, el("span", { class = "gp-fx-state gp-fx-state-run" }, { span("gp-hc-spin", ""), span("", Checks.rerunText(again, s.now)) }))
+	end
 	local lead: Node = if dot then el("span", { class = "gp-ol-dot gp-fx-dot-done" }, { dot }) else span("gp-ol-dot gp-fx-dot-open", "○")
 	return el("div", { class = "gp-fx-step" .. (if here then " gp-ol-herebox" else ""), key = "s" .. index, actions = { click = "fixes-step=" .. index } }, {
 		el("div", { class = "gp-ol-step" .. (if here then " gp-ol-here" else ""), key = "row" }, {
@@ -130,7 +174,7 @@ local function stepRow(s: State.State, step: Step, index: number): Node
 	})
 end
 
-local function outline(s: State.State, steps: { Step }, bots: { { author: string, count: number } }): Node
+local function outline(s: State.State, pr: Model.HubPR, steps: { Step }, bots: { { author: string, count: number } }): Node
 	local route = s.route :: State.Route
 	local kids: { Node } = {}
 	local first = true
@@ -150,6 +194,7 @@ local function outline(s: State.State, steps: { Step }, bots: { { author: string
 	if #steps == 0 then
 		table.insert(kids, span("gp-fx-muted", if route.loading then "Loading what needs fixing…" else "Nothing left to fix."))
 	end
+	for _, node in allChecks(s, pr, steps) do table.insert(kids, node) end
 	if #bots > 0 then
 		local names: { string } = {}
 		local count = 0
@@ -444,6 +489,7 @@ local function checkPanel(s: State.State, step: Step, pr: Model.HubPR, details: 
 		for _, ref in Log.refs(load.log, details.changedPaths) do
 			table.insert(marks, { path = ref.path, line = ref.line, level = "failure", title = nil, message = ref.text })
 		end
+		if rerunning(s, check) then table.insert(kids, span("gp-fx-stale", "Log from the failed run")) end
 		for index, section in load.log.sections do table.insert(kids, logBlock(section, index)) end
 		for _, node in pinned(check, marks, details) do table.insert(kids, node) end
 	else
@@ -564,7 +610,10 @@ local function hints(s: State.State, steps: { Step }): Node
 		return el("span", { class = "gp-hb-item gp-hb-opt gp-hb-more", actions = { click = "hub-help" } }, { Ui.keys("?"), span("gp-hb-label", "Shortcuts") })
 	end
 	local kids: { Node } = {}
-	if route.reply and step and step.thread then
+	if s.mode == "checks" then
+		kids = { span("gp-hb-mode", "Checks"), Ui.spacer() }
+		for _, key in ChecksView.hints(s) do table.insert(kids, item(key[1], string.lower(key[2]), true)) end
+	elseif route.reply and step and step.thread then
 		kids = { span("gp-hb-mode", "Replying to @" .. step.thread.author), Ui.spacer(), item("⌘⏎", "post reply"), item("esc", "cancel") }
 	else
 		local short = if step == nil then "Nothing left to fix" elseif step.check then step.check.name elseif step.path then Text.baseName(step.path) else step.who
@@ -594,6 +643,7 @@ local function hints(s: State.State, steps: { Step }): Node
 			end
 		end
 		if step then table.insert(kids, item("G", if step.group == "conflict" then "resolve on GitHub" else "open on GitHub")) end
+		table.insert(kids, item("V", "all checks"))
 		if #Fixes.bots(State.fixDetails(s) :: Fixes.FixDetails) > 0 then table.insert(kids, item("B", "bot comments")) end
 		table.insert(kids, shortcuts())
 	end
@@ -612,7 +662,7 @@ function M.view(s: State.State, motion: Ui.Motion): Node
 	return el("div", {}, { el("div", { class = rootClass(s), key = "fixes" }, {
 		header(s, pr, steps),
 		el("div", { class = "gp-guide gp-fx-cols" .. (if route.focus == "panel" then " gp-fx-pf" else ""), key = "cols" }, {
-			outline(s, steps, Fixes.bots(details)),
+			outline(s, pr, steps, Fixes.bots(details)),
 			panel(s, motion, pr, details, step),
 		}),
 		hints(s, steps),

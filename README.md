@@ -66,6 +66,11 @@ The **Next up** bar above the board shows the most urgent PR. Drafts and PRs wit
 A PR leaves the board once it merges, from the hub or anywhere else. The folded **Recently merged**
 list at the bottom (`R`) keeps your 20 latest merges from the past 7 days, and ⏎ opens one.
 
+**Checks.** Each card shows its checks as one mark: failing checks in red, unfinished ones as "3
+pending" in amber, and otherwise the passed count in green. Click it or press `V` to list every
+check on the latest commit, grouped Failing, Running, Queued and Passed, with how long each ran.
+`⏎` opens a check's page. While the list is open, running checks update every 30 seconds.
+
 When a PR lands in Needs fixes, its card is outlined in red and the hub's status-line segment
 flashes. Failed merges, failing checks and feedback from a person also show a toast. Conflicts
 don't, because they arrive in bursts when other PRs merge. The segment stays visible while the hub
@@ -135,6 +140,8 @@ failed checks from the same page.
 - **Re-run failed checks.** `⇧R` re-runs the failed GitHub Actions runs (`gh run rerun --failed`)
   and the failed Buildkite jobs (`bk job retry`). A failing check from any other CI is named in the
   error, since PR Guide can't re-run it.
+  A check that is running again reads "Re-running" with its time, and its log is the failed run's.
+  **All checks**, under the steps, opens the checks list (`V`).
 
 - **Agent fixes.** Your OMP agent resolves a conflict or addresses a bot review in an isolated
   worktree, never in your checkout. You follow its progress on the card.
@@ -292,6 +299,7 @@ Press `?` for shortcuts that apply to the current page. In the hub, the panel fo
 | `,` | Choose the repository's merge method |
 | `U` | Update the branch |
 | `⇧R` | Re-run failed checks |
+| `V` | Show the selected card's checks: `j` `k` move, `⏎` opens a check, `Esc` closes |
 | `Q` | Re-request review |
 | `O` | Choose a clone or open a retained worktree |
 | `Space` or ⌘-click | Select cards for a batch action |
@@ -346,6 +354,7 @@ Replies and resolves write to GitHub right away.
 | `E` | Resolve the thread |
 | `⇧L` | Open the check's log |
 | `⇧R` | Re-run failed checks |
+| `V` | Show all checks |
 | `G` | Open GitHub's conflict editor |
 | `B` | Show bot comments |
 | `Esc` | Back to the hub with the same card selected |
