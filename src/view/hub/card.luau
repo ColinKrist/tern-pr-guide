@@ -115,6 +115,8 @@ function M.view(card: State.Card, now: number, checksOpen: boolean?, clock: numb
 	-- A selected card shows a blue box where the gutter check sits (Ready), or at the start of the chip line (Inactive).
 	local box = el("span", { class = "gp-hc-box", key = "box" }, { Ui.icon("check") })
 	if card.column == "ready" or card.column == "approved" then
+		-- A done card has no job to name; a chip it does carry (auto-land) says who is merging it.
+		if #card.chips > 0 then table.insert(body, chipLine(card, nil)) end
 		local gutter = if card.marked then box else el("span", { class = "gp-hc-tick", key = "tick" }, { Ui.icon("check") })
 		table.insert(body, el("div", { class = "gp-hc-titlerow", key = "titlerow" }, { gutter, span("gp-hc-title", pr.title) }))
 	else

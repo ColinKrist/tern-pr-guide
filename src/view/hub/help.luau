@@ -86,7 +86,7 @@ local function boardGroups(s: State.State): { Group }
 		{ "⏎ / Space", "Edit or toggle a saved filter" },
 		{ "Tab", "Between filter text and options; ⏎ applies" },
 		{ "S", "Sort" },
-		{ "⇧S", "Settings: models, effort, lens, where links open, background guides, and auto-land's tries (- +) and dequeue label (⇧D) (also ⇧M)" },
+		{ "⇧S", "Settings: models, effort, lens, where links open, background guides, and auto-land's tries and dequeue label (also ⇧M)" },
 		{ "⌘R", "Refresh" },
 		{ "Space", "Select a card to merge or close" },
 	}

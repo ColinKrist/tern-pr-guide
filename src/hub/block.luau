@@ -362,6 +362,8 @@ ACTIONS["hub-guides"] = function(b, cx, to)
 end
 -- Settings' auto-land rows: - and + (or the stepper) change the try cap; ⇧D (or a click on the label) edits the dequeue label.
 local function saveLand(b: Block, cx: BlockCx)
+	-- Like the model choice, a sample board's picks are never saved.
+	if b.fixture then return end
 	local why = AutoLandRun.saveSettings(b.s.landSettings)
 	if why then cx:toast("error", "Couldn't save the auto-land settings: " .. why) end
 end
