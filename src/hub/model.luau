@@ -290,7 +290,9 @@ function M.placement(pr: HubPR, now: number, ignored: { IgnoredCheck }?): Placem
 	if pr.tandem then return { tab = "mine", column = "in_review", reasons = {} } end
 	local reasons = M.reasons(pr, now, ignored)
 	if #reasons > 0 then return { tab = "mine", column = "needs_fixes", reasons = reasons } end
+	-- A merge in flight stays Ready while checks run: Aviator sets its own status back to pending when it queues.
 	local passing = pr.checks.state == "passing" or pr.checks.state == "none"
+		or (pr.pending ~= nil and pr.checks.state == "pending")
 	if pr.reviews.decision == "approved" and passing and not pr.conflicts then
 		return { tab = "mine", column = "ready", reasons = reasons }
 	end
