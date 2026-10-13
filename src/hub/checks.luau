@@ -1,6 +1,7 @@
 --!strict
--- What the checks popover shows: a pull request's checks in groups (Failing, Running, Queued, then Passed behind a
--- fold), the time each one reads, the card's checks mark, and the popover's own state. Pure: no clock, no network,
+-- What the checks popover shows: a pull request's reviewers, its checks in groups (Failing, Running, Queued, then Passed
+-- behind a fold), the time each one reads, the card's checks mark, the PR page's reviews mark, and the popover's own
+-- state. Pure: no clock, no network,
 -- no Tern; `now` (seconds) is passed in. github.luau parses GitHub's answer into these shapes.
 local Model = require("./model")
 
@@ -12,8 +13,10 @@ export type CheckList = { headOid: string, rows: { CheckRow } }
 export type Load = { state: "loading" } | { state: "loaded", list: CheckList } | { state: "failed", reason: string }
 
 -- The open popover: the card it is for, the highlighted row (1-based, over the rows that can be chosen), whether
--- Passed is unfolded, the checks seen unfinished while it was open (by name), and the page it opened from.
-export type Popover = { key: string, hl: number, passedOpen: boolean, seen: { [string]: boolean }, from: "board" | "fixes" }
+-- Passed is unfolded, the checks seen unfinished while it was open (by name), and where it opened: a card's checks
+-- mark, the fixes page's All checks row, or a PR page's status marks.
+export type Origin = "board" | "fixes" | "page"
+export type Popover = { key: string, hl: number, passedOpen: boolean, seen: { [string]: boolean }, from: Origin }
 
 -- A line of the popover: a group's header, a check with its second line, or the fold that hides the rest of Passed.
 export type Line =
@@ -23,6 +26,13 @@ export type Line =
 
 -- The card's checks mark: failing in red, unfinished in amber with the spinner, all done in green.
 export type Mark = { failing: number, pending: number, passed: number }
+
+-- A PR page's reviews mark: approved (with how many approved), changes requested, or a review still wanted.
+export type ReviewMark = { kind: "approved", approvals: number } | { kind: "changes" } | { kind: "required" }
+
+-- A row of the popover's Reviewers: who, where they stand, and "Approved · 2h" (just "Requested" while they owe one).
+export type ReviewerState = "approved" | "changes" | "commented" | "requested"
+export type Reviewer = { name: string, state: ReviewerState, sub: string }
 
 export type Counts = { failing: number, running: number, queued: number, passed: number, skipped: number }
 
@@ -88,6 +98,45 @@ end
 function M.mark(checks: Model.Checks): Mark?
 	if checks.state == "none" then return nil end
 	return { failing = checks.failing, pending = checks.pending, passed = checks.passing }
+end
+
+-- The reviews mark from GitHub's decision; a repo that requires no review has none, so its reviewers' latest verdicts
+-- stand in.
+function M.reviewMark(reviews: Model.ReviewState): ReviewMark
+	local approvals, changes = 0, false
+	for _, review in reviews.latest do
+		if review.verdict == "approved" then approvals += 1 end
+		if review.verdict == "changes_requested" then changes = true end
+	end
+	local decision = reviews.decision
+	if decision == "changes_requested" or (decision == "none" and changes) then return { kind = "changes" } end
+	if decision == "approved" or (decision == "none" and approvals > 0) then return { kind = "approved", approvals = approvals } end
+	return { kind = "required" }
+end
+
+local VERDICTS: { [Model.Verdict]: { state: ReviewerState, label: string } } = {
+	approved = { state = "approved", label = "Approved" },
+	changes_requested = { state = "changes", label = "Changes requested" },
+	commented = { state = "commented", label = "Commented" },
+}
+
+-- Each reviewer's latest review, then the people and teams asked who haven't reviewed. A dismissed review is no stand.
+function M.reviewers(reviews: Model.ReviewState, now: number): { Reviewer }
+	local out: { Reviewer } = {}
+	local seen: { [string]: boolean } = {}
+	for _, review in reviews.latest do
+		local verdict = VERDICTS[review.verdict]
+		if verdict then
+			seen[review.author] = true
+			local ago = string.gsub(Model.ago(review.at, now), " ago$", "")
+			table.insert(out, { name = review.author, state = verdict.state, sub = if ago == "" then verdict.label else verdict.label .. " · " .. ago })
+		end
+	end
+	for _, name in reviews.requested do
+		local reviewer: Reviewer = { name = name, state = "requested", sub = "Requested" }
+		if not seen[name] then table.insert(out, reviewer) end
+	end
+	return out
 end
 
 -- The popover's lines, top to bottom. A check that finished while the popover was open stays at the top of Passed.

@@ -1,7 +1,7 @@
 --!strict
 -- A PR's page in the hub offers the PR's pull request actions: ⇧P opens the Pull request menu under the page's button,
 -- Close asks "Close #n?" in place, ⌘⏎ answers it (a sample board only says it doesn't close), and Esc closes the menu
--- or the question before it leaves the page.
+-- or the question before it leaves the page. `v` and a click on its status marks open its reviewers and checks.
 local Block: any = require("../src/hub/block")
 local Host: any = require("../src/host")
 local Ui: any = require("../src/view/ui")
@@ -89,6 +89,23 @@ return function()
 		assert(b.s.confirm and b.s.confirm.kind == "close", "X in the menu chooses Close")
 		press("escape")
 		assert(b.s.confirm == nil and b.pages.shown ~= nil, "Esc cancels the question, not the page")
+
+		-- `v` opens the reviewers and checks under the page's status marks; its keys are the hub's until `v` closes it.
+		press("v")
+		assert(b.s.mode == "checks" and b.s.checks and b.s.checks.key == KEY and b.s.checks.from == "page", "v opens the popover on the page's PR")
+		local status = overlays(Block.view(b).layer)
+		assert(#status == 1 and status[1].p.anchor.node == "main.page.header.status.marks", "under the page's status marks")
+		local said = texts(status[1])
+		assert(table.find(said, "Reviewers") ~= nil and table.find(said, "alice") ~= nil and table.find(said, "Approved · 1d") ~= nil, table.concat(said, "|"))
+		press("j")
+		assert(b.s.mode == "checks", "j is the popover's")
+		press("v")
+		assert(b.s.checks == nil and b.s.mode == "board" and b.pages.shown ~= nil, "v closes it and the page stays")
+		Block.event(b, { ev = "action", act = "hub-checks" } :: any, cx)
+		assert(b.s.checks and b.s.checks.from == "page", "a click on a mark opens it too")
+		Block.event(b, { ev = "action", act = "checks-close" } :: any, cx)
+		assert(b.s.checks == nil, "a click outside closes it")
+
 		press("escape")
 		assert(b.pages.shown == nil, "then Esc goes back to the board")
 	end)

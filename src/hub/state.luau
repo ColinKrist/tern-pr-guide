@@ -2079,10 +2079,11 @@ function M.checksWanted(s: State, key: string): boolean
 	return load == nil or load.state == "failed"
 end
 
--- Opens the popover on `key`; false when no such PR is on hand. The highlight starts on the first row.
-function M.openChecks(s: State, key: string): boolean
+-- Opens the popover on `key`; false when no such PR is on hand. The highlight starts on the first row. `page`: it opens
+-- from a PR page's status marks, which the board can't see.
+function M.openChecks(s: State, key: string, page: boolean?): boolean
 	if M.prOf(s, key) == nil then return false end
-	local pop: Checks.Popover = { key = key, hl = 1, passedOpen = false, seen = {}, from = if s.route then "fixes" else "board" }
+	local pop: Checks.Popover = { key = key, hl = 1, passedOpen = false, seen = {}, from = if page then "page" elseif s.route then "fixes" else "board" }
 	s.checks, s.mode, s.menu = pop, "checks", nil
 	local load = M.checkLoad(s, key)
 	if load and load.state == "loaded" then Checks.observe(pop, load.list) end

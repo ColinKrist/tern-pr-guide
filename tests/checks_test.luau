@@ -1,12 +1,13 @@
 --!strict
--- The checks popover: GitHub's answer parsed into check rows, the groups and times the popover shows, its state on
--- the hub (open, move, press, close), and the keys that drive it.
+-- The checks popover: GitHub's answer parsed into check rows, the groups and times the popover shows, its reviewers
+-- and the PR page's reviews mark, its state on the hub (open, move, press, close), and the keys that drive it.
 local Card = require("../src/view/hub/card")
 local Cases: any = require("../fixtures/hub/cases")
 local Checks = require("../src/hub/checks")
 local Fake = require("./fake-runner")
 local Github = require("../src/github")
 local Keys = require("../src/keys")
+local Model = require("../src/hub/model")
 local Paths = require("../src/view/hub/paths")
 local Raw: any = require("../fixtures/hub/raw-check-list")
 local State = require("../src/hub/state")
@@ -125,6 +126,42 @@ local function shown()
 	assert(Checks.rerunText(running, NOW) == "Re-running 6m 24s" and Checks.rerunText(row("deploy", "queued"), NOW) == "Re-running")
 end
 
+local function reviewers()
+	local function review(author: string, verdict: Model.Verdict, at: string): Model.Review
+		return { author = author, bot = false, verdict = verdict, at = at, oid = "h" }
+	end
+	local function state(decision: any, latest: { Model.Review }, requested: { string }): Model.ReviewState
+		return { decision = decision, latest = latest, mine = nil, requestedMe = false, requested = requested, teams = {}, unresolved = 0, threads = {}, threadsKnown = true, comments = 0 }
+	end
+	local function rows(list: { Checks.Reviewer }): string
+		local out: { string } = {}
+		for _, r in list do table.insert(out, r.name .. "|" .. r.state .. "|" .. r.sub) end
+		return table.concat(out, "\n")
+	end
+
+	-- Each reviewer's latest stand with how long ago, then who is asked and hasn't reviewed (a team as its slug). A
+	-- reviewer asked again after reviewing shows their review; a dismissed review is no stand.
+	local reviews = state("changes_requested", {
+		review("kyle", "approved", "2026-10-09T10:00:00Z"), review("mira", "changes_requested", "2026-10-09T11:20:00Z"),
+		review("tandem-bot", "commented", "2026-10-09T09:00:00Z"), review("old", "dismissed", "2026-10-08T00:00:00Z"),
+	}, { "mira", "acme/mobile", "sam" })
+	assert(rows(Checks.reviewers(reviews, NOW)) == table.concat({
+		"kyle|approved|Approved · 2h", "mira|changes|Changes requested · 40m", "tandem-bot|commented|Commented · 3h",
+		"acme/mobile|requested|Requested", "sam|requested|Requested",
+	}, "\n"), rows(Checks.reviewers(reviews, NOW)))
+	assert(#Checks.reviewers(state("review_required", {}, {}), NOW) == 0)
+
+	-- The reviews mark: GitHub's decision, else (a repo that requires no review) the latest verdicts.
+	local mark = Checks.reviewMark(reviews)
+	assert(mark.kind == "changes")
+	local approved = Checks.reviewMark(state("approved", { review("kyle", "approved", ""), review("ann", "approved", ""), review("bot", "commented", "") }, {}))
+	assert(approved.kind == "approved" and approved.approvals == 2)
+	assert(Checks.reviewMark(state("review_required", { review("kyle", "approved", "") }, { "sam" })).kind == "required", "one approval of two is still required")
+	assert(Checks.reviewMark(state("none", {}, {})).kind == "required")
+	assert(Checks.reviewMark(state("none", { review("kyle", "approved", "") }, {})).kind == "approved")
+	assert(Checks.reviewMark(state("none", { review("kyle", "approved", ""), review("mira", "changes_requested", "") }, {})).kind == "changes")
+end
+
 local function popover()
 	local s = State.new(Cases.prs, Cases.asOf, nil)
 	local KEY = "acme/web#111"
@@ -166,6 +203,9 @@ local function popover()
 	pr.headOid = "moved"
 	assert(State.checkLoad(s, KEY) == nil)
 	assert(not State.openChecks(s, "acme/web#999"))
+	-- Opened from a PR page, it says so, to hang under the page's status marks.
+	State.closeChecks(s)
+	assert(State.openChecks(s, "acme/web#111", true) and (s.checks :: any).from == "page")
 end
 
 -- The checks mark follows "repo #number" in the meta line's lead, so hovering or selecting a card never moves it;
@@ -224,6 +264,7 @@ end
 return function()
 	parsing()
 	shown()
+	reviewers()
 	popover()
 	placed()
 	keys()

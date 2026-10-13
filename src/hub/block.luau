@@ -577,15 +577,16 @@ ACTIONS["review-fix-discard-cancel"] = function(b) State.reviewAsk(b.s, false) e
 ACTIONS["review-fix-push"] = function(b, cx) reviewEffect(b, cx, "push") end
 ACTIONS["review-fix-discard-confirm"] = function(b, cx) reviewEffect(b, cx, "discard") end
 
--- The checks popover: V or a click on a card's checks mark (or the fixes page's All checks row) opens it on that pull
--- request, and a second press closes it.
+-- The checks popover: V or a click on a card's checks mark (or the fixes page's All checks row, or `v` and a click on a
+-- PR page's status marks) opens it on that pull request, and a second press closes it.
 ACTIONS["hub-checks"] = function(b: Block, cx: BlockCx, key: string)
 	local s = b.s
-	local target: string? = if key ~= "" then key elseif s.route then s.route.key else s.selected
+	local page = Pages.shown(b) ~= nil
+	local target: string? = if key ~= "" then key elseif page then Pages.cardKey(b) elseif s.route then s.route.key else s.selected
 	if target == nil then return end
 	if s.checks and s.checks.key == target then return State.closeChecks(s) end
 	if not s.route then State.select(s, target) end
-	if State.openChecks(s, target) then loadCheckList(b, cx, target) end
+	if State.openChecks(s, target, page) then loadCheckList(b, cx, target) end
 end
 ACTIONS["checks-close"] = function(b)
 	State.closeChecks(b.s)
@@ -861,8 +862,9 @@ local block: BlockDef<Block> = {
 		local s = b.s
 		if b.pages.shown and Pages.shown(b) then
 			local page = Pages.view(b)
-			-- The Pull request menu and its question hang under the page's Pull request button.
-			return { main = page.main, layer = page.layer or Board.layer(s, Pages.prButton(b)) }
+			-- The Pull request menu and its question hang under the page's Pull request button, the checks popover under its
+			-- status marks.
+			return { main = page.main, layer = page.layer or Board.layer(s, Pages.prButton(b), Pages.statusMarks(b)) }
 		end
 		local motion = { born = s.born, next = {}, booted = s.booted, animate = not s.keyed }
 		if s.route then

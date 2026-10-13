@@ -48,14 +48,23 @@ return function()
 		for mod, on in mods or {} do key[mod] = on end
 		return key
 	end
-	local rest = { rest = true, reading = true, fixes = true, pr = false }
+	local rest = { rest = true, reading = true, fixes = true, pr = false, status = false }
 	local act = Keys.hubPageAction(press("escape"), rest)
 	assert(act and act.act == "pages-back")
-	assert(Keys.hubPageAction(press("escape"), { rest = false, reading = false, fixes = true, pr = false }) == nil)
+	assert(Keys.hubPageAction(press("escape"), { rest = false, reading = false, fixes = true, pr = false, status = false }) == nil)
 	act = Keys.hubPageAction(press("t"), rest)
 	assert(act and act.act == "pages-cycle")
-	assert(Keys.hubPageAction(press("t"), { rest = true, reading = true, fixes = false, pr = false }) == nil)
-	assert(Keys.hubPageAction(press("t"), { rest = false, reading = false, fixes = true, pr = false }) == nil)
+	assert(Keys.hubPageAction(press("t"), { rest = true, reading = true, fixes = false, pr = false, status = false }) == nil)
+	assert(Keys.hubPageAction(press("t"), { rest = false, reading = false, fixes = true, pr = false, status = false }) == nil)
 	assert(Keys.hubPageAction(press("t", { meta = true }), rest) == nil)
 	assert(Keys.hubPageAction(press("j"), rest) == nil)
+
+	-- `v` on a page with the PR's status marks opens the reviewers and checks; without them, or while a field has the
+	-- letters, it is the page's
+	local status = { rest = true, reading = true, fixes = false, pr = false, status = true }
+	act = Keys.hubPageAction(press("v"), status)
+	assert(act and act.act == "hub-checks" and act.value == nil)
+	assert(Keys.hubPageAction(press("v"), rest) == nil)
+	assert(Keys.hubPageAction(press("v"), { rest = false, reading = false, fixes = false, pr = false, status = true }) == nil)
+	assert(Keys.hubPageAction(press("v", { shift = true }), status) == nil)
 end

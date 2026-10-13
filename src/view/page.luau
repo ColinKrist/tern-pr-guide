@@ -123,6 +123,11 @@ function M.prButtonPath(root: string): string
  return headerPath(root) .. ".status.pr"
 end
 
+-- The reviews and checks marks in the header's status row, which the host's checks popover hangs under.
+function M.statusPath(root: string): string
+ return headerPath(root) .. ".status.marks"
+end
+
 -- The code block `blockId`: a step's block in its change row, or a supporting file's.
 function M.blockPath(root: string, blockId: string): string
  local PAGE = pagePath(root)

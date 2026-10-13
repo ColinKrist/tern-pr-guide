@@ -1,6 +1,7 @@
 --!strict
--- The checks popover (a Tern overlay under a card's checks mark or the fixes page's All checks row), the checks mark
--- itself, and the popover's keys for the hint bar. Everything it draws was decided by `State.checkLines` and `Checks`.
+-- The checks popover (a Tern overlay under a card's checks mark, the fixes page's All checks row or a PR page's status
+-- marks), the checks mark itself, and the popover's keys for the hint bar. Everything it draws was decided by
+-- `State.checkLines` and `Checks`.
 local Checks = require("../../hub/checks")
 local Paths = require("./paths")
 local State = require("../../hub/state")
@@ -64,17 +65,37 @@ local function lineNode(line: Checks.Line, index: number, hl: number): Node
 	})
 end
 
--- Where the popover hangs: the All checks row on the fixes page, else the card's checks mark, or the card itself
--- while its mark is hidden (no checks, or a question in place of its meta line's lead).
-local function anchorOf(s: State.State, pop: Checks.Popover): string
+local function reviewerIcon(state: Checks.ReviewerState): Node
+	if state == "approved" then return el("span", { class = "gp-hcl-ic gp-hcl-ic-pass" }, { Ui.icon("check") }) end
+	if state == "changes" then return el("span", { class = "gp-hcl-ic gp-hcl-ic-fail" }, { Ui.icon("x") }) end
+	if state == "commented" then return el("span", { class = "gp-hcl-ic" }, { Ui.icon("message") }) end
+	return el("span", { class = "gp-hcl-ic" }, { span("gp-hcl-wait", "") })
+end
+
+-- Who reviewed and who is asked, above the checks. Not rows the highlight rests on: j and k move through the checks.
+local function reviewersNode(reviewers: { Checks.Reviewer }): Node
+	local kids: { Node } = { el("div", { class = "gp-hcl-top gp-hcl-rv-top", key = "h" }, { span("gp-hcl-t", "Reviewers"), span("gp-hcl-sha", tostring(#reviewers)) }) }
+	if #reviewers == 0 then table.insert(kids, span("gp-hcl-empty", "No reviewers")) end
+	for index, reviewer in reviewers do
+		table.insert(kids, el("div", { class = "gp-hcl-rv-row", key = "r" .. index }, {
+			span("gp-hcl-rv-name", reviewer.name), span("gp-hcl-rv-sub", reviewer.sub), reviewerIcon(reviewer.state),
+		}))
+	end
+	return el("div", { class = "gp-hcl-rv", key = "reviewers" }, kids)
+end
+
+-- Where the popover hangs: the All checks row on the fixes page, a PR page's status marks (`page`), else the card's
+-- checks mark, or the card itself while its mark is hidden (no checks, or a question in place of its meta line's lead).
+local function anchorOf(s: State.State, pop: Checks.Popover, page: string?): string
 	if pop.from == "fixes" then return Paths.allChecks end
+	if pop.from == "page" and page then return page end
 	local card = State.card(s, pop.key)
 	if card == nil then return Paths.titleLabel end
 	if Checks.mark(card.pr.checks) == nil or card.asking then return Paths.card(card) end
 	return Paths.checksMark(card)
 end
 
-function M.view(s: State.State): Node?
+function M.view(s: State.State, page: string?): Node?
 	local pop = s.checks
 	local pr = if pop then State.prOf(s, pop.key) else nil
 	if pop == nil or pr == nil then return nil end
@@ -98,11 +119,15 @@ function M.view(s: State.State): Node?
 			table.insert(body, lineNode(line, if line.kind == "header" then 0 else index, pop.hl))
 		end
 	end
-	local card = el("div", { class = "gp-md gp-hcl" .. (if s.keyed then "" else " gp-soft"), key = "body" }, {
-		el("div", { class = "gp-hcl-top", key = "top" }, { span("gp-hcl-t", "Checks"), span("gp-hcl-sha", sha) }),
-		el("div", { class = "gp-hcl-list", key = "list" }, body),
-	})
-	return { k = "overlay", p = { key = "checks", role = "gp.hubchecks", aria = "Checks", anchor = { node = anchorOf(s, pop), side = "below" }, size = "md" }, c = { card } } :: any
+	-- The fixes page's All checks row is about checks alone; a card or a PR page also shows who reviewed.
+	local parts: { Node } = {}
+	local withReviewers = pop.from ~= "fixes"
+	if withReviewers then table.insert(parts, reviewersNode(Checks.reviewers(pr.reviews, s.now))) end
+	table.insert(parts, el("div", { class = "gp-hcl-top", key = "top" }, { span("gp-hcl-t", "Checks"), span("gp-hcl-sha", sha) }))
+	table.insert(parts, el("div", { class = "gp-hcl-list", key = "list" }, body))
+	local card = el("div", { class = "gp-md gp-hcl" .. (if s.keyed then "" else " gp-soft"), key = "body" }, parts)
+	local aria = if withReviewers then "Reviewers and checks" else "Checks"
+	return { k = "overlay", p = { key = "checks", role = "gp.hubchecks", aria = aria, anchor = { node = anchorOf(s, pop, page), side = "below" }, size = "md" }, c = { card } } :: any
 end
 
 -- The popover's keys for the hint bar, in the order they matter.
