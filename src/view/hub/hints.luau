@@ -12,7 +12,7 @@ local FIXED: { [string]: { title: string, keys: { { string } } } } = {
 	menu = { title = "Choosing", keys = { { "j k", "Move" }, { "⏎", "Choose" }, { "esc", "Close" } } },
 	link = { title = "Adding", keys = { { "⏎", "Add" }, { "⇧⏎", "Open" }, { "esc", "Clear" } } },
 	confirm = { title = "Confirm", keys = { { "⌘⏎", "Confirm" }, { "esc", "Cancel" } } },
-	help = { title = "All shortcuts", keys = { { "esc", "Close" } } },
+	help = { title = "Shortcuts", keys = { { "esc", "Close" } } },
 }
 
 local M = {}
@@ -44,7 +44,7 @@ function M.view(s: State.State): Node
 		table.insert(kids, el("span", { class = "gp-hb-item" }, { Ui.keys(key[1]), span("gp-hb-label", key[2]) }))
 	end
 	if s.mode == "board" then
-		table.insert(kids, el("span", { class = "gp-hb-item gp-hb-more", key = "more", actions = { click = "hub-help" } }, { Ui.keys("?"), span("gp-hb-label", "All shortcuts") }))
+		table.insert(kids, el("span", { class = "gp-hb-item gp-hb-more", key = "more", actions = { click = "hub-help" } }, { Ui.keys("?"), span("gp-hb-label", "Shortcuts") }))
 	end
 	return el("div", { class = "gp-hintbar", key = "hints" }, kids)
 end

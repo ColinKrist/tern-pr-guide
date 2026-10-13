@@ -194,7 +194,7 @@ To review has its own field: "Paste a pull request link to review" (`N`, from ei
 | ⌘⏎ / Esc | Confirm / cancel inline questions |
 | ⌘R | Refresh |
 
-- **Every control has a key.** The hint bar shows only what applies right now: Next up, Move, Open, the selected card's main action (plus Select when it applies), and **? All shortcuts**. `?` opens a grouped panel of every key (Move, The selected card, The board), and Esc or a click outside closes it. Board-wide keys appear in that panel and in the controls' tooltips, not in the bar. The search field and the add-by-link field show their keys inside them. This matches the plugin's review page, which ends its hint bar with "? all shortcuts".
+- **Every control has a key.** The hint bar shows only what applies right now: Next up, Move, Open, the selected card's main action (plus Select when it applies), and **? Shortcuts**. `?` opens a grouped panel for the current page: the board shows Move, actions for the selected card, and board shortcuts for the current tab and selection; the fixes page and Review fix show only their own keys. Esc, `?` or a click outside closes it. Board-wide keys appear in the board panel and in the controls' tooltips, not in the bar. The search field and the add-by-link field show their keys inside them.
 - **A click and its key run the same action.**
 - **Keyboard-driven changes never animate.**
 

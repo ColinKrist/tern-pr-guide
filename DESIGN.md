@@ -329,7 +329,7 @@ The board's two tabs look like Tern's `tabs` node (13px sans, muted until active
 A 14px square with a 4px radius for a choice that can be several. Empty it is a 1.5px `--t4` outline; chosen it is Review Blue filled with a white check. Used by the repository menu, and by selecting several cards later. A single choice shows only a Review Blue check.
 
 ### Menu rows
-Rows in an overlay menu are `--r-ctl` rows, hover and keyboard cursor in `--l1` and Review Blue wash, a box or check first, then the label, then a muted count or hint at the right. Menus opened by a key draw without animation. The key panel (`?`) is an overlay with three columns of key rows: Move, The selected card, The board.
+Rows in an overlay menu are `--r-ctl` rows, hover and keyboard cursor in `--l1` and Review Blue wash, a box or check first, then the label, then a muted count or hint at the right. Menus opened by a key draw without animation. On the hub board, the key panel (`?`) shows Move, the selected card's available actions, and board shortcuts for the current tab and selection. On the fixes and Review fix pages, it shows only that page's keys.
 
 ### Banner
 One quiet line above a board for an item that spans the board (for example Next up): shade fill, `--l2` hairline, sized to its content and left-aligned, read left to right, ending in its action. Never a meaning-color wash.

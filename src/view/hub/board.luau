@@ -307,7 +307,7 @@ function M.layer(s: State.State): Node?
 			return el("div", {}, { el("div", { class = "gp-md-scrim", key = "scrim", actions = { click = "hub-confirm-cancel" } }), Selection.overlay(selection.confirm, Paths.selection(selection.group)) })
 		end
 	elseif s.mode == "help" then
-		return el("div", {}, { el("div", { class = "gp-md-scrim", key = "scrim", actions = { click = "hub-help-close" } }), Help.view() })
+		return el("div", {}, { el("div", { class = "gp-md-scrim", key = "scrim", actions = { click = "hub-help-close" } }), Help.view(s.helpPage or "board", s) })
 	end
 	return nil
 end

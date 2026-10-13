@@ -63,6 +63,8 @@ end
 
 -- The fixes page and the reply field inside the thread card on show. They follow the keys in fixes.luau.
 M.FIXES = "main.fixes"
+M.fixesTitle = M.FIXES .. ".header.title"
+M.reviewFixTitle = "main.review-fix.header.title"
 M.replyField = M.FIXES .. ".cols.code.ex.body.composer.body.field"
 
 -- The ▾ beside a selected card's split button, which the card's menu anchors to.

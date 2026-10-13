@@ -146,6 +146,7 @@ end
 local function fixesKey(s: HubState.State, key: Key): Action?
 	local name = key.name
 	if key.ctrl or key.meta or key.alt then return nil end
+	if isQuestionMark(key) then return act("hub-help") end
 	if name == "escape" then return act("fixes-close") end
 	if string.match(name, "^%a$") and (s.search.text ~= "" or s.link.text ~= "") then return nil end
 	local label = cardKeyLabel(key)
@@ -222,6 +223,7 @@ function M.hubAction(s: HubState.State, key: Key): Action?
 	if mode == "review-fix" then
 		local page = HubState.reviewPage(s)
 		if not page then return if key.name == "escape" then act("review-fix-close") else nil end
+		if isQuestionMark(key) then return act("hub-help") end
 		if page.busy then return nil end
 		if page.ask then
 			if key.name == "enter" and (key.meta or key.ctrl) and not key.alt then return act("review-fix-discard-confirm") end
