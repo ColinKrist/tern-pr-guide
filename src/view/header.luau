@@ -35,15 +35,15 @@ local function headerAction(label: string, keyHint: string?, action: string, ico
  return el("span", { class = "gp-hdr-act", actions = { click = action } }, kids)
 end
 
--- The two views of a PR with a guide as Tern's tabs, with the key that flips them. The block reads
--- a click as the same `view=<id>` action the key sends (see Page.viewTabsPath).
+-- The views of a PR as Tern's tabs, with the key that cycles them: Guided and Files with a guide, only Files
+-- without, and Fixes first when the host (the PR hub) has them. The block reads a click as the same `view=<id>`
+-- action the key sends (see Page.viewTabsPath); the host reads a click on Fixes.
 local function viewSwitch(s: State.State): Node
- local tabs = { k = "tabs", p = {
-  key = "tabs",
-  active = s.view,
-  items = { { id = "guided", label = "Guided" }, { id = "files", label = "Files" } },
- } }
- return el("span", { class = "gp-vs", key = "views" }, { tabs :: any, Ui.keys("t") })
+ local items: { Ui.ViewTab } = {}
+ if s.hosted and s.hosted.fixes then table.insert(items, { id = "fixes", label = "Fixes" }) end
+ if State.switchable(s) then table.insert(items, { id = "guided", label = "Guided" }) end
+ table.insert(items, { id = "files", label = "Files" })
+ return Ui.viewTabs(items, if State.switchable(s) then s.view else "files")
 end
 
 -- What each pass's row says it is doing.
@@ -184,7 +184,7 @@ function M.view(s: State.State, motion: Ui.Motion): Node
  local pr = s.review.pr
  local counts = Review.counts(s.review)
  local title = { span("gp-title-num", "#" .. pr.number), span("gp-title-text", pr.title), Ui.spacer() }
- if State.switchable(s) then table.insert(title, viewSwitch(s)) end
+ if State.switchable(s) or (s.hosted and s.hosted.fixes) then table.insert(title, viewSwitch(s)) end
  table.insert(title, reviewButton(s, counts.included))
  local parts = {
   el("div", { class = "gp-title", key = "title" }, title),
@@ -192,7 +192,7 @@ function M.view(s: State.State, motion: Ui.Motion): Node
  }
  if s.ai then table.insert(parts, aiRow(s.ai, s.models ~= nil, s.review.guide.guided or State.switchable(s))) end
  if s.search then table.insert(parts, SearchPanel.view(s.search, s.review.guide.guided, Ui.entering(motion, "p:search", "gp-enter-panel"))) end
- if s.helpOpen then table.insert(parts, Help.view(s.closing.help == true, { guided = s.review.guide.guided, switch = State.switchable(s) }, Ui.entering(motion, "p:help", "gp-enter-panel"))) end
+ if s.helpOpen then table.insert(parts, Help.view(s.closing.help == true, { guided = s.review.guide.guided, switch = State.switchable(s), hosted = s.hosted }, Ui.entering(motion, "p:help", "gp-enter-panel"))) end
  if s.reviewOpen then table.insert(parts, ReviewPanel.view(s, motion)) end
  return el("div", { class = "gp-header", key = "header" }, parts)
 end

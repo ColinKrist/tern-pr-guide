@@ -125,6 +125,17 @@ guide is missing or out of date, one at a time, the same way Generate guide does
 review comments, and a PR it couldn't explain isn't tried again until it has new commits or the hub
 reopens. The setting is off by default, since each guide is an OMP run.
 
+## Open a PR in the hub
+
+The hub holds the PR: ⏎ on a card or a recent row opens its review page in place of the board.
+`Esc`, with nothing open on the page, returns to the board with the card still selected. A PR in
+Needs fixes also has a **Fixes** view, the page ⏎ opens first. The views are tabs in the page's
+header (**Fixes**, **Guided** when the PR has a guide, **Files**), and `t` cycles them. Before the
+page has loaded, the fixes page shows a single **Review** tab. The hub keeps the last three PRs you
+opened, so going back to one finds its drafts, marks and any guide being written as you left them.
+A page with a comment you are writing, comments or a summary you haven't sent, or an agent run in
+progress is never dropped. `⌘⏎` opens the PR in a Tern pane of its own, to put beside the hub.
+
 ## Fix what's blocking
 
 Open a Needs fixes card to go straight to the problems: requested changes, comments, failing checks
@@ -282,8 +293,9 @@ Press `?` for shortcuts that apply to the current page. In the hub, the panel fo
 | `⌥⇧⌘R` | Open the hub so `⏎` generates the PR's guide |
 | `h` `j` `k` `l` or arrows | Move between cards |
 | `.` | Select the most urgent PR |
-| `⏎` or click | Open the PR, its fixes page or a ready agent fix |
-| `⇧⏎` | Open and generate the PR's guide |
+| `⏎` or click | Open the PR in the hub's own pane (a Needs fixes card opens its fixes page; a ready agent fix opens its review) |
+| `⇧⏎` | Open the PR in the hub and generate its guide |
+| `⌘⏎` | Open the PR in a Tern pane of its own |
 | `T` | Switch between your PRs and review requests |
 | `/` | Search |
 | `F` | Filter by repository or title; ignore named checks |
@@ -324,7 +336,8 @@ Press `?` for shortcuts that apply to the current page. In the hub, the panel fo
 | `⏎` | Mark the step reviewed and move on |
 | `⇧⏎` | Mark the whole change reviewed |
 | `v` | Mark the whole file reviewed |
-| `t` | Switch between Guided and Files |
+| `t` | Switch between Guided and Files (in the hub, a Needs fixes PR also cycles Fixes) |
+| `Esc` | In the hub, with nothing open on the page: back to the board |
 | `b` | Hide or show the file tree in the file view |
 | `/` | Search steps, files, comments and code |
 | `s` | Show supporting changes |
@@ -362,6 +375,7 @@ Replies and resolves write to GitHub right away.
 | `⇧R` | Re-run failed checks |
 | `U` | Update branch, or push an empty commit when the branch is up to date (`⌘⏎` confirms) |
 | `V` | Show all checks |
+| `t` | Next view: Fixes, Guided, Files |
 | `G` | Open GitHub's conflict editor |
 | `B` | Show bot comments |
 | `Esc` | Back to the hub with the same card selected |

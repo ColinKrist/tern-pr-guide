@@ -26,6 +26,7 @@ local Lookups = require("./lookups")
 local Model = require("./model")
 local ModelBox = require("../model-box")
 local Ops = require("./ops")
+local Pages = require("./pages")
 local Paths = require("../view/hub/paths")
 local Prepare = require("./prepare")
 local Refresh = require("./refresh")
@@ -108,37 +109,33 @@ local function options(args: { string }): ({ generate: boolean, fixture: string?
 	return out, nil
 end
 
--- Opens PR `number` of `slug` ("owner/repo") in the guide. The block can't open blocks, so it finds a
--- checkout of the repo (beside the hub's folder, else PR Guide's own copy) and opens a link the window
--- routes to the guide (`State.openPlan`). With no checkout and no copy to make, it says why and opens
--- nothing. A card's open action uses this too.
+-- Opens PR `number` of `slug` ("owner/repo") in a Tern pane of its own, the way ⌘⏎ does: the block can't open
+-- blocks, so Pages.plan finds a checkout of the repo and the link it opens is routed to the guide. With no
+-- checkout and no copy to make, it says why and opens nothing. A card's other open actions use this too.
 local function openPr(b: Block, cx: BlockCx, slug: string, number: number, generate: boolean)
-	local dir = cx.cwd or Host.getenv("HOME") or ""
-	Fetch.checkoutFor(nil, dir, slug, function(found)
-		if b.closed then return end
-		local _, why = Fetch.savedCopy("github.com", slug)
-		local plan = State.openPlan(slug, number, generate, if found then found.root else nil, why, dir)
-		if plan.kind == "open" then
-			cx:open(plan.url)
-		else
-			cx:toast("error", plan.text, plan.sub)
-		end
+	Pages.plan(b, cx, slug, number, generate, function(url)
+		if url then cx:open(url) end
 	end)
 end
 
--- ⏎ and a click open the row; ⇧⏎ (or a hub opened for AI guides) starts the AI guide too.
-local function openRow(b: Block, cx: BlockCx, value: string, withGuide: boolean)
+-- ⏎ and a click open the row in the hub's own pane; ⇧⏎ (or a hub opened for AI guides) starts the AI guide too, and
+-- ⌘⏎ (`pane`) opens the PR in a pane of its own.
+local function openRow(b: Block, cx: BlockCx, value: string, withGuide: boolean, pane: boolean?)
 	local s = b.s
 	if value ~= "" then State.select(s, value) end
 	local generate = withGuide or b.generate
 	local recent = State.selectedRecent(s)
-	if recent then return openPr(b, cx, recent.repo, recent.number, generate) end
+	if recent then
+		if pane then return openPr(b, cx, recent.repo, recent.number, generate) end
+		return Pages.open(b, cx, { slug = recent.repo, number = recent.number, cardKey = nil, generate = generate, view = nil })
+	end
 	local card = State.selectedCard(s)
 	if card == nil then return end
+	if pane then return openPr(b, cx, card.pr.repo, card.pr.number, generate) end
 	if card.agent and card.agent.kind == "ready" then return openReviewFix(b, cx, card.pr.key) end
-	-- A Needs fixes card opens at what needs fixing; the AI guide still opens the whole pull request.
+	-- A Needs fixes card opens at what needs fixing; the AI guide still opens the whole pull request, with Fixes a tab away.
 	if card.column == "needs_fixes" and not generate then return openFixes(b, cx, card.pr.key) end
-	openPr(b, cx, card.pr.repo, card.pr.number, generate)
+	Pages.open(b, cx, { slug = card.pr.repo, number = card.pr.number, cardKey = card.pr.key, generate = generate, view = nil })
 end
 
 local function openCard(b: Block, cx: BlockCx, value: string)
@@ -214,6 +211,13 @@ ACTIONS["hub-open-generate"] = function(b, cx, value)
 	openRow(b, cx, value, true)
 end
 ACTIONS["open"] = openCard
+ACTIONS["hub-open-pane"] = function(b, cx, value)
+	openRow(b, cx, value, false, true)
+end
+-- The PR's views (Fixes, Guided, Files): `t` cycles them, a tab shows one, Esc at the page's rest returns to the board.
+ACTIONS["pages-cycle"] = Pages.cycle
+ACTIONS["pages-view"] = Pages.go
+ACTIONS["pages-back"] = Pages.back
 ACTIONS["hub-move"] = function(b, cx, direction)
 	local moved = State.move(b.s, direction :: any)
 	-- On the top row the board scrolls to its start, so the column titles show too, even when k can't move
@@ -683,6 +687,8 @@ local function held(ev: UiEvent, name: string): boolean
 end
 
 local function actionOf(ev: UiEvent): Keys.Action?
+	-- A click on a tab of the fixes page's strip shows that view.
+	if ev.ev == "select" and ev.id == Paths.fixesTabs and ev.item then return { act = "pages-view", value = ev.item } end
 	-- ⌘-click and ⇧-click on a card select it for Merge selected or Close stale instead of opening it.
 	if ev.ev == "action" and ev.act == "hub-open" and (held(ev, "meta") or held(ev, "shift")) then
 		return { act = "hub-mark", value = ev.value }
@@ -756,7 +762,7 @@ local block: BlockDef<Block> = {
 				refreshTried = nil, lastModified = if cache then cache.lastModified else nil,
 			},
 			closed = false, refetch = false, show = nil, step = 0, records = {}, detecting = {}, flakeTried = {},
-			histories = nil :: any,
+			histories = nil :: any, pages = { list = {}, shown = nil, opening = {} },
 		}
 		b.histories = Github.historyCache(b.github)
 		if fixture then
@@ -793,13 +799,14 @@ local block: BlockDef<Block> = {
 		return b
 	end,
 	title = function(b: Block): string?
-		return "Pull requests"
+		return Pages.title(b) or "Pull requests"
 	end,
 	view = function(b: Block): BlockView
 		local s = b.s
+		if b.pages.shown and Pages.shown(b) then return Pages.view(b) end
 		local motion = { born = s.born, next = {}, booted = s.booted, animate = not s.keyed }
 		if s.route then
-			local page = if s.route.kind == "review-fix" then ReviewFixPage.view(s, motion) else FixesPage.view(s, motion)
+			local page = if s.route.kind == "review-fix" then ReviewFixPage.view(s, motion) else FixesPage.view(s, motion, Pages.fixesTabs(b))
 			s.born, s.booted = motion.next, true
 			return { main = page, layer = Board.layer(s) }
 		end
@@ -808,6 +815,14 @@ local block: BlockDef<Block> = {
 		return { main = main, layer = Board.layer(s) }
 	end,
 	event = function(b: Block, ev: UiEvent, cx: BlockCx)
+		-- The window's own messages are the hub's; every other event on a shown page is the page's.
+		local window = ev.ev == "action" and (ev.act == "hub-focused" or ev.act == "set-generate")
+		if Pages.shown(b) and not window then
+			local tab = Pages.tabAction(b, ev)
+			if not tab then return Pages.event(b, ev, cx) end
+			b.s.keyed = false
+			return dispatch(b, cx, tab)
+		end
 		local action = actionOf(ev)
 		if not action then return end
 		b.s.keyed = false
@@ -815,6 +830,13 @@ local block: BlockDef<Block> = {
 	end,
 	key = function(b: Block, key: Key, cx: BlockCx): boolean?
 		local s = b.s
+		if Pages.shown(b) then
+			local action = Pages.action(b, key)
+			if not action then return Pages.key(b, key, cx) end
+			s.keyed = true
+			dispatch(b, cx, action)
+			return true
+		end
 		local action = Keys.hubAction(s, key)
 		if action then
 			s.keyed = true

@@ -9,6 +9,7 @@ local Github = require("../github")
 local Host = require("../host")
 local Log = require("../ci/log")
 local Model = require("./model")
+local ReviewPage = require("../review-page")
 local Paths = require("../view/hub/paths")
 local State = require("./state")
 local Sync = require("./sync")
@@ -43,6 +44,14 @@ export type AgentFlight = {
 -- `queued` marks a pending merge in the repo's queue: GitHub reporting the queue dropped that PR retires it (see `replayEdits`).
 export type Replay = { key: string, head: string, at: number, edit: () -> (), applied: boolean, present: boolean, queued: boolean? }
 
+-- A review page the hub keeps open (see hub/pages): its PR, the card it was opened from (the Fixes view's key), and
+-- the page itself, which keeps its state, drafts and any AI guide in flight while the board shows.
+export type Page = { key: string, slug: string, number: number, cardKey: string?, page: ReviewPage.ReviewPage, hosted: ReviewPage.Hosted }
+
+-- The opened pages, least recently shown first, and the one on show (nil while the board or the fixes page shows).
+-- `opening` holds the pages whose checkout is still being found. Never in State and never saved.
+export type Pages = { list: { Page }, shown: string?, opening: { [string]: boolean } }
+
 -- The hub block's own state.
 export type Block = {
 	s: State,
@@ -75,6 +84,7 @@ export type Block = {
 	histories: Github.HistoryCache, -- each repo's base-branch run history, read once an hour (memory only: no kv key)
 	flakeTried: { [string]: boolean }, -- cards (by key and head) whose evidence was read this session, success or not
 	step: number, -- fixture only: how many `refreshes` entries ⌘R has applied
+	pages: Pages,
 }
 
 export type Handler = (b: Block, cx: BlockCx, value: string) -> ()

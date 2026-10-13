@@ -24,6 +24,7 @@ local GROUPS: { [Page]: { Group } } = {
 			{ "U", "Update branch, or push an empty commit (⌘⏎ confirms)" },
 			{ "G", "Open on GitHub, or resolve a conflict there" },
 			{ "B", "Show or hide bot comments" },
+			{ "T", "Next view: fixes, guided, files" },
 			{ "Esc", "Back to the board" },
 			{ "?", "Close shortcuts" },
 		} },
@@ -53,8 +54,9 @@ local M = {}
 local function boardGroups(s: State.State): { Group }
 	local move: { { string } } = {
 		{ "h j k l", "Move between cards", "← ↑ ↓ →" },
-		{ "⏎", "Open the card, fixes page, or a Fix ready card for review" },
+		{ "⏎", "Open the PR here, the fixes page, or a Fix ready card for review" },
 		{ "⇧⏎", "Open with the AI guide started" },
+		{ "⌘⏎", "Open the PR in a Tern pane of its own" },
 		{ ".", "Next pull request that needs you" },
 		{ "T", "Switch tab" },
 		{ "I", "Show or hide Inactive" },

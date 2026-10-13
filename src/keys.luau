@@ -195,6 +195,7 @@ local function fixesKey(s: HubState.State, key: Key): Action?
 		if step and step.check then return act("fixes-update") end
 	end
 	if label == "V" then return act("hub-checks", if s.route then s.route.key else nil) end
+	if label == "T" then return act("pages-cycle") end
 	if name == "down" or name == "j" then return act("fixes-move", 1) end
 	if name == "up" or name == "k" then return act("fixes-move", -1) end
 	if name == "left" or name == "h" then return act("fixes-focus", "steps") end
@@ -221,6 +222,7 @@ local function hubBoardKey(s: HubState.State, key: Key): Action?
 	if isQuestionMark(key) then return act("hub-help") end
 	if name == "/" or key.text == "/" then return act("hub-search") end
 	if (key.meta or key.ctrl) and name == "r" then return act("hub-refresh") end
+	if (key.meta or key.ctrl) and not key.alt and name == "enter" then return act("hub-open-pane") end
 	if key.ctrl or key.meta or key.alt then return nil end
 	if name == "escape" then return act("hub-escape") end
 	if name == "enter" then return act(if key.shift then "hub-open-generate" else "hub-open") end
@@ -316,6 +318,20 @@ function M.hubAction(s: HubState.State, key: Key): Action?
 		return nil
 	end
 	if mode == "board" then return hubBoardKey(s, key) end
+	return nil
+end
+
+-- What the hub's page host knows about the review page it shows: whether Esc is its own (nothing of the
+-- page's is open), whether letters are the page's keys (no field or panel has them), and whether a Fixes view
+-- sits beside the page.
+export type PageHost = { rest: boolean, reading: boolean, fixes: boolean }
+
+-- The key the hub takes before the page does: Esc at rest goes back to the board, and `t` cycles the views
+-- when Fixes is one of them (the page's own `t` flips Guided and Files). Every other key is the page's.
+function M.hubPageAction(key: Key, host: PageHost): Action?
+	if key.ctrl or key.meta or key.alt then return nil end
+	if key.name == "escape" and host.rest then return act("pages-back") end
+	if key.name == "t" and not key.shift and host.fixes and host.reading then return act("pages-cycle") end
 	return nil
 end
 
