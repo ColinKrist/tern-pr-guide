@@ -1139,6 +1139,7 @@
 /* the popover's reviewers, above the checks: not rows the highlight rests on */
 .gp-hcl-rv { display: flex; flex-direction: column; gap: 1px; padding: 10px 6px 0; }
 .gp-hcl-rv > * { flex-shrink: 0; }
+.gp-hcl-rv-top { padding: 2px 8px 4px; }
 .gp-hcl-rv-row { display: flex; gap: 10px; align-items: center; min-width: 0; height: 28px; padding: 0 8px; font-size: 13px; }
 .gp-hcl-rv-row .gp-hcl-ic { margin-top: 0; }
 .gp-hcl-rv-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--t1); }

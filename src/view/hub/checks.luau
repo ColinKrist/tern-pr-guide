@@ -74,7 +74,7 @@ end
 
 -- Who reviewed and who is asked, above the checks. Not rows the highlight rests on: j and k move through the checks.
 local function reviewersNode(reviewers: { Checks.Reviewer }): Node
-	local kids: { Node } = { el("div", { class = "gp-hcl-h", key = "h" }, { span("gp-hcl-hl", "Reviewers"), span("gp-hcl-n", tostring(#reviewers)) }) }
+	local kids: { Node } = { el("div", { class = "gp-hcl-top gp-hcl-rv-top", key = "h" }, { span("gp-hcl-t", "Reviewers"), span("gp-hcl-sha", tostring(#reviewers)) }) }
 	if #reviewers == 0 then table.insert(kids, span("gp-hcl-empty", "No reviewers")) end
 	for index, reviewer in reviewers do
 		table.insert(kids, el("div", { class = "gp-hcl-rv-row", key = "r" .. index }, {
