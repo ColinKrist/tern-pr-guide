@@ -554,6 +554,9 @@ local function hints(s: State.State, steps: { Step }): Node
 	local function item(key: string, label: string, must: boolean?): Node
 		return el("span", { class = "gp-hb-item " .. (if must then "gp-hb-must" else "gp-hb-opt") }, { Ui.keys(key), span("gp-hb-label", label) })
 	end
+	local function shortcuts(): Node
+		return el("span", { class = "gp-hb-item gp-hb-opt gp-hb-more", actions = { click = "hub-help" } }, { Ui.keys("?"), span("gp-hb-label", "Shortcuts") })
+	end
 	local kids: { Node } = {}
 	if route.reply and step and step.thread then
 		kids = { span("gp-hb-mode", "Replying to @" .. step.thread.author), Ui.spacer(), item("⌘⏎", "post reply"), item("esc", "cancel") }
@@ -586,6 +589,7 @@ local function hints(s: State.State, steps: { Step }): Node
 		end
 		if step then table.insert(kids, item("G", if step.group == "conflict" then "resolve on GitHub" else "open on GitHub")) end
 		if #Fixes.bots(State.fixDetails(s) :: Fixes.FixDetails) > 0 then table.insert(kids, item("B", "bot comments")) end
+		table.insert(kids, shortcuts())
 	end
 	return el("div", { class = "gp-hintbar", key = "hints" }, kids)
 end

@@ -126,11 +126,14 @@ local function hints(page: State.ReviewPage): Node
 	local function item(key: string, label: string): Node
 		return el("span", { class = "gp-hb-item" }, { Ui.keys(key), span("gp-hb-label", label) })
 	end
+	local function shortcuts(): Node
+		return el("span", { class = "gp-hb-item gp-hb-more", actions = { click = "hub-help" } }, { Ui.keys("?"), span("gp-hb-label", "Shortcuts") })
+	end
 	local kids: { Node }
-	if page.ask then kids = { span("gp-hb-mode", "Discard the fix?"), Ui.spacer(), item("⌘⏎", "discard fix"), item("esc", "cancel") }
+	if page.ask then kids = { span("gp-hb-mode", "Discard the fix?"), Ui.spacer(), item("⌘⏎", "discard fix"), item("esc", "cancel"), shortcuts() }
 	else kids = {
 		span("gp-hb-mode", "Review fix"), Ui.spacer(), item("j k", "move"), item("⏎", "reviewed"),
-		item("B", if page.bot then "original code" else "original conflict"), item("P", if page.completion == "push" then "return lease" else "push"), item("esc", "back"),
+		item("B", if page.bot then "original code" else "original conflict"), item("P", if page.completion == "push" then "return lease" else "push"), item("esc", "back"), shortcuts(),
 	} end
 	return el("div", { class = "gp-hintbar", key = "hints" }, kids)
 end

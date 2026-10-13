@@ -228,9 +228,17 @@ return function()
 
 	-- Help.
 	State.openHelp(s)
-	assert(s.mode == "help" and s.menu == nil)
+	assert(s.mode == "help" and s.menu == nil and s.helpPage == "board")
 	State.closeHelp(s)
-	assert(s.mode == "board")
+	assert(s.mode == "board" and s.helpPage == nil)
+	s.mode = "fixes"
+	local fixesHelp = Keys.hubAction(s, { name = "?", text = "?" } :: any)
+	assert(fixesHelp and fixesHelp.act == "hub-help")
+	State.openHelp(s)
+	assert(s.mode == "help" and s.helpPage == "fixes")
+	State.closeHelp(s)
+	assert(s.mode == "fixes" and s.helpPage == nil)
+	s.mode = "board"
 
 	-- What is saved comes back, and a bad save is ignored.
 	State.setSort(s, "oldest")

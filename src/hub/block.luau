@@ -705,7 +705,7 @@ local block: BlockDef<Block> = {
 		if s.route then
 			local page = if s.route.kind == "review-fix" then ReviewFixPage.view(s, motion) else FixesPage.view(s, motion)
 			s.born, s.booted = motion.next, true
-			return { main = page, layer = nil }
+			return { main = page, layer = Board.layer(s) }
 		end
 		local main = Board.view(s, motion)
 		s.born, s.booted = motion.next, true

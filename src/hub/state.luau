@@ -22,6 +22,7 @@ export type Summary = Summary.Summary
 export type FixDetails = Fixes.FixDetails
 
 export type Mode = "board" | "search" | "link" | "menu" | "confirm" | "help" | "fixes" | "reply" | "review-fix"
+export type HelpPage = "board" | "fixes" | "review-fix"
 export type MenuId = "repositories" | "sort" | "merge" | "actions" | "settings"
 export type Ring = "bad" | "good" | "bad-out" | "good-out" -- red ring, green wash, then the same fading
 -- What the flake evidence says about a card's failing checks, for the commit it was read on. `runs` are the workflow
@@ -114,6 +115,7 @@ export type State = {
 	search: Fields.Field,
 	link: Fields.Field,
 	mode: Mode,
+	helpPage: HelpPage?, -- the page to return to, and show shortcuts for, while help is open
 	route: Route?, -- the fixes page, while it is open
 	menu: MenuId?,
 	menuCursor: number,
@@ -319,7 +321,7 @@ function M.new(prs: { HubPR }, now: number, saved: any): State
 	local s: State = {
 		prs = prs, now = now, board = emptyBoard(tab), tab = tab, selected = nil, marked = {},
 		repositories = repositories, sort = sort, search = Fields.create(""), link = Fields.create(""),
-		mode = "board", route = nil, menu = nil, menuCursor = 1, confirm = nil, methodEdit = nil, folded = folded, recent = {}, merged = {}, walking = false,
+		mode = "board", helpPage = nil, route = nil, menu = nil, menuCursor = 1, confirm = nil, methodEdit = nil, folded = folded, recent = {}, merged = {}, walking = false,
 		ringed = {}, agents = {}, details = {}, flakes = {}, summaries = {}, merges = {}, autoMerge = {}, acted = {}, busy = {},
 		refreshedAt = nil, loading = false, error = nil, agent = nil, models = nil, links = "tern",
 		keyed = false, born = {}, booted = false,
@@ -1113,12 +1115,16 @@ function M.walk(s: State): boolean
 end
 
 function M.openHelp(s: State)
+	s.helpPage = if s.mode == "fixes" or s.mode == "review-fix" then s.mode else "board"
 	s.mode = "help"
 	s.menu = nil
 end
 
 function M.closeHelp(s: State)
-	if s.mode == "help" then s.mode = "board" end
+	if s.mode == "help" then
+		s.mode = s.helpPage or "board"
+		s.helpPage = nil
+	end
 end
 
 -- The rows of the open menu.

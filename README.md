@@ -226,7 +226,7 @@ Comment, Approve or Request changes, edit the summary, and submit everything as 
 
 ## Keyboard reference
 
-Press `?` on any PR Guide page for the keys that apply there.
+Press `?` for shortcuts that apply to the current page. In the hub, the panel follows the board, fixes page or agent fix review page you are on.
 
 ### PR hub
 
@@ -263,6 +263,7 @@ Press `?` on any PR Guide page for the keys that apply there.
 | `⌘R` | Refresh |
 | `⌘⏎` | Confirm an inline question |
 | `Esc` | Cancel, close or clear the selection |
+| `?` | Show shortcuts for the current hub page |
 
 ### PR view
 
@@ -310,6 +311,7 @@ Replies and resolves write to GitHub right away.
 | `G` | Open GitHub's conflict editor |
 | `B` | Show bot comments |
 | `Esc` | Back to the hub with the same card selected |
+| `?` | Show shortcuts for the fixes page |
 
 ### Agent fix review
 
@@ -321,6 +323,7 @@ Replies and resolves write to GitHub right away.
 | `P` | Push, once every conflict is reviewed |
 | `D` | Discard the fix, after a confirmation |
 | `Esc` | Back to the hub |
+| `?` | Show shortcuts for Review fix |
 
 ## For tool authors
 
