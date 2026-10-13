@@ -13,7 +13,7 @@ local function page(): State.State
 	local rows: { Pr.Row } = { { kind = "hunk", oldStart = 1, newStart = 1 } :: Pr.Hunk, { kind = "add", text = "x", new = 1 } :: Pr.Line }
 	local p: Pr.PR = { repo = "acme/api", number = 7, title = "t", body = "", url = "", author = "a", createdAt = "", baseRef = "main", head = "abc",
 		files = { { path = "a.ts", status = "modified", adds = 1, dels = 0, rows = rows } } }
-	return State.new(p, Guide.defaultGuide(p), {})
+	return State.new(p, Guide.defaultGuide(p), { root = "main" })
 end
 
 local function agent(): Agent.Agent

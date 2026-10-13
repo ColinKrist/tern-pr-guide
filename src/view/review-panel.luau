@@ -148,12 +148,12 @@ local function postedArea(posted: Review.Posted, enter: string): { Node }
  local what = verdictLabel(posted.verdict) .. " with " .. plural(#posted.payload.comments, "comment")
  local delivery = posted.delivery
  if delivery.kind == "saved" then
-  return { el("div", { class = "gp-rv-done " .. enter }, {
+  return { el("div", { class = "gp-rv-done " .. enter, key = "submit" }, {
    el("div", { class = "gp-rv-done-title" }, { el("span", { class = "gp-rv-done-tick" }, { Ui.icon("check") }), span("gp-rv-done-label", "Dry run: review saved") }),
    span("gp-rv-done-text", what .. " saved to " .. delivery.path .. ". Nothing was sent to GitHub."),
   }) }
  end
- return { el("div", { class = "gp-rv-done " .. enter }, {
+ return { el("div", { class = "gp-rv-done " .. enter, key = "submit" }, {
   el("div", { class = "gp-rv-done-title" }, { el("span", { class = "gp-rv-done-tick" }, { Ui.icon("check") }), span("gp-rv-done-label", "Review posted") }),
   span("gp-rv-done-text", what .. "."),
   el("span", { class = "gp-rv-done-link", actions = { click = "open-posted" } }, { span("", "Open it on GitHub"), Ui.icon("open") }),
@@ -172,7 +172,7 @@ local function submitArea(s: State.State, motion: Ui.Motion, included: number): 
  local button = { span("gp-rv-submit-label", label) }
  if not confirming then table.insert(button, Ui.keys("⌘⏎")) end
  local nodes = {
-  el("span", { class = "gp-rv-submit" .. (if confirming then " gp-rv-submit-confirm" else ""), actions = { click = "submit-review" } }, button),
+  el("span", { class = "gp-rv-submit" .. (if confirming then " gp-rv-submit-confirm" else ""), key = "submit", actions = { click = "submit-review" } }, button),
   span("gp-rv-note", if submit.dryRunPath
    then "Dry run: saves " .. plural(included, "comment") .. " and the summary to " .. submit.dryRunPath .. "; nothing is sent."
    elseif confirming then "Posts \"" .. verdict .. "\" with " .. plural(included, "comment") .. " and the summary to PR #" .. r.pr.number .. ". Esc or any other key cancels."
@@ -196,7 +196,7 @@ local function side(s: State.State, motion: Ui.Motion, included: number): { Node
    Ui.field(s.review.summary, "field", "Say what you think overall…"),
   }),
   el("div", { class = "gp-rv-sec-top gp-rv-gap" }, { span("gp-rv-sec-title", "Verdict") }),
-  el("div", { class = "gp-rv-verdicts" }, verdicts(s)),
+  el("div", { class = "gp-rv-verdicts", key = "verdicts" }, verdicts(s)),
  }
  for _, node in submitArea(s, motion, included) do table.insert(nodes, node) end
  return nodes

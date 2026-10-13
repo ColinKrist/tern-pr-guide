@@ -51,7 +51,7 @@ local function world(): World
 	function cx:toast(_level: string, text: string) table.insert(toasts, text) end
 	local agent = Agent.new("/omp", "/bin", Agent.picks({ model = "a/opus-5" }, {}) :: Agent.Picks)
 	local b: any = {
-		opts = { pr = "7", repo = "/r", post = false }, dir = "/r", name = "#7",
+		opts = { pr = "7", repo = "/r", post = false }, root = "main", dir = "/r", name = "#7",
 		repo = { root = "/r", guides = "/r/.git/prguide" }, guided = false, ai = Agent.idle(agent),
 	}
 	-- Opening the PR: no guide or review file yet.
@@ -60,7 +60,7 @@ local function world(): World
 	local Notice = require("../src/view/notice")
 	b.notice = Notice.loading("#7", "")
 	local State = require("../src/state")
-	b.page = State.new(p, Guide.defaultGuide(p), { dryRunPath = "/tmp/x" })
+	b.page = State.new(p, Guide.defaultGuide(p), { dryRunPath = "/tmp/x", root = "main" })
 	b.page.ai = b.ai
 	return {
 		b = b, cx = cx, toasts = toasts, disk = disk, calls = calls,

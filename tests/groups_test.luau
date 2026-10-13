@@ -153,7 +153,7 @@ end
 local function area()
 	local files = { file("src/a.ts", nil), file("src/b.ts", nil), file("tests/a.test.ts", "tests", 50), file("gen/api.ts", "generated", 5000), file("gen/small.ts", "generated", 5) }
 	local p = pr(files)
-	local s = State.new(p, guideOf(p, { "src/a.ts" }), {})
+	local s = State.new(p, guideOf(p, { "src/a.ts" }), { root = "main" })
 	local tests, gen, big, plainFile = State.supportingBlock("tests/a.test.ts"), State.supportingBlock("gen/api.ts"), "gen/api.ts", State.supportingBlock("src/b.ts")
 	-- A guided page starts with the groups folded.
 	assert(s.foldedFolders["/tests"] and s.foldedFolders["/generated"])
@@ -180,7 +180,7 @@ local function area()
 	assert(State.plan(s).open[gen])
 
 	-- The file view lists the groups unfolded: it steps through every file.
-	local unguided = State.new(p, Guide.defaultGuide(p), {})
+	local unguided = State.new(p, Guide.defaultGuide(p), { root = "main" })
 	assert(next(unguided.foldedFolders) == nil)
 	assert(paths(FileTree.order(p.files)) == "src/a.ts,src/b.ts,tests/a.test.ts,gen/api.ts,gen/small.ts")
 end

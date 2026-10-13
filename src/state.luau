@@ -63,6 +63,8 @@ export type Place = {
 -- Guide.Step.block), or "f:<path>" for a supporting file. What
 -- `Place` lists belongs to the view shown; the other view's is parked in `other`.
 export type State = {
+ -- The node path the page sits under in its host's view; every frame op and path starts there.
+ root: string,
  review: Review.Review,
  view: ViewId,
  -- The view not shown, for a page with a guide; nil for one without.
@@ -131,7 +133,7 @@ local PLAIN_COST = 0.4
 
 local M = {}
 
-function M.new(pr: Pr.PR, guide: Guide.Guide, to: { repo: string?, dryRunPath: string? }): State
+function M.new(pr: Pr.PR, guide: Guide.Guide, to: { repo: string?, dryRunPath: string?, root: string }): State
  local diffs = {}
  -- Generated output often repeats hand-written code, so a match there isn't a move the author made.
  local authored = {}
@@ -157,7 +159,7 @@ function M.new(pr: Pr.PR, guide: Guide.Guide, to: { repo: string?, dryRunPath: s
   }
  end
  return {
-  review = review, view = "guided", other = other, diffs = diffs, spans = spans,
+  root = to.root, review = review, view = "guided", other = other, diffs = diffs, spans = spans,
   peek = {}, folded = {}, reveals = {}, whole = {}, closing = {},
   flowOpen = true, descriptionOpen = not guide.guided, foldedFolders = if guide.guided then FileGroup.folded() else {}, supportingOpen = false, fileOpen = {}, pinned = {},
   flash = nil, flashStep = nil, flashCount = 0,
@@ -254,21 +256,34 @@ local function strays(s: State, file: string, blockId: string): { Diff.Interval 
  return found
 end
 
+-- A comment card hung under new-side line `line` of a block: a suggestion (`comment`), one of the
+-- reader's own (`n`, its place in `review.own`) or the composer.
+export type Site = { line: number, kind: "suggestion" | "own" | "composer", comment: Guide.Comment?, n: number? }
+
+-- The cards of block `blockId` on `file`, in the order they hang under a line: suggested comments
+-- when `withSuggestions`, the reader's comments under the last line they cover, then the composer
+-- when it belongs to the block.
+function M.cardSites(s: State, file: string, blockId: string, withSuggestions: boolean): { Site }
+ local sites: { Site } = {}
+ if withSuggestions then
+  for _, comment in s.review.guide.comments do
+   if comment.file == file then table.insert(sites, { line = comment.line, kind = "suggestion" :: "suggestion", comment = comment }) end
+  end
+ end
+ for n, own in s.review.own do
+  if own.file == file then table.insert(sites, { line = own.to, kind = "own" :: "own", n = n }) end
+ end
+ local c = s.composer
+ if c and c.file == file and (c.block or M.supportingBlock(file)) == blockId then table.insert(sites, { line = c.to, kind = "composer" :: "composer" }) end
+ return sites
+end
+
 -- What block `blockId` on `file` shows: a step block's `steps` with their surroundings, else a
 -- supporting file's (`steps` nil). Lines with cards under them stay drawn when a big file is shown
 -- whole.
 function M.show(s: State, file: string, blockId: string, steps: { Guide.Step }?): Diff.Show
  local annotated = {}
- if steps then
-  for _, comment in s.review.guide.comments do
-   if comment.file == file then annotated[comment.line] = true end
-  end
- end
- for _, own in s.review.own do
-  if own.file == file then annotated[own.to] = true end
- end
- local c = s.composer
- if c and c.file == file and (c.block or M.supportingBlock(file)) == blockId then annotated[c.to] = true end
+ for _, site in M.cardSites(s, file, blockId, steps ~= nil) do annotated[site.line] = true end
  local hit = if s.hit and s.hit.file == file then s.hit.entry else nil
  local reveals = s.reveals[blockId] or {}
  local spans: { Diff.Interval }? = nil
@@ -287,6 +302,21 @@ function M.show(s: State, file: string, blockId: string, steps: { Guide.Step }?)
   reveals = all
  end
  return { spans = spans, whole = s.whole[blockId] == true, annotated = annotated, hit = hit, reveals = reveals }
+end
+
+-- The run of lines each entry of block `blockId` is drawn in (see Diff.runStarts), for the `show` the
+-- block draws: where its steps start, when it is a guided block of several, and its cards break them.
+function M.runStarts(s: State, file: string, blockId: string, steps: { Guide.Step }?, show: Diff.Show): { [number]: number }
+ local breaks, carded = {}, {}
+ if steps and #steps > 1 and s.review.guide.guided then
+  for _, step in steps do
+   local span = s.spans[step]
+   if span then breaks[span.first], breaks[span.last + 1] = true, true end
+  end
+ end
+ for _, site in M.cardSites(s, file, blockId, steps ~= nil) do carded[site.line] = true end
+ local fd = s.diffs[file]
+ return Diff.runStarts(fd, Diff.layout(fd, show).segments, breaks, carded)
 end
 
 -- Whether a folded folder of the file tree, or the folded group the file is in, hides `path`.

@@ -11,9 +11,9 @@ type Group = { title: string, keys: { { string } } }
 export type Kind = { guided: boolean, switch: boolean }
 
 local GUIDED: { Group } = {
- { title = "1  Read", keys = { { "j  k", "next / previous step" }, { "n  p", "next / previous suggestion" }, { "/", "search the PR" }, { "i", "PR description" }, { "s", "supporting changes" }, { "o", "open supporting files, not generated ones" }, { "g", "open on GitHub" } } },
+ { title = "1  Read", keys = { { "j  k", "next / previous step" }, { "n  p", "next / previous suggestion" }, { "/", "search the PR" }, { "i", "PR description" }, { "s", "supporting changes" }, { "o", "open supporting files, not generated ones" }, { "⇧ S", "mark supporting files reviewed" }, { "g", "open on GitHub" } } },
  { title = "2  React", keys = { { "⏎", "step reviewed, move on" }, { "⇧ ⏎", "whole change reviewed" }, { "v", "whole file reviewed" }, { "m", "mark / unmark all reviewed" }, { "a  d", "add / dismiss suggestion" }, { "c", "comment on this step" } } },
- { title = "3  Finish", keys = { { "r", "open your review" }, { "j  k", "move between comments" }, { "x", "include or leave out" }, { "a", "include / exclude all" }, { "1 2 3", "comment, approve, request changes" }, { "⌘ ⏎", "submit" } } },
+ { title = "3  Finish", keys = { { "r", "open your review" }, { "j  k", "move between comments" }, { "x", "include or leave out" }, { "a", "include / exclude all" }, { "e", "edit the summary" }, { "1 2 3", "comment, approve, request changes" }, { "⌘ ⏎", "submit" }, { "esc", "close the review" } } },
 }
 
 -- A plain file list: every step is a whole file and there is one change, the whole PR. With no
@@ -39,6 +39,7 @@ local function groups(kind: Kind): { Group }
    table.insert(keys, { "⇧ R", "draft review comments" })
    table.insert(keys, { "⇧ M", "AI models, effort and lens" })
    table.insert(keys, { "tab", "in that menu: explanation / review model" })
+   table.insert(keys, { "⌃ E", "in that menu: edit lenses" })
   elseif group.title == "2  React" and kind.switch and not kind.guided then
    table.insert(keys, { "a  d", "add / dismiss suggestion" })
   end

@@ -101,17 +101,17 @@ end
 -- A comment the reader writes or starts with the mouse drops in; with a key it appears at once.
 function M.forBlock(s: State.State, motion: Ui.Motion, file: string, blockId: string, withSuggestions: boolean): Cards
  local cards: Cards = {}
- if withSuggestions then
-  for _, comment in s.review.guide.comments do
-   if comment.file == file then hang(cards, comment.line, suggestion(s, comment)) end
+ for _, site in State.cardSites(s, file, blockId, withSuggestions) do
+  if site.kind == "suggestion" then
+   hang(cards, site.line, suggestion(s, site.comment :: Guide.Comment))
+  elseif site.kind == "own" then
+   local n = site.n :: number
+   local c = s.review.own[n]
+   hang(cards, site.line, own(n, c.from, c.to, c.body, Ui.entering(motion, "card:you" .. n, "gp-enter-card")))
+  else
+   local c = s.composer :: State.Composer
+   hang(cards, site.line, composer(c, Ui.entering(motion, "card:composer", "gp-enter-card")), COMPOSER_H)
   end
- end
- for n, c in s.review.own do
-  if c.file == file then hang(cards, c.to, own(n, c.from, c.to, c.body, Ui.entering(motion, "card:you" .. n, "gp-enter-card"))) end
- end
- local c = s.composer
- if c and c.file == file and (c.block or State.supportingBlock(file)) == blockId then
-  hang(cards, c.to, composer(c, Ui.entering(motion, "card:composer", "gp-enter-card")), COMPOSER_H)
  end
  return cards
 end
