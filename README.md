@@ -141,6 +141,11 @@ failed checks from the same page.
   and the failed Buildkite jobs (`bk job retry`). A failing check from any other CI is named in the
   error, since PR Guide can't re-run it.
   A check that is running again reads "Re-running" with its time, and its log is the failed run's.
+- **Run checks again on a new commit.** For a check that can't be re-run, `U` gives the branch a
+  new head. When the branch is behind its base, **Update branch** merges the base in and the panel
+  says how many commits behind it is. When it is up to date, **Push empty commit** asks first
+  (`⌘⏎` confirms), then adds a commit that changes nothing, through GitHub's API. Neither shows
+  when the branch conflicts with its base.
   **All checks**, under the steps, opens the checks list (`V`).
 
 - **Agent fixes.** Your OMP agent resolves a conflict or addresses a bot review in an isolated
@@ -354,6 +359,7 @@ Replies and resolves write to GitHub right away.
 | `E` | Resolve the thread |
 | `⇧L` | Open the check's log |
 | `⇧R` | Re-run failed checks |
+| `U` | Update branch, or push an empty commit when the branch is up to date (`⌘⏎` confirms) |
 | `V` | Show all checks |
 | `G` | Open GitHub's conflict editor |
 | `B` | Show bot comments |

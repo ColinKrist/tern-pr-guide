@@ -1,6 +1,6 @@
 --!strict
 -- Runs every test module. A failed assert names its module and exits non-zero.
--- Tests require pure modules. summary_test, tandem_test, fold_test and rerun_test also load block (summary_test and
+-- Tests require pure modules. summary_test, tandem_test, fold_test, rerun_test and branch_test also load block (summary_test and
 -- tandem_test fetch too), and prepare_test loads hub/prepare with fetch, prdata and agent-host, with the Host table's fields stubbed and every process effect a recorded callback; no
 -- other test touches a host module.
 
@@ -29,6 +29,7 @@ local modules: { { name: string, run: () -> () } } = {
 	{ name = "ci_log_test", run = require("./ci_log_test") },
 	{ name = "rerun_test", run = require("./rerun_test") },
 	{ name = "checks_test", run = require("./checks_test") },
+	{ name = "branch_test", run = require("./branch_test") },
 	{ name = "draft_test", run = require("./draft_test") },
 	{ name = "agent_test", run = require("./agent_test") },
 	{ name = "agent_diff_test", run = require("./agent_diff_test") },

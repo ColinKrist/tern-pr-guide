@@ -127,14 +127,15 @@ This opens the PR at what needs fixing, in the guided review layout.
 | Step | Shows | Actions |
 |---|---|---|
 | Comment or requested change | The thread pinned at its line in the diff | Reply (R), Resolve (E) |
-| Failing check | The annotation pinned at its line; with no usable annotation, the log cut to its errors, then the changed lines it names pinned in their files. A check running again reads "Re-running 1m 12s" in amber, and its log "Log from the failed run" | View log (⇧L), Re-run failed checks (⇧R) |
+| Failing check | The annotation pinned at its line; with no usable annotation, the log cut to its errors, then the changed lines it names pinned in their files. A check running again reads "Re-running 1m 12s" in amber, and its log "Log from the failed run" | View log (⇧L), Re-run failed checks (⇧R), and Update branch or Push empty commit (U) |
 | Merge conflict | "Your branch" and "main" blocks, plus "Main changed this in #415 by @devon" | Fix with agent (A), Resolve on GitHub (G) |
 
 - **All checks:** under the steps, one row ("◌ 2 pending · ✓ 11 passed", with `V`) opens the checks popover under it. The page reads the check list when it opens (1 point), which is also how a failing check that is running again is known.
-- **Keys:** h/l move between the steps and the code panel; j/k move within either one; ⏎ goes into the panel, then chooses the highlighted action; R reply, E resolve, ⇧L view log, G open on GitHub (the conflict editor for a conflict), B bot comments, A the card's own action, Esc back to the board with the card still selected.
+- **Keys:** h/l move between the steps and the code panel; j/k move within either one; ⏎ goes into the panel, then chooses the highlighted action; R reply, E resolve, ⇧L view log, U update branch or push an empty commit, G open on GitHub (the conflict editor for a conflict), B bot comments, A the card's own action, Esc back to the board with the card still selected.
 - **Re-run failed checks (⇧R):** reads the card's failing checks from the details and hands each CI module the ones it owns, all at once: GitHub Actions runs `gh run rerun <run> --failed --repo <repo>` once per workflow run; Buildkite retries the job a check's link names, or lists the build's failed jobs (`bk build view … --recursive --json`) and runs `bk job retry <job>` for each, once per build, with the org in `BUILDKITE_ORGANIZATION_SLUG`. A failing check no module owns shows "Couldn't re-run deploy/preview: no CI module reads it". The sample board doesn't re-run.
+- **Update branch or Push empty commit (U):** for a check that can't be re-run, a new head runs every check again. The details' `baseRef.compare(headRef: "refs/pull/<n>/head") { behindBy }` (a fork PR has that ref in the base repository) decides, because GitHub reports `mergeStateStatus` BEHIND only where branch protection requires an up-to-date branch: measured 2026-10-12, tagalog-learning-app/Tagalingo-App#1473 was 20 commits behind main and reported UNSTABLE. The failing check's strip shows, after Re-run, "3 commits behind main" and **Update branch** (`Ops.updateBranch`, `gh pr update-branch`) when `behindBy > 0`; "Up to date with main" and **Push empty commit** when it is 0; neither when the PR conflicts with its base or GitHub gave no count (`State.branchAction`). Push empty commit writes to the branch and can't be undone without a force push, so U turns the button into the inline confirm "Push an empty commit to <branch>?" (Confirm ⌘⏎, Cancel Esc; `route.ask`), and only then `Ops.pushEmpty` makes three calls on the head repository: `gh api repos/<head repo>/git/commits/<head> --jq .tree.sha`, a POST to `git/commits` with that tree and the head as parent ("Empty commit to re-run checks"), and a PATCH of `git/refs/heads/<branch>` with `force=false`, so a branch that moved meanwhile refuses ("Couldn't push an empty commit: the branch moved; refresh and try again"). Both keep the Tandem guard, show the card busy ("Updating…", "Pushing…"), toast "Updated #N with main" or "Pushed an empty commit to #N", and refresh; the refresh that brings the new head reads the open page's check list, so its failing checks show "Re-running". The sample board's #111 is 3 behind and #104 is up to date; neither sends anything ("The sample board doesn't update branches", "The sample board doesn't push commits"), and #104 is Tandem's, so its confirm shows the Tandem error.
 - **Check logs:** a failing check with no usable annotation has its log read when the page opens, once per commit, by the CI module that owns it (`src/ci/`): GitHub Actions runs `gh run view <run> --repo <repo> --log-failed --job <job>` and keeps 12 lines before and 3 after each error line (the last 30 when none reads as one, 120 a job at most), dropping the runner's setup before the job's first step unless it holds an error; Buildkite runs `bk build view <org>/<pipeline>/<n> --recursive --json`, then `bk job log <job> --agent --max-tokens 1500` for the first 3 failed jobs (one job when the link names it), with `BUILDKITE_ORGANIZATION_SLUG` set to the link's org so `bk` uses that org's saved token. Each line is typed (`Log.Line`): `Log.classify` reads it as an error, a heading (Actions' `##[group]`, Buildkite's `---`, `+++`, `~~~`, marker dropped), a command (`$ `) or plain, and a left-out run is a gap. The page draws errors on the removed-row tint with a Removed Red bar, headings as muted sans labels, and the error count in the log's header. `Log.refs` finds `path:line` mentions of changed files (a build machine's folder prefix allowed) and the page pins up to 5 of them like annotations, reading those files with `Prdata.readFixes`. The sample board's #111 runs both modules on `fixtures/hub/ci-logs.luau` (the Actions log recorded from the smoke repo; the Buildkite output synthetic in `bk`'s documented shape).
-- **Data:** one `details.graphql` call when the page opens (1 point, measured 2026-10-10), cached in `s.details[key]`. A thread's code is its first comment's diff hunk. Conflicts and annotated source come from `Prdata.readFixes` on the repo's checkout (or PR Guide's saved copy when already set up); with neither, the conflict step shows "No local copy of owner/repo". Bot threads are listed apart as "Not counted". Reply and Resolve write to GitHub (`commands.reply`, `commands.resolve`); the sample block applies them to the page only.
+- **Data:** one `details.graphql` call when the page opens (1 point, measured 2026-10-10, and again 2026-10-12 with the base comparison and head branch added), cached in `s.details[key]`. `behindBy` is nil when GitHub returns null, and `branch` (head repository and name) is nil when the fork is gone. A thread's code is its first comment's diff hunk. Conflicts and annotated source come from `Prdata.readFixes` on the repo's checkout (or PR Guide's saved copy when already set up); with neither, the conflict step shows "No local copy of owner/repo". Bot threads are listed apart as "Not counted". Reply and Resolve write to GitHub (`commands.reply`, `commands.resolve`); the sample block applies them to the page only.
 
 ### Agent fixes (v2)
 
@@ -248,7 +249,7 @@ To review has its own field: "Paste a pull request link to review" (`N`, from ei
 | `checks.graphql`: CI state for PRs with running checks | 1 pt for 5 or 42 PRs | 1–1.6 s | Every 30 s while any check is running |
 | `check-list.graphql`: every check on one PR's head commit (name, state, times, details link, workflow or app), via `nodes(ids:)`. Measured 2026-10-12 on jubbydev/tern-pr-guide-hub-smoke #17 and a vercel/next.js PR | 1 pt (the cost follows the query's shape, not how many checks come back) | 0.5–0.6 s | When the checks popover or a fixes page opens, and every 30 s while the popover is open and a check is unfinished |
 | REST `/notifications` with `If-Modified-Since` | free (304) | | Every 60 s, as the change probe |
-| Fixes-page details: threads with path/line/body, changes-requested reviews, failing check runs with annotations | 1 pt | | When a Needs fixes PR is opened |
+| Fixes-page details: threads with path/line/body, changes-requested reviews, failing check runs with annotations, the head branch and how far behind its base it is | 1 pt | | When a Needs fixes PR is opened |
 | `merge-detect.graphql`: what a repo declares (`.aviator/config.yml`, a merge queue) and its last 8 merged PRs with `mergedBy` and comments. Measured on the smoke repo 2026-10-10 | 1 pt | | Once per repo, for repos with a Ready card; the result is cached in kv |
 | `merge-failure.graphql`: latest comments and head check contexts, via `nodes(ids:)` | 1 pt for any number of PRs (measured for 2) | | After hub-f, only when a comment or label merge is in flight on the same head |
 
@@ -507,6 +508,8 @@ export type FixDetails = {
 	conflictNote: string?,            -- why `conflicts` is nil: "No local copy of acme/web", "Couldn't read the conflicts: …"
 	files: { [string]: string }?,     -- annotated files as the head commit has them (`git show`), for the pinned annotations
 	logs: { [string]: Log.Load }?,    -- failed-check logs by the check's details link, for checks with no usable annotation
+	behindBy: number?,                -- commits the base has that the head lacks; nil when GitHub can't compare them
+	branch: { repo: string, name: string }?,   -- the head branch and its repository; nil when the fork is gone
 }
 
 export type Row = { kind: "ctx" | "add" | "del", old: number?, new: number?, text: string }
@@ -586,6 +589,9 @@ M.commands = {
 	merge = function(pr: HubPR, method: MergeMethod): Command end,   -- squash, merge, rebase: `gh pr merge <n> --repo <owner/repo> --squash|--merge|--rebase`; queue: `--auto`; comment: `gh pr comment <n> --repo <r> --body <command>`; label: `gh pr edit <n> --repo <r> --add-label <label>`
 	cancelMerge = function(pr: HubPR, method: MergeMethod): Command end,   -- queue: `gh pr merge … --disable-auto`; comment: `--body <cancel>`; label: `--remove-label`; raises for a GitHub merge and for a comment with no cancel
 	updateBranch = function(pr: HubPR): Command end,
+	headTree = function(repo: string, oid: string): Command end,   -- gh api repos/<repo>/git/commits/<oid> --jq .tree.sha
+	emptyCommit = function(repo: string, tree: string, parent: string): Command end,   -- POST repos/<repo>/git/commits, --jq .sha
+	moveBranch = function(repo: string, branch: string, sha: string): Command end,   -- PATCH repos/<repo>/git/refs/heads/<branch>, force=false
 	close = function(pr: HubPR): Command end,   -- gh pr close <n> --repo <repo>, no comment
 	requestReview = function(pr: HubPR, login: string): Command end,
 	close = function(pr: HubPR): Command end,
@@ -856,6 +862,8 @@ function M.agentFlight(s: State, key: string, facts: AgentFlightFacts): "wait" |
 function M.openFixes(s: State, key: string): boolean / M.closeFixes(s)   -- Esc returns to the board with the card still selected
 function M.prOf(s: State, key: string): HubPR? / M.fixDetails(s) / M.fixSteps(s) / M.fixStep(s) / M.fixLeft(s)
 function M.fixItems(s: State, step: Fixes.Step?): { string } / M.fixMain(s): CardAction?   -- the panel's actions; the card's own main action
+function M.branchAction(s, key): BranchAction?   -- { kind = "update", behind } | { kind = "empty", branch }: what U does, from the details at the head
+function M.fixAsk(s, ask: boolean)                -- the Push empty commit question (`route.ask`)
 function M.fixSelect(s, index) / M.fixMove(s, delta) / M.fixFocus(s, "steps" | "panel") / M.fixPress(s): string? / M.fixToggleBots(s)
 function M.beginReply(s): boolean / M.cancelReply(s) / M.setDetails(s, details)
 
@@ -893,7 +901,7 @@ function M.askMerge(s: State, key: string): boolean      -- opens the "Squash an
 function M.cancelConfirm(s: State)
 function M.setBusy(s: State, key: string, text: string?)
 function M.dropPr(s: State, key: string)                 -- a merged PR leaves the board
-function M.branchUpdated(s: State, key: string)          -- behind = false and checks pending, until a refresh says more
+function M.branchUpdated(s: State, key: string)          -- behind = false, checks pending and the details' behindBy unknown, until a refresh says more
 function M.linkTarget(s: State): LinkTarget              -- "empty" | "invalid" | "new" | "folded" | "board": what the add field's text names (github.com links and owner/repo#123 only); "folded" is a review request in Team requests or Inactive
 function M.markAdded(s: State, key: string)              -- ⏎ on a "folded" target, after the block wrote hub.added: the PR moves to To review
 function M.openLink(s: State) / M.closeLink(s: State, clear: boolean)   -- N: Review requests with mode "link"

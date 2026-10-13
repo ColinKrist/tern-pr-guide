@@ -38,6 +38,8 @@ export type FixDetails = {
 	conflictNote: string?, -- why `conflicts` is nil: "No local copy of acme/web"
 	files: { [string]: string }?, -- annotated files as the head commit has them, read by `git show`
 	logs: { [string]: Log.Load }?, -- failed-check logs by the check's details link, for checks with no usable annotations
+	behindBy: number?, -- commits the base has that the head lacks; nil when GitHub can't compare them
+	branch: { repo: string, name: string }?, -- the head branch and the repository it lives in; nil when the fork is gone
 }
 
 -- A line of code in an excerpt. `old` is nil on an added line and for a plain file excerpt.

@@ -594,6 +594,24 @@ ACTIONS["fixes-rerun"] = function(b, cx)
 	local route = b.s.route
 	if route then ACTIONS["card-rerun"](b, cx, route.key) end
 end
+-- U on a failing check: Update branch when the branch is behind its base, or the Push empty commit question when it is
+-- up to date, which ⌘⏎ answers.
+ACTIONS["fixes-update"] = function(b, cx)
+	local route = b.s.route
+	if route == nil then return end
+	local action = State.branchAction(b.s, route.key)
+	if action and action.kind == "empty" then return State.fixAsk(b.s, true) end
+	Ops.updateBranch(b, cx, route.key)
+end
+ACTIONS["fixes-empty-confirm"] = function(b, cx)
+	local route = b.s.route
+	if route == nil or not route.ask then return end
+	State.fixAsk(b.s, false)
+	Ops.pushEmpty(b, cx, route.key)
+end
+ACTIONS["fixes-empty-cancel"] = function(b)
+	State.fixAsk(b.s, false)
+end
 ACTIONS["fixes-log"] = function(b, cx)
 	local _, pr, step = fixTarget(b)
 	if pr == nil or step == nil or step.check == nil then return end

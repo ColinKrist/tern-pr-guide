@@ -240,6 +240,10 @@ startRefresh = function(b: Block, cx: BlockCx)
 			detectMerges(b, cx)
 			loadFlakes(b, cx)
 			if not b.closed then CheckFilter.read(b, cx, nil) end
+			-- An open fixes page whose head moved (an Update branch, an empty commit) reads the new head's check list, so its
+			-- failing checks show "Re-running".
+			local route = b.s.route
+			if route and route.kind == "fixes" then loadCheckList(b, cx, route.key) end
 		end
 		if b.refetch then
 			b.refetch = false

@@ -159,11 +159,13 @@ query MergeFailure($ids: [ID!]!) {
 }]=]
 
 local DETAILS_QUERY = [=[
-query Details($id: ID!) {
+query Details($id: ID!, $head: String!) {
   rateLimit { cost remaining limit resetAt }
   node(id: $id) { ... on PullRequest {
     id
     headRefOid
+    headRefName headRepository { nameWithOwner }
+    baseRef { compare(headRef: $head) { behindBy } }
     reviews(last: 20, states: [CHANGES_REQUESTED]) { nodes { author { __typename login } body submittedAt url } }
     commentReviews: reviews(last: 20, states: [COMMENTED]) { nodes { author { __typename login } body submittedAt url commit { oid } } }
     reviewThreads(first: 50) { nodes {
@@ -680,10 +682,17 @@ function M.parseDetails(raw: any, pr: HubPR): FixDetails?
 			})
 		end
 	end
+	local base = tbl(node.baseRef)
+	local compare = base and tbl(base.compare)
+	local behindBy = compare and compare.behindBy
+	local headRepo = tbl(node.headRepository)
+	local repo, branch = headRepo and str(headRepo.nameWithOwner), str(node.headRefName)
 	return {
 		key = pr.key, headOid = head, fetchedAt = "",
 		reviews = reviews, threads = threads, checks = failingChecks(node), changedPaths = changed,
 		conflicts = nil, conflictNote = nil, files = nil,
+		behindBy = if type(behindBy) == "number" then behindBy else nil,
+		branch = if repo and branch then { repo = repo, name = branch } else nil,
 	}
 end
 
@@ -900,6 +909,20 @@ M.commands = {
 	end,
 	updateBranch = function(pr: HubPR): Command
 		return { argv = { "gh", "pr", "update-branch", tostring(pr.number), "--repo", pr.repo }, stdin = nil }
+	end,
+	-- Push empty commit, through GitHub's git database so no checkout is needed: the head's tree, a commit of that tree
+	-- on the head, then the branch moved to it. `force=false` only fast-forwards, so a branch that moved meanwhile refuses.
+	headTree = function(repo: string, oid: string): Command
+		return { argv = { "gh", "api", "repos/" .. repo .. "/git/commits/" .. oid, "--jq", ".tree.sha" }, stdin = nil }
+	end,
+	emptyCommit = function(repo: string, tree: string, parent: string): Command
+		return { argv = {
+			"gh", "api", "repos/" .. repo .. "/git/commits", "-X", "POST", "-f", "message=Empty commit to re-run checks",
+			"-f", "tree=" .. tree, "-f", "parents[]=" .. parent, "--jq", ".sha",
+		}, stdin = nil }
+	end,
+	moveBranch = function(repo: string, branch: string, sha: string): Command
+		return { argv = { "gh", "api", "repos/" .. repo .. "/git/refs/heads/" .. branch, "-X", "PATCH", "-f", "sha=" .. sha, "-F", "force=false" }, stdin = nil }
 	end,
 	-- Replies in a review thread, and resolves one: GraphQL writes, the only way to do either.
 	reply = function(pr: HubPR, threadId: string, body: string): Command
@@ -1365,7 +1388,7 @@ function M.client(run: Runner, decode: Decode): Client
 
 	local function details(pr: HubPR, done: (value: FixDetails?, err: Error?) -> ())
 		local operation, what = "gh api graphql: details", "read what needs fixing in " .. pr.key
-		graphql(DETAILS_QUERY, { "-f", "id=" .. pr.id }, operation, what, function(doc, err)
+		graphql(DETAILS_QUERY, { "-f", "id=" .. pr.id, "-f", "head=refs/pull/" .. pr.number .. "/head" }, operation, what, function(doc, err)
 			if err then return done(nil, err) end
 			local found = M.parseDetails(doc, pr)
 			if found == nil then return done(nil, failure(operation, what, "GitHub has no pull request " .. pr.key, nil)) end

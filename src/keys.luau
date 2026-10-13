@@ -177,6 +177,12 @@ end
 -- chooses, Esc goes back to the board. A step's own keys follow the buttons it shows.
 local function fixesKey(s: HubState.State, key: Key): Action?
 	local name = key.name
+	-- The Push empty commit question takes only its answer.
+	if s.route and s.route.ask then
+		if name == "enter" and (key.meta or key.ctrl) and not key.alt then return act("fixes-empty-confirm") end
+		if name == "escape" then return act("fixes-empty-cancel") end
+		return nil
+	end
 	if key.ctrl or key.meta or key.alt then return nil end
 	if isQuestionMark(key) then return act("hub-help") end
 	if name == "escape" then return act("fixes-close") end
@@ -184,6 +190,10 @@ local function fixesKey(s: HubState.State, key: Key): Action?
 	local label = cardKeyLabel(key)
 	if label == "⇧L" then return act("fixes-log") end
 	if label == "⇧R" then return act("fixes-rerun") end
+	if label == "U" and s.route and HubState.branchAction(s, s.route.key) then
+		local step = HubState.fixStep(s)
+		if step and step.check then return act("fixes-update") end
+	end
 	if label == "V" then return act("hub-checks", if s.route then s.route.key else nil) end
 	if name == "down" or name == "j" then return act("fixes-move", 1) end
 	if name == "up" or name == "k" then return act("fixes-move", -1) end

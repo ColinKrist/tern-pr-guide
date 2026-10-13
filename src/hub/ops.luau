@@ -373,18 +373,20 @@ local function confirm(b: Block, cx: BlockCx, _: string)
 	runMerge(b, cx, card.pr, nil)
 end
 
--- Update branch (U): a Ready card that is behind main. Its checks run again, so the card waits on them.
+-- Update branch (U): a Ready card that is behind main, or a fixes page whose details count commits behind the base
+-- (GitHub says BEHIND only where branch protection requires an up-to-date branch). Its checks run again, so the card
+-- waits on them.
 local UPDATE_BUSY = "Updating…"
 
 local function updateBranch(b: Block, cx: BlockCx, key: string)
 	local s = b.s
-	local card = State.card(s, key)
-	if not card or s.busy[key] then return end
-	local pr = card.pr
+	local pr = State.prOf(s, key)
+	if pr == nil or s.busy[key] then return end
 	if not ownershipChecked(b, cx, "update #" .. pr.number) then return end
 	-- One owner per branch: a queued Update branch for a PR Tandem took meanwhile sends nothing.
 	if pr.tandem then return cx:toast("error", "Couldn't update #" .. pr.number .. ": " .. TANDEM_OWNS, pr.repo) end
-	if not pr.behind or pr.conflicts then return cx:toast("info", "#" .. pr.number .. " isn't behind " .. pr.baseBranch, pr.key) end
+	local action = State.branchAction(s, key)
+	if not (pr.behind or (action and action.kind == "update")) or pr.conflicts then return cx:toast("info", "#" .. pr.number .. " isn't behind " .. pr.baseBranch, pr.key) end
 	if b.fixture then return cx:toast("info", "The sample board doesn't update branches", pr.key) end
 	local head = pr.headOid
 	State.setBusy(s, key, UPDATE_BUSY)
@@ -406,6 +408,51 @@ local function updateBranch(b: Block, cx: BlockCx, key: string)
 			refetchSoon(b, cx)
 		end
 		draw(b, cx)
+	end)
+end
+
+-- Push empty commit (U, after the inline question): a fixes page whose branch is up to date with its base gets a commit
+-- that changes nothing, so every check runs again, for a check that can't be re-run on its own.
+local PUSH_BUSY = "Pushing…"
+
+local function pushEmpty(b: Block, cx: BlockCx, key: string)
+	local s = b.s
+	local pr = State.prOf(s, key)
+	if pr == nil or s.busy[key] then return end
+	if not ownershipChecked(b, cx, "push to #" .. pr.number) then return end
+	if pr.tandem then return cx:toast("error", "Couldn't push an empty commit: " .. TANDEM_OWNS, pr.repo) end
+	local action = State.branchAction(s, key)
+	if action == nil or action.kind ~= "empty" then return cx:toast("info", "#" .. pr.number .. " isn't up to date with " .. pr.baseBranch, pr.key) end
+	if b.fixture then return cx:toast("info", "The sample board doesn't push commits", pr.key) end
+	local branch, head = action.branch, pr.headOid
+	local function fail(err: Model.Error?)
+		if b.closed then return end
+		State.setBusy(s, key, nil)
+		local message = if err then err.message else "no answer"
+		local reason = if string.find(message, "fast forward", 1, true) then "the branch moved; refresh and try again" else reasonOf(message)
+		cx:toast("error", "Couldn't push an empty commit: " .. reason, pr.repo)
+		draw(b, cx)
+	end
+	State.setBusy(s, key, PUSH_BUSY)
+	draw(b, cx)
+	b.github.run(Github.commands.headTree(branch.repo, head), function(tree, err)
+		if err or tree == nil then return fail(err) end
+		b.github.run(Github.commands.emptyCommit(branch.repo, string.match(tree, "%S+") or "", head), function(sha, err2)
+			if err2 or sha == nil then return fail(err2) end
+			b.github.run(Github.commands.moveBranch(branch.repo, branch.name, string.match(sha, "%S+") or ""), function(_, err3)
+				if err3 then return fail(err3) end
+				if b.closed then return end
+				if s.busy[key] == PUSH_BUSY then State.setBusy(s, key, nil) end
+				keepCache(b, cx, function()
+					s.acted[key] = true
+					State.branchUpdated(s, key)
+				end, key, head)
+				if b.closed then return end
+				cx:toast("success", "Pushed an empty commit to #" .. pr.number, pr.repo)
+				refetchSoon(b, cx)
+				draw(b, cx)
+			end)
+		end)
 	end)
 end
 
@@ -687,6 +734,7 @@ return {
 	confirmCancel = confirmCancel,
 	confirm = confirm,
 	updateBranch = updateBranch,
+	pushEmpty = pushEmpty,
 	rerun = rerun,
 	addByLink = addByLink,
 	remove = remove,

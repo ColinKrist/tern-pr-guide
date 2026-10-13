@@ -102,8 +102,12 @@ export type Route = {
 	replies: { [string]: { string } }, -- replies posted from the page, by thread id
 	reply: Fields.Field?, -- the reply being written (mode "reply")
 	busy: boolean, -- a reply or resolve is in flight
-	original: boolean?, ask: boolean?, -- review-fix's before view and inline Discard question
+	original: boolean?, -- review-fix's before view
+	ask: boolean?, -- the inline question: review-fix's Discard, the fixes page's Push empty commit
 }
+
+-- U on a failing check's panel: catch the branch up with its base, or push an empty commit when it is up to date.
+export type BranchAction = { kind: "update", behind: number } | { kind: "empty", branch: { repo: string, name: string } }
 
 export type State = {
 	prs: { HubPR },
@@ -1695,6 +1699,9 @@ end
 
 -- Updating the branch makes its checks run again: the card waits on them until a refresh says otherwise.
 function M.branchUpdated(s: State, key: string)
+	-- The new head is unread: no U until the details at it say how it stands against the base.
+	local known = s.details[key]
+	if known then known.behindBy = nil end
 	for _, pr in s.prs do
 		if pr.key == key then
 			pr.behind = false
@@ -2027,13 +2034,24 @@ function M.fixLeft(s: State): number
 	return left
 end
 
+-- What U does to `key`'s branch so its checks run again, read from the details at its head: Update branch when the
+-- base has commits the head lacks, Push empty commit when it is up to date. Nothing when the branch conflicts with the
+-- base or GitHub couldn't compare them.
+function M.branchAction(s: State, key: string): BranchAction?
+	local pr, known = M.prOf(s, key), s.details[key]
+	if pr == nil or known == nil or known.headOid ~= pr.headOid or pr.conflicts or known.behindBy == nil then return nil end
+	if known.conflicts and #known.conflicts > 0 then return nil end
+	if known.behindBy > 0 then return { kind = "update", behind = known.behindBy } end
+	return if known.branch then { kind = "empty", branch = known.branch } else nil
+end
+
 -- The actions the panel's j and k move over for `step`; "agent" is the card's own main action.
 function M.fixItems(s: State, step: Fixes.Step?): { string }
 	if step == nil then return {} end
 	local card = if s.route then M.card(s, s.route.key) else nil
 	local agent = card ~= nil and card.main ~= nil and card.main.act ~= "open"
 	if step.thread then return { "reply", "resolve" } end
-	if step.check then return { "log", "rerun" } end
+	if step.check then return if s.route and M.branchAction(s, s.route.key) then { "log", "rerun", "update" } else { "log", "rerun" } end
 	if step.conflict then return if agent then { "agent", "github" } else { "github" } end
 	return { "github" }
 end
@@ -2050,7 +2068,7 @@ function M.fixSelect(s: State, index: number)
 	local route = s.route
 	if route == nil then return end
 	route.cur = math.clamp(index, 1, math.max(1, #M.fixSteps(s)))
-	route.item, route.reply = 1, nil
+	route.item, route.reply, route.ask = 1, nil, false
 	s.mode = "fixes"
 end
 
@@ -2081,6 +2099,14 @@ function M.fixPress(s: State): string?
 		return nil
 	end
 	return M.fixItems(s, M.fixStep(s))[route.item]
+end
+
+-- The Push empty commit question, open or closed; it opens only while the step on show offers it.
+function M.fixAsk(s: State, ask: boolean)
+	local route, step = s.route, M.fixStep(s)
+	if route == nil then return end
+	local action = M.branchAction(s, route.key)
+	route.ask = ask and step ~= nil and step.check ~= nil and action ~= nil and action.kind == "empty"
 end
 
 function M.fixToggleBots(s: State)

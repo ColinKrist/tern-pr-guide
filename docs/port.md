@@ -75,7 +75,7 @@ Rules and functions to drop:
 - `src/hub/model.luau`: the first rule of `classify` (a PR with `pr.tandem` goes to In review), `parseTandemWatch`, `tandemFlags` and `handoffReason`.
 - `src/hub/state.luau`: the `card-handoff` actions ("Hand off to Tandem"), the "Waiting on Tandem" chip, the `pr.tandem` branches in the card builders and `dropObsoleteAgents`'s watched-PR rule.
 - `src/hub/store.luau`: `storedNow`, `joinOwnership`, `renewed`, `flagPrs`, `flagged`, `joinShared`, `joinOwned`, `applyOwnership`, `syncOwnership`, `ownershipChecked`, `reconcileFlight`, `UNCHECKED`, `TANDEM_OWNS`, the `answered` parameter of `reconcileStore` and `persistWhole`, and the `b.retired` check in `sharedCache`. `carryOn` keeps only its `currentFlight` check.
-- `src/hub/ops.luau`: the `TANDEM_OWNS` and `ownershipChecked` guards in `runMerge`, `cancelMerge`, `autoMerge`, `updateBranch` and `reviewEffect`, and the `syncOwnership` call inside `reviewEffect`'s `canPush`.
+- `src/hub/ops.luau`: the `TANDEM_OWNS` and `ownershipChecked` guards in `runMerge`, `cancelMerge`, `autoMerge`, `updateBranch`, `pushEmpty` and `reviewEffect`, and the `syncOwnership` call inside `reviewEffect`'s `canPush`.
 - `src/hub/refresh.luau`: the `loadTandem` call and the `joinOwnership`, `joinShared`, `applyOwnership`, `reconcileFlight` and `flagged` calls in `startRefresh` and `stepFixture`.
 - `src/hub/agent-run.luau`: the `pr.tandem` guard in `beginAgent`, the `owner.tandem` cleanup branch in `retryAgent`, and the `carryOn` ownership half.
 - `src/hub/block.luau`: `ACTIONS["card-handoff"]`, the `pr.tandem` guard in `ACTIONS["card-agent"]`, the `syncOwnership` call in `dispatch`, and the `watched` set and `raw-tandem-watch` fixture in `init`.
@@ -393,7 +393,7 @@ interface GithubClient {
 | `refresh` | `gh api graphql` with `HUB_QUERY` (`docs/hub/queries/hub-f.graphql`), once per search in `SEARCHES` (`mine`, `requested`, `reviewed`), all three at once. Each search pages with `q`, `n` and `after`: 20 PRs a page (`PAGE_SIZE`) up to 50 (`SEARCH_MAX`), and a page that fails transiently is asked again at half the size, down to 5 (`PAGE_MIN`). The first page of `mine` carries one `added<N>: repository { pullRequest(number:) }` alias per PR in `req.added` (`hubQuery`). The first failure ends the refresh. Beside them, `MERGED_QUERY` (`merged.graphql`) with `q = MERGED_SEARCH` fills `merged` (`parseMerged`); its failure only leaves `merged` unset. Then `THREADS_QUERY` (`threads.graphql`) for PRs with unresolved threads whose activity changed, at most 100 ids (`threadsFor`). Then `MERGE_FAILURE_QUERY` (`merge-failure.graphql`) for PRs with a comment or label merge pending on the same head (`inFlightMerges`). | `POST /graphql`, the same queries and variables. Keep the paging, `pageInfo.hasNextPage` as `truncated`, and one `RateLimit` per page in `calls`. A threads or merge-failure failure sets `partial` and keeps `prs`. |
 | `probe` | `gh api -i notifications?per_page=1`, with `-H If-Modified-Since: <since>`. `parseProbe` reads the status line. | `GET /notifications?per_page=1` with `If-Modified-Since`. 200 is a change, 304 is none. Keep `Last-Modified` and `X-Poll-Interval`. |
 | `checks` | `gh api graphql` with `CHECKS_QUERY` (`checks.graphql`), `ids[]=` per node. Empty `ids` answers at once. | `POST /graphql`, same query. |
-| `details` | `gh api graphql` with `DETAILS_QUERY` (`details.graphql`), `id=<node id>`. | `POST /graphql`, same query. |
+| `details` | `gh api graphql` with `DETAILS_QUERY` (`details.graphql`), `id=<node id>`, `head=refs/pull/<number>/head`. `parseDetails` reads `baseRef.compare(headRef: $head).behindBy` into `behindBy` (nil for null) and `headRefName` with `headRepository.nameWithOwner` into `branch` (nil when the fork is gone). | `POST /graphql`, same query and variables. |
 | `checkList` | `gh api graphql` with `CHECK_LIST_QUERY` (`docs/hub/queries/check-list.graphql`, 1 point): every check on the head commit, `nodes(ids:)` on the PR's node id, parsed by `parseCheckList` (conclusions and statuses mapped to the five `CheckState`s). Read when the checks popover or the fixes page opens, and again on the checks timer while the popover is open and a check is unfinished. | `POST /graphql`, the same query. |
 | `detect` | `gh api graphql` with `MERGE_DETECT_QUERY` (`merge-detect.graphql`), `owner`, `name`. | `POST /graphql`, same query. |
 | `history` | `gh api repos/<repo>/actions/runs?branch=<base>&status=completed&per_page=100`. | `GET` the same path. One page. |
@@ -425,6 +425,9 @@ type GithubCommand =
 	| { kind: "close"; pr: HubPR }
 	| { kind: "refs"; pr: HubPR } // returns { headRefName, baseRefName, headRefOid }
 	| { kind: "updateBranch"; pr: HubPR }
+	| { kind: "headTree"; repo: string; oid: string } // returns the commit's tree sha
+	| { kind: "emptyCommit"; repo: string; tree: string; parent: string } // returns the new commit's sha
+	| { kind: "moveBranch"; repo: string; branch: string; sha: string }
 	| { kind: "reply"; pr: HubPR; threadId: string; body: string }
 	| { kind: "resolve"; threadId: string }
 ```
@@ -445,6 +448,9 @@ type GithubCommand =
 | `close` | `gh pr close N --repo R` | `PATCH /repos/{o}/{r}/pulls/{n}` with `{ state: "closed" }`. |
 | `refs` | `gh pr view N --repo R --json headRefName,baseRefName,headRefOid` | `GET /repos/{o}/{r}/pulls/{n}`: `head.ref`, `base.ref`, `head.sha`. `hub/agent-run` reads it just before an engine starts and refuses when the head or base moved. |
 | `updateBranch` | `gh pr update-branch N --repo R` | `PUT /repos/{o}/{r}/pulls/{n}/update-branch` (a merge, not a rebase). |
+| `headTree` | `gh api repos/R/git/commits/OID --jq .tree.sha` | `GET /repos/{o}/{r}/git/commits/{sha}`: `tree.sha`. R is the head repository, a fork's for a fork PR. |
+| `emptyCommit` | `gh api repos/R/git/commits -X POST -f message=… -f tree=T -f parents[]=OID --jq .sha` | `POST /repos/{o}/{r}/git/commits`: `sha`. |
+| `moveBranch` | `gh api repos/R/git/refs/heads/B -X PATCH -f sha=S -F force=false` | `PATCH /repos/{o}/{r}/git/refs/heads/{branch}` with `force: false`, so only a fast-forward lands; a moved branch answers 422 "Update is not a fast forward". |
 | `reply` | `gh api graphql` with `REPLY_MUTATION` | GraphQL `addPullRequestReviewThreadReply`, unchanged. |
 | `resolve` | `gh api graphql` with `RESOLVE_MUTATION` | GraphQL `resolveReviewThread`, unchanged. |
 
@@ -768,6 +774,9 @@ Port the table as is, as a `Record<string, (b, cx, value) => void>` and one `dis
 | `fixes-post` | `Ops.postReply` |
 | `fixes-resolve` | `Ops.resolveThread` |
 | `fixes-rerun` | `ACTIONS["card-rerun"]` for the open PR |
+| `fixes-update` | U or the strip's button: `State.branchAction` for the open PR, then `Ops.updateBranch` (behind its base) or `State.fixAsk(s, true)` (up to date: the Push empty commit question) |
+| `fixes-empty-confirm` | `State.fixAsk(s, false)`, then `Ops.pushEmpty` (`commands.headTree`, `emptyCommit`, `moveBranch` on the head repository) |
+| `fixes-empty-cancel` | `State.fixAsk(s, false)` |
 | `hub-checks` | The checks popover on a card (its checks mark or V) or on the fixes page's PR (All checks or V): `State.openChecks` and `Refresh.loadCheckList`, or `State.closeChecks` when it is open on that PR |
 | `checks-close` | `State.closeChecks` |
 | `checks-move` | `State.checksMove` |
@@ -790,7 +799,7 @@ The guide page has its own `ACTIONS` table in `src/block.luau`, with the same `d
 | `link` | ⏎ `hub-link-add`. ⇧⏎ `hub-link-open`. Esc `hub-link-clear`. Other keys type. |
 | `confirm` | ⌘⏎ `hub-confirm`. Esc `hub-confirm-cancel`. |
 | `help` | Esc or `?` `hub-help-close`. |
-| `fixes` | Esc `fixes-close`. ⇧L `fixes-log`. ⇧R `fixes-rerun`. V `hub-checks`. j k `fixes-move`. h l `fixes-focus`. ⏎ `fixes-press`. R `fixes-reply`. E `fixes-resolve`. G `fixes-github`. B `fixes-bots`. The card's main action key, and A, ⇧A or O for its alternatives. |
+| `fixes` | While the Push empty commit question is open, only ⌘⏎ `fixes-empty-confirm` and Esc `fixes-empty-cancel`. Esc `fixes-close`. ⇧L `fixes-log`. ⇧R `fixes-rerun`. U `fixes-update` on a failing check when `State.branchAction` offers one. V `hub-checks`. j k `fixes-move`. h l `fixes-focus`. ⏎ `fixes-press`. R `fixes-reply`. E `fixes-resolve`. G `fixes-github`. B `fixes-bots`. The card's main action key, and A, ⇧A or O for its alternatives. |
 | `checks` | j k and the arrows `checks-move`. ⏎ `checks-press`. ⇧R `card-rerun` while a check fails. Esc or V `checks-close`. |
 | `reply` | ⌘⏎ `fixes-post`. Esc `fixes-cancel`. ⏎ is a new line. |
 | `review-fix` | Esc `review-fix-close`. ⏎ `review-fix-reviewed`. j k `review-fix-move`. B `review-fix-original`. D `review-fix-discard`. P `review-fix-push`. While asking, ⌘⏎ `review-fix-discard-confirm` and Esc `review-fix-discard-cancel`. Nothing while busy. |
@@ -828,6 +837,7 @@ Run all of them with `/opt/homebrew/bin/luau tests/run.luau`. `tests/run.luau` l
 | `tests/ci_log_test.luau` | `ci/actions`, `ci/buildkite`, `ci/log` | The log contract and both CI modules on recorded output (`fixtures/hub/ci-logs.luau`): which checks each owns, the exact commands and env, the cut, failures, `Log.refs`, and each module's re-run (once per run or build). |
 | `tests/checks_test.luau` | `github`, `hub/checks`, `hub/state`, `keys` | The check list parsed from GitHub (every state mapped), the client's one read, the popover's groups, times and fold, a check that finishes while open, its state on the hub, and its keys. |
 | `tests/rerun_test.luau` | `hub/block`, `ci/log` | Re-run failed checks on the hub block: each CI module gets its own failing checks, and a check none owns is named in the toast. |
+| `tests/branch_test.luau` | `hub/block`, `github`, `hub/state`, `view/hub/fixes`, `keys` | U on a failing check: the parsed base comparison, the strip's Update branch or Push empty commit, the key, and the question Push empty commit asks before its three GitHub calls. |
 | `tests/summary_test.luau` | the real `hub/block` and `agent-host`, `Host` stubbed | Summarize and bot fixes end to end through `ACTIONS`: stale refs, edited comments, timeouts, a closed block, duplicate callbacks. |
 | `tests/tandem_test.luau` | the real `hub/block`, `agent-host`, `tandem`, `Host` stubbed | Tandem ownership, and the shared cache rules it exercises. |
 | `tests/prepare_test.luau` | the real `hub/prepare`, `Fetch`, `Prdata` and `AgentHost` functions and `Host` stubbed; `keys`, `hub/state` | Which PRs want a background guide, one at a time, explanation only, a failure not retried at its head, stopping when turned off or closed, the `hub.preparing` lease, and ⇧G in Settings (plain g types into its search). |

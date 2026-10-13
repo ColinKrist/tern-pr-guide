@@ -462,13 +462,25 @@ local function checkPanel(s: State.State, step: Step, pr: Model.HubPR, details: 
 	local check = step.check :: Fixes.FailingCheck
 	local total = pr.checks.passing + pr.checks.failing + pr.checks.pending
 	local meta = (if check.workflow then check.workflow .. " · " else "") .. pr.checks.failing .. " of " .. total .. (if total == 1 then " check failing" else " checks failing")
-	local kids: { Node } = {
-		el("div", { class = "gp-fx-chk", key = "strip" }, {
-			span("gp-fx-cname", check.name), span("gp-fx-cfail", "Failed"), span("gp-fx-cmeta", meta), Ui.spacer(),
-			keyed("", "View log", "⇧L", "fixes-log", itemOn(s, "log")),
-			keyed("", "Re-run failed checks", "⇧R", "fixes-rerun", itemOn(s, "rerun")),
-		}),
+	local strip: { Node } = {
+		span("gp-fx-cname", check.name), span("gp-fx-cfail", "Failed"), span("gp-fx-cmeta", meta), Ui.spacer(),
+		keyed("", "View log", "⇧L", "fixes-log", itemOn(s, "log")),
+		keyed("", "Re-run failed checks", "⇧R", "fixes-rerun", itemOn(s, "rerun")),
 	}
+	-- A check that can't be re-run runs again on a new head: the base merged in, or an empty commit.
+	local branch = State.branchAction(s, pr.key)
+	if branch and branch.kind == "update" then
+		table.insert(strip, span("gp-fx-cmeta", branch.behind .. (if branch.behind == 1 then " commit" else " commits") .. " behind " .. pr.baseBranch))
+		table.insert(strip, keyed("", "Update branch", "U", "fixes-update", itemOn(s, "update")))
+	elseif branch and (s.route :: State.Route).ask then
+		table.insert(strip, span("gp-fx-ask", "Push an empty commit to " .. branch.branch.name .. "?"))
+		table.insert(strip, keyed("gp-fx-confirm", "Confirm", "⌘⏎", "fixes-empty-confirm", false))
+		table.insert(strip, keyed("", "Cancel", "esc", "fixes-empty-cancel", false))
+	elseif branch then
+		table.insert(strip, span("gp-fx-cmeta", "Up to date with " .. pr.baseBranch))
+		table.insert(strip, keyed("", "Push empty commit", "U", "fixes-update", itemOn(s, "update")))
+	end
+	local kids: { Node } = { el("div", { class = "gp-fx-chk", key = "strip" }, strip) }
 	-- The evidence, when it says flaky; a real failure says nothing here, its annotations speak.
 	local flake = State.flakeOf(s, pr.key)
 	if flake and flake.flaky and flake.reason then
@@ -613,6 +625,8 @@ local function hints(s: State.State, steps: { Step }): Node
 	if s.mode == "checks" then
 		kids = { span("gp-hb-mode", "Checks"), Ui.spacer() }
 		for _, key in ChecksView.hints(s) do table.insert(kids, item(key[1], string.lower(key[2]), true)) end
+	elseif route.ask then
+		kids = { span("gp-hb-mode", "Push an empty commit?"), Ui.spacer(), item("⌘⏎", "push", true), item("esc", "cancel", true) }
 	elseif route.reply and step and step.thread then
 		kids = { span("gp-hb-mode", "Replying to @" .. step.thread.author), Ui.spacer(), item("⌘⏎", "post reply"), item("esc", "cancel") }
 	else
@@ -631,6 +645,8 @@ local function hints(s: State.State, steps: { Step }): Node
 		if step and step.check and not (main and main.key == "⇧R") then table.insert(kids, item("⇧L", "view log")) end
 		-- The card's own action already says ⇧R when Re-run moved first.
 		if step and step.check and not (main and main.key == "⇧R") then table.insert(kids, item("⇧R", "re-run")) end
+		local branch = State.branchAction(s, route.key)
+		if step and step.check and branch then table.insert(kids, item("U", if branch.kind == "update" then "update branch" else "push empty commit")) end
 		local card = State.card(s, route.key)
 		if main and main.act == "card-rerun" and card then
 			for _, more in card.more do

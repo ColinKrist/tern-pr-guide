@@ -1523,6 +1523,10 @@
 .gp-fx-cname { font-family: var(--tv-font); font-size: 15px; font-weight: 650; }
 .gp-fx-cfail { font-family: var(--sans); font-size: 13px; font-weight: 600; color: var(--gp-danger-text); }
 .gp-fx-cmeta { font-family: var(--sans); font-size: 13px; color: var(--t3); }
+.gp-fx-ask { font-family: var(--sans); font-size: 13px; font-weight: 600; }
+.gp-fx .gp-btn.gp-fx-confirm { background: var(--gp-confirm); border-color: transparent; color: #fff; }
+.gp-fx .gp-btn.gp-fx-confirm:hover { filter: brightness(1.08); }
+.gp-fx-confirm .sf-kbd .kbd { background: transparent; border: 1px solid rgba(255,255,255,0.35); box-shadow: none; color: rgba(255,255,255,0.85); }
 .gp-fx-note { display: flex; flex-direction: column; gap: 4px; font-family: var(--sans); }
 .gp-fx-t { font-size: 14.5px; color: var(--t1); }
 .gp-fx-n { font-size: 13px; color: var(--t3); }

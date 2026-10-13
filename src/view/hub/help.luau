@@ -21,6 +21,7 @@ local GROUPS: { [Page]: { Group } } = {
 			{ "⇧L", "View the check's log" },
 			{ "⇧R", "Re-run failed checks" },
 			{ "V", "All checks" },
+			{ "U", "Update branch, or push an empty commit (⌘⏎ confirms)" },
 			{ "G", "Open on GitHub, or resolve a conflict there" },
 			{ "B", "Show or hide bot comments" },
 			{ "Esc", "Back to the board" },
