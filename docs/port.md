@@ -803,7 +803,7 @@ The guide page has its own `ACTIONS` table in `src/review-page.luau`, with the s
 | `link` | ⏎ `hub-link-add`. ⇧⏎ `hub-link-open`. Esc `hub-link-clear`. Other keys type. |
 | `confirm` | ⌘⏎ `hub-confirm`. Esc `hub-confirm-cancel`. |
 | `help` | Esc or `?` `hub-help-close`. |
-| `fixes` | While the Push empty commit question is open, only ⌘⏎ `fixes-empty-confirm` and Esc `fixes-empty-cancel`. Esc `fixes-close`. ⇧L `fixes-log`. ⇧R `fixes-rerun`. U `fixes-update` on a failing check when `State.branchAction` offers one. V `hub-checks`. j k `fixes-move`. h l `fixes-focus`. ⏎ `fixes-press`. R `fixes-reply`. E `fixes-resolve`. G `fixes-github`. B `fixes-bots`. The card's main action key, and A, ⇧A or O for its alternatives. |
+| `fixes` | While the Push empty commit question is open, only ⌘⏎ `fixes-empty-confirm` and Esc `fixes-empty-cancel`. Esc `fixes-close`. ⇧L `fixes-log`. ⇧R `fixes-rerun`. U `fixes-update` on a failing check when `State.branchAction` offers one. V `hub-checks`. T `pages-cycle`. j k `fixes-move`. h l `fixes-focus`. ⏎ `fixes-press`. R `fixes-reply`. E `fixes-resolve`. G `fixes-github`. B `fixes-bots`. The card's main action key, and A, ⇧A or O for its alternatives. |
 | `checks` | j k and the arrows `checks-move`. ⏎ `checks-press`. ⇧R `card-rerun` while a check fails. Esc or V `checks-close`. |
 | `reply` | ⌘⏎ `fixes-post`. Esc `fixes-cancel`. ⏎ is a new line. |
 | `review-fix` | Esc `review-fix-close`. ⏎ `review-fix-reviewed`. j k `review-fix-move`. B `review-fix-original`. D `review-fix-discard`. P `review-fix-push`. While asking, ⌘⏎ `review-fix-discard-confirm` and Esc `review-fix-discard-cancel`. Nothing while busy. |
