@@ -386,7 +386,20 @@ local function syncChats(b: Block, cx: BlockCx)
 	end
 end
 
+-- Takes over the fix an earlier hub block or plugin load left ready, with its lease, so Push and Discard work on it
+-- again. Its review starts over, and what a chat changed meanwhile is read at the next sync.
+local function resumeAgent(b: Block)
+	if b.fixture or b.agentFlight then return end
+	local ok, key, fix, engine = pcall(AgentHost.resumeAgentFix)
+	if not ok or not key or not fix or not engine then return end
+	b.s.agents[key] = { kind = "ready", fix = fix, reviewed = {} }
+	b.agentFlight = { key = key, engine = engine, settled = true, stopping = false, releasing = false }
+	b.chats[key] = ""
+	State.project(b.s)
+end
+
 return {
+	resumeAgent = resumeAgent,
 	beginAgent = beginAgent,
 	advanceAgentFixture = advanceAgentFixture,
 	stopAgent = stopAgent,

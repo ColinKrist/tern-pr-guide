@@ -261,7 +261,75 @@ local function savedConversation()
 	Host.fs = before
 end
 
+-- A plugin reload drops the engine: the saved lease brings a ready fix back for Push and Discard, and a run the reload
+-- cut short has its worktree reset and returned.
+local function resumed()
+	local Host = require("../src/host")
+	local Fetch = require("../src/fetch")
+	local AgentHost = require("../src/agent-host")
+	local kv, runner = Host.kv, Fetch.runner
+	local store: { [string]: any } = {}
+	local calls: { string } = {}
+	-- Tern hands kv tables back locked, so the record is read through a plain copy.
+	local function locked(value: any): any
+		if type(value) ~= "table" then return value end
+		local out = {}
+		for k, v in value do out[k] = locked(v) end
+		return setmetatable(out, { __metatable = "locked" })
+	end
+	Host.kv = { get = function(key: string) return locked(store[key]) end, set = function(key: string, value: any) store[key] = value end } :: any
+	Fetch.runner = function(argv, _, done)
+		table.insert(calls, table.concat(argv, " "))
+		done({ status = 0, stdout = "", stderr = "", timed_out = false })
+	end :: any
+	local spec = { key = "acme/web#15", clone = "/clone", checkout = "/reader", pool = "/pool", branch = "topic", base = "main",
+		headOid = "aaa", number = 15, tool = "/t", omp = "/omp", model = "m" }
+	local lease = { path = "/pool/wt-1", id = "lease-15", holder = "prguide" }
+	local fix = { worktree = "/pool/wt-1", branch = "topic", base = "main", headOid = "aaa", commit = "bbb", hunks = {}, summary = "s", usedAgent = true }
+	store["hub.agentFix"] = { spec = spec, lease = lease, head = "ddd", fix = fix }
+
+	local key, ready, engine = AgentHost.resumeAgentFix()
+	assert(key == "acme/web#15" and ready and ready.commit == "bbb" and engine, "a saved ready fix comes back")
+	assert(#calls == 0, "a ready fix keeps its worktree")
+	assert((engine :: any).held().id == "lease-15")
+	local again = select(2, AgentHost.resumeAgentFix())
+	assert(again == ready, "a second hub block takes the same fix")
+	AgentHost.returnAgentFix("/pool/wt-1", function(ok) assert(ok) end)
+	assert(calls[1] == "git --literal-pathspecs -C /pool/wt-1 reset --hard ddd" and calls[2] == "git --literal-pathspecs -C /pool/wt-1 clean -fd")
+	assert(calls[3] == "treehouse --root /pool return /pool/wt-1 --if-lease-holder prguide --if-lease-id lease-15")
+	assert(store["hub.agentFix"] == false, "a returned lease clears the record")
+
+	calls = {}
+	store["hub.agentFix"] = { spec = spec, lease = lease, head = "ddd" }
+	assert(AgentHost.resumeAgentFix() == nil, "a cut-short run has no fix to show")
+	assert(#calls == 3 and calls[3] == "treehouse --root /pool return /pool/wt-1 --if-lease-holder prguide --if-lease-id lease-15")
+	assert(store["hub.agentFix"] == false)
+	Host.kv, Fetch.runner = kv, runner
+end
+
+-- Old conversations go when a new run starts; the one a held fix still offers stays.
+local function pruned()
+	local Host = require("../src/host")
+	local AgentHost = require("../src/agent-host")
+	local fs, kv, plugin = Host.fs, Host.kv, Host.plugin
+	local now = 1803000000
+	local root = "/data/agent-sessions"
+	local names = { "acme-web-15-" .. (now - 40 * 86400) .. "-1", "acme-web-16-" .. (now - 40 * 86400) .. "-2", "acme-web-17-" .. (now - 86400) .. "-3", "notes" }
+	local removed: { string } = {}
+	Host.plugin = { data = "/data", dir = "/plugin" } :: any
+	Host.kv = { get = function() return { fix = { session = root .. "/" .. names[2] } } end, set = function() end } :: any
+	Host.fs = {
+		list = function() return names end, exists = function() return true end, mkdir = function() end,
+		remove = function(path: string) table.insert(removed, path) end,
+	} :: any
+	assert(AgentHost.sessionFolder("acme/web#18", now))
+	assert(#removed == 1 and removed[1] == root .. "/" .. names[1], "only the old, unheld conversation goes")
+	Host.fs, Host.kv, Host.plugin = fs, kv, plugin
+end
+
 return function()
+	pruned()
+	resumed()
 	savedConversation()
 	progress()
 	sessions()

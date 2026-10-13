@@ -208,10 +208,25 @@ local function sessionsRoot(): string
  return Host.plugin.data .. "/agent-sessions"
 end
 
+-- The lease the running or ready fix holds, saved so it outlives a plugin reload: { spec, lease, head, fix }.
+local FIX_KEY = "hub.agentFix"
+
+-- Conversations older than this are removed when a new run starts, except the one a held fix still offers.
+local SESSION_DAYS = 30
+
 -- A new, empty folder for one run's conversation; nil when it can't be made, and the run then saves none.
 function M.sessionFolder(key: string, now: number): string?
  local id = (string.gsub(string.lower(key), "[^%w]+", "-")) .. "-" .. math.floor(now) .. "-" .. math.floor(Host.now() % 1e6)
  local dir = sessionsRoot() .. "/" .. id
+ pcall(function()
+  local saved = Host.kv.get(FIX_KEY)
+  local held = if type(saved) == "table" and type(saved.fix) == "table" then saved.fix.session else nil
+  for _, name in Host.fs.list(sessionsRoot()) do
+   local started = tonumber(string.match(name, "%-(%d+)%-%d+$"))
+   local path = sessionsRoot() .. "/" .. name
+   if started and started < now - SESSION_DAYS * 86400 and path ~= held then Host.fs.remove(path) end
+  end
+ end)
  local ok = pcall(function()
   if not Host.fs.exists(sessionsRoot()) then Host.fs.mkdir(sessionsRoot()) end
   if not Host.fs.exists(dir) then Host.fs.mkdir(dir) end
@@ -260,6 +275,25 @@ end
 
 local activeAgentFix: AgentFix.Engine? = nil
 local activeBotFix: AgentFix.Fix? = nil
+local activeSpec: AgentFix.Spec? = nil
+local activeReady: AgentFix.Fix? = nil -- the fix the active engine has ready, the one a hub block opened later takes
+
+-- A plain copy of `value`, built key by key. kv tables carry a protected metatable that `table.clone` refuses.
+local function plain(value: any): any
+ if type(value) ~= "table" then return value end
+ local out = {}
+ for k, v in value do out[k] = plain(v) end
+ return out
+end
+
+-- Saves what the active engine holds, with `fix` once it is ready; a returned lease clears the record.
+local function keepAgentFix(fix: AgentFix.Fix?)
+ local engine, spec = activeAgentFix, activeSpec
+ activeReady = if engine then fix else nil
+ local lease = if engine then engine.held() else nil
+ local record = if engine and spec and lease then { spec = spec, lease = lease, head = engine.head(), fix = fix } else false
+ pcall(Host.kv.set, FIX_KEY, record)
+end
 
 export type AgentFixRequest = {
  key: string, clone: string, checkout: string, branch: string, base: string, headOid: string,
@@ -313,14 +347,56 @@ function M.startAgentFix(request: AgentFixRequest, agent: Agent.Agent, now: numb
  end
  local engine: AgentFix.Engine
  activeBotFix = nil
- engine = AgentFix.engine(spec, { runner = Fetch.runner, decode = Host.json.decode, samePath = samePath, resolutions = resolutions }, now, changed, function(fix, err)
+ local function kept(outcome: AgentFix.Outcome)
+  if activeAgentFix == engine then keepAgentFix(nil) end
+  changed(outcome)
+ end
+ engine = AgentFix.engine(spec, { runner = Fetch.runner, decode = Host.json.decode, samePath = samePath, resolutions = resolutions }, now, kept, function(fix, err)
   if fix and request.input then activeBotFix = fix end
+  if activeAgentFix == engine then keepAgentFix(fix) end
   if not fix and not engine.busy() then activeAgentFix = nil end
   done(fix, err)
  end)
- activeAgentFix = engine
+ activeAgentFix, activeSpec = engine, spec
  engine.begin()
  return engine
+end
+
+-- The fix a hub block takes over when it opens: the one this plugin load's engine holds, or the one an earlier load saved,
+-- whose engine is rebuilt holding the same lease. A saved lease with no ready fix is a run the reload cut short: its
+-- worktree is reset and returned, and nil comes back. Returns the PR's key, the ready fix and its engine.
+function M.resumeAgentFix(): (string?, AgentFix.Fix?, AgentFix.Engine?)
+ local ok, saved = pcall(Host.kv.get, FIX_KEY)
+ if not ok or type(saved) ~= "table" then return nil, nil, nil end
+ local record = plain(saved)
+ local spec, lease = record.spec, record.lease
+ if type(spec) ~= "table" or type(lease) ~= "table" or type(lease.path) ~= "string" or type(lease.id) ~= "string" then
+  pcall(Host.kv.set, FIX_KEY, false)
+  return nil, nil, nil
+ end
+ local fix: AgentFix.Fix? = if type(record.fix) == "table" then record.fix else nil
+ local engine = activeAgentFix
+ if engine then
+  -- This load's own engine: a running fix is still its block's, and a ready one is handed over as it is.
+  local held = engine.held()
+  if activeReady and held and held.path == lease.path then return spec.key, activeReady, engine end
+  return nil, nil, nil
+ end
+ spec.resume = { lease = lease, head = record.head, fix = fix }
+ engine = AgentFix.engine(spec, { runner = Fetch.runner, decode = Host.json.decode,
+  samePath = function(_, _, callback) callback(false, nil) end, resolutions = function(_, callback) callback({}, nil) end,
+ }, Host.time(), function() end, function() end)
+ spec.resume = nil
+ activeAgentFix, activeSpec, activeReady = engine, spec, fix
+ if not fix then
+  -- No process of the earlier load writes here any more: Treehouse's return ends any that linger.
+  engine.release(function(returned)
+   if returned and activeAgentFix == engine then activeAgentFix, activeSpec = nil, nil; keepAgentFix(nil) end
+  end)
+  return nil, nil, nil
+ end
+ if spec.input then activeBotFix = fix end
+ return spec.key, fix, engine
 end
 
 -- The later lifecycle calls this only after a successful Push or confirmed Discard. It runs
@@ -332,7 +408,7 @@ function M.returnAgentFix(path: string, done: (boolean?, string?) -> ())
  if not lease or lease.path ~= path then return done(nil, "The worktree does not belong to this agent fix") end
  engine.release(function(ok, err)
   if ok and (engine.held() ~= nil or engine.busy()) then ok, err = nil, "The engine still holds the worktree lease" end
-  if ok and activeAgentFix == engine then activeAgentFix, activeBotFix = nil, nil end
+  if ok and activeAgentFix == engine then activeAgentFix, activeBotFix, activeSpec = nil, nil, nil; keepAgentFix(nil) end
   done(ok, err)
  end)
 end
@@ -417,6 +493,7 @@ function M.syncAgentFixChat(fix: AgentFix.Fix, committing: () -> (), done: (Agen
  local function finish(updated: AgentFix.Fix?, err: string?, head: string?)
   if finished then return end
   finished = true
+  if updated then keepAgentFix(updated) end
   done(updated, err, head)
  end
  local function git(args: { string }, ok: (Github.Out) -> (), accept: number?)

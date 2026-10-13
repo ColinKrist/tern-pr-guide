@@ -42,6 +42,9 @@ export type Spec = {
  input: Input?, -- absent preserves the conflict workflow
  sandbox: Sandbox?, -- required when `input` is set: a bot worker never runs unconfined
  sessionDir: string?, -- where the conflict agent saves its conversation; a bot worker saves none
+ -- A lease an earlier plugin load held: the engine starts settled with it, ready with `fix` when there was one, and
+ -- `head` is the worktree's commit before the run, which a return resets to.
+ resume: { lease: Lease, head: string?, fix: Fix? }?,
 }
 type BoundRun = Run & { spec: Spec?, usedAgent: boolean? }
 export type Out = { status: number, stdout: string, stderr: string, timed_out: boolean }
@@ -58,6 +61,7 @@ export type Engine = {
  release: ((boolean?, string?) -> ()) -> (),
  begin: () -> (),
  held: () -> Lease?,
+ head: () -> string?, -- the leased worktree's commit before the run, once read
  busy: () -> boolean,
 }
 
@@ -458,6 +462,11 @@ function M.engine(spec: Spec, deps: Dependencies, now: number, changed: (Outcome
  local originalHead: string? = nil
  local touched = false
  local returnWaiters: { (boolean?, string?) -> () } = {}
+ local resumed = spec.resume
+ if resumed then
+  lease, originalHead, touched = resumed.lease, resumed.head, resumed.head ~= nil
+  begun, finished, ready = true, true, resumed.fix
+ end
  local finish: (Fix?, string?) -> ()
  local fail: (string) -> ()
  local release: ((boolean?, string?) -> ()) -> ()
@@ -849,6 +858,7 @@ function M.engine(spec: Spec, deps: Dependencies, now: number, changed: (Outcome
  return {
   begin = begin,
   held = function() return if lease then table.clone(lease) else nil end,
+  head = function() return originalHead end,
   busy = function() return not finished or lease ~= nil or reconciling or pending or releasing end,
   release = release,
   stop = function()

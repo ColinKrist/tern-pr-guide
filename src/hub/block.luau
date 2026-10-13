@@ -796,6 +796,7 @@ local block: BlockDef<Block> = {
 			-- How each repo merges is known from the first frame, before any refresh.
 			loadMerges(b)
 			loadAgent(b, cx)
+			AgentRun.resumeAgent(b)
 			loadTandem(b, cx)
 			rearm(b, cx)
 		end
