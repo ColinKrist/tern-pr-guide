@@ -72,7 +72,8 @@ local function drawn()
 		a.explain = { model = "anthropic/haiku-4", effort = "low" }
 		s.ai = Agent.idle(a)
 		local idle = texts(Header.view(s, motion))
-		assert(string.find(idle, "Generate AI guide|[shift+G]|Generate LLM review|[shift+R]|Explain|haiku-4|low|·|Review|opus-5|high|[shift+M]|Lens|Balanced|[shift+L]", 1, true), idle)
+		assert(string.find(idle, "Open on GitHub|[g]|Settings|[shift+M]|Generate AI guide|[shift+G]|Generate LLM review|[shift+R]", 1, true), idle)
+		assert(not string.find(idle, "haiku-4", 1, true), "the models are in Settings, not the header: " .. idle)
 		local run = s.ai :: Agent.Run
 		Agent.start(run, "explain", 60)
 		local explaining = texts(Header.view(s, motion))
@@ -81,13 +82,13 @@ local function drawn()
 		Agent.start(run, "review", 180)
 		local reviewing = texts(Header.view(s, motion))
 		assert(string.find(reviewing, "Generate AI guide|[shift+G]|Reviewing for issues…|0:00", 1, true), "the review's quiet progress takes its button's place: " .. reviewing)
-		assert(not string.find(reviewing, "Generate LLM review", 1, true) and not string.find(reviewing, "Explain|haiku-4", 1, true), "no Draft button or model button while it runs: " .. reviewing)
+		assert(not string.find(reviewing, "Generate LLM review", 1, true) and not string.find(reviewing, "Settings", 1, true), "no Generate LLM review button or Settings while it runs: " .. reviewing)
 		s.review.guide.guided = true
 		local guided = texts(Header.view(s, motion))
 		assert(string.find(guided, "Reviewing for issues…|0:00", 1, true) and not string.find(guided, "Generate AI guide", 1, true), "over a guide, the review shows in the same row: " .. guided)
 		run.reviewing = false
 		local offered = texts(Header.view(s, motion))
-		assert(string.find(offered, "Generate LLM review|[shift+R]|Explain|haiku-4", 1, true) and not string.find(offered, "Generate AI guide", 1, true), "a guided page offers Generate LLM review and the models: " .. offered)
+		assert(string.find(offered, "Settings|[shift+M]", 1, true) and string.find(offered, "Generate LLM review|[shift+R]", 1, true) and not string.find(offered, "Generate AI guide", 1, true), "a guided page offers Settings and Generate LLM review: " .. offered)
 		s.review.guide.guided = false
 
 		s.models = ModelBox.open(a, "review")

@@ -2,7 +2,7 @@
 -- The model and lens menu: an Explanation | Review | Lens switch with a hint for the slot shown, a
 -- filter, and the slot's models matching it grouped by provider with the efforts the highlighted model
 -- takes as one segmented control, or on Lens the lenses with their descriptions. The review page shows
--- it as Tern's overlay under the model button; the PR hub's Settings puts it in its own overlay.
+-- it as Tern's overlay under its Settings button; the PR hub's Settings puts it in its own overlay.
 local Agent = require("../agent")
 local ModelBox = require("../model-box")
 local Ui = require("./ui")

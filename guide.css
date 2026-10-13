@@ -804,7 +804,7 @@
 .gp-ol-herebox .gp-ol-stepbody { color: var(--t2); }
 /* header actions: search and GitHub */
 .gp-hdr-act { display: flex; gap: 7px; align-items: center; padding: 2px 8px; border-radius: var(--r-chip); cursor: pointer; transition: background-color 140ms ease; }
-.gp-hdr-act:hover { background: var(--l1); }
+.gp-hdr-act:hover, .gp-hdr-act-open { background: var(--l1); }
 .gp-hdr-act-label { font-family: var(--sans); font-size: 13px; color: var(--t2); }
 .gp-hdr-act .sf-icon { color: var(--t3); }
 /* Back to the board: Tern has no left chevron, so the right one turns around. */
@@ -892,10 +892,7 @@
 .gp-tree-toggle { display: flex; gap: 6px; align-items: center; padding: 3px 6px; border-radius: var(--r-chip); color: var(--t3); cursor: pointer; }
 .gp-tree-toggle:hover { background: var(--l1); color: var(--t1); }
 .gp-tree-toggle .sf-icon, .gp-tree-toggle .ico { width: 14px; height: 14px; }
-/* the model dropdown: a button beside the AI button, and Tern's overlay opened under it */
-.gp-ai-model { font-family: var(--sans); font-size: 12.5px; color: var(--t3); display: flex; flex-wrap: wrap; gap: 2px 6px; align-items: center; min-width: 0; padding: 3px 8px; border-radius: var(--r-chip); border: 1px solid transparent; cursor: pointer; }
-.gp-ai-model:hover, .gp-ai-model-open { background: var(--l1); border-color: var(--l3); color: var(--t1); }
-.gp-ai-model .sf-icon, .gp-ai-model .ico { width: 12px; height: 12px; }
+/* the model and lens menu: Tern's overlay opened under the status row's Settings */
 /* over the page, under the overlay: a click anywhere outside the menu closes it. The layer sits above
    the page's sticky headers, which carry z-indexes of their own. */
 .sf-layer[data-surface="plugin.prguide.guide"] { z-index: 30; }
@@ -937,7 +934,6 @@
 .gp-md-none { font-size: 12.5px; color: var(--t3); }
 .gp-md-more { padding: 6px 8px; border-radius: var(--r-ctl); font-size: 12.5px; color: var(--t3); cursor: pointer; transition: background-color 120ms ease; }
 .gp-md-more:hover { background: var(--l1); color: var(--t1); }
-.gp-ai-model-sep { color: var(--t4); }
 .gp-ai-busy .gp-ai-bar, .gp-ai-quiet .gp-ai-bar { flex-shrink: 1; min-width: 40px; }
 /* the review still going under a page the reader can read: still and muted, so it never pulls the eye */
 .gp-ai-quiet { display: flex; gap: 8px; align-items: center; min-width: 0; }
@@ -946,11 +942,6 @@
 .gp-ai-quiet-text { flex-shrink: 0; font-family: var(--sans); font-size: 13px; color: var(--t2); }
 .gp-ai-quiet .gp-ai-bar { width: 120px; height: 3px; }
 .gp-ai-quiet .gp-ai-fill { background: var(--t4); }
-.gp-ai-model-pass { display: flex; gap: 4px; align-items: baseline; min-width: 0; max-width: 100%; white-space: nowrap; }
-.gp-ai-model-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.gp-ai-model-effort { color: var(--t4); }
-.gp-ai-model-role { color: var(--t3); }
-.gp-ai-model:hover .gp-ai-model-effort, .gp-ai-model-open .gp-ai-model-effort { color: var(--t3); }
 .gp-status-lens { color: var(--t3); }
 .gp-md-lens-item { align-items: flex-start; }
 .gp-md-lens-text { display: flex; flex-direction: column; gap: 2px; flex-grow: 1; min-width: 0; }
@@ -1093,7 +1084,6 @@
 .gp-soft .gp-rv-row { transition: opacity 160ms ease, background-color 140ms ease; }
 .gp-soft .gp-rv-tick { transition: background-color 140ms ease, border-color 140ms ease; }
 .gp-soft .gp-rv-button, .gp-soft .gp-rv-submit { transition: transform var(--gp-dur-press) var(--gp-ease-out), background-color 160ms ease, border-color 160ms ease, filter 140ms ease; }
-.gp-soft .gp-ai-model { transition: background-color 140ms ease, border-color 140ms ease; }
 .gp-soft .gp-md-row { transition: background-color 120ms ease; }
 /* the checks popover: Tern's overlay card under the checks mark it came from; groups, then two-line rows */
 .gp-hcl-top { display: flex; gap: 8px; align-items: baseline; padding: 12px 14px 6px; white-space: nowrap; }

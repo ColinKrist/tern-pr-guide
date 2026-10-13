@@ -228,7 +228,7 @@ edited is kept.
 
 ## Choose models and a review lens
 
-Guides and drafted comments need OMP. Before starting one, click the model button (or press `⇧M`). The menu
+Guides and drafted comments need OMP. Before starting one, click **Settings** at the right of the status row (or press `⇧M`). The menu
 has three slots, **Explanation**, **Review** and **Lens**, and `Tab` steps through them:
 
 - **Explanation:** the model and effort that write the walkthrough. A fast model at low effort is
@@ -238,13 +238,12 @@ has three slots, **Explanation**, **Review** and **Lens**, and `Tab` steps throu
 - **Lens:** what the review comments pay attention to.
 
 Until you choose an explanation model it uses OMP's `smol` model, with that role's effort or medium,
-else OMP's default model at medium effort, else the review model at medium effort. The model button shows the
-explanation model, then the review model, each with its effort. The PR hub's Settings
+else OMP's default model at medium effort, else the review model at medium effort. The menu checks the model each
+pass uses. The PR hub's Settings
 (`⇧S`) show the same menu and save the same choice. Agent fixes and feedback summaries use the review
 model.
 
-The lens button beside the model button (or `⇧L`) shows the lens in use and opens the menu on the
-Lens slot. A lens steers only the review comments. PR Guide ships four lenses:
+`⇧L` opens the menu straight on the Lens slot. A lens steers only the review comments. PR Guide ships four lenses:
 
 - **Balanced:** the comments worth making on the whole PR.
 - **Security:** the change from an attacker's point of view.
@@ -351,7 +350,7 @@ Press `?` for shortcuts that apply to the current page. In the hub, the panel fo
 | `g` | Open the PR on GitHub |
 | `⇧G` | Generate AI guide |
 | `⇧R` | Generate LLM review |
-| `⇧M` | Choose the explanation and review models and their effort |
+| `⇧M` | Settings: the explanation and review models, their effort, and the lens |
 | `⇧L` | Choose the review lens |
 | `Tab` | In that menu, switch between Explanation, Review and Lens |
 | `⌃E` | Edit lenses |
