@@ -577,7 +577,9 @@ interface AgentHost {
 	returnAgentFix(path: string): Promise<Result<true>>
 	readAgentFix(fix: AgentFix): Promise<Result<AgentFixRead>>
 	pushAgentFix(plan: ReviewFixPlan, canPush: () => boolean): Promise<Result<true>>
-	// Plugin only (Open agent chat): sessionFolder(key, now) makes a run's conversation folder; offerChat(session, cwd, command)
+	// Plugin only: resumeAgentFix() hands a new hub block the ready fix this load holds, or rebuilds the engine an earlier
+	// load saved in kv "hub.agentFix" (returning the worktree of a run that never got ready). The web app's worker owns the lease.
+	// Plugin only (Open agent chat): sessionFolder(key, now) makes a run's conversation folder, removing ones over 30 days old; offerChat(session, cwd, command)
 	// writes kv "hub.chats" and returns the https://github.com/#prguide-chat=<id> link the window's link route claims;
 	// syncAgentFixChat(fix, committing) commits a ready fix worktree's edits and returns AgentFix.fromChat's fix to review again.
 	// Plugin only: agentClones, rememberAgentClone, findAgentClone (kv "hub.clones", the folder prompt).
@@ -609,6 +611,7 @@ The store is the `Host.kv` keys the plugin writes. Every window of a Tern sessio
 | `reviewSeconds` | number: the last review's seconds | `Fetch.saveSeconds("review")` | one |
 | `hub.fixSeconds`, `hub.botFixSeconds`, `hub.summarySeconds` | number: the last merge-conflict fix's, bot-comment fix's and feedback summary's seconds, which the hub's loading bars estimate from (defaults 240, 180, 45) | `Fetch.saveHubSeconds` | one each |
 | `hub.chats` | `Record<id, { dir, cwd, command, at }>`: how each conversation Open agent chat offered resumes, read by the window's link route (`Links.chatLaunch`) | `AgentHost.offerChat` | 20, oldest `at` dropped. Plugin only. Drop. |
+| `hub.agentFix` | `{ spec, lease, head, fix? }` or `false`: the Treehouse lease the running or ready agent fix holds, so a reload can bring the fix back or return the worktree | `AgentHost` (`keepAgentFix`), read by `AgentHost.resumeAgentFix` | one. Plugin only. Drop. |
 | `links` | `"tern" \| "browser"`: where GitHub links open | `Fetch.saveLinkTarget` (Settings, `hub-links`) | one. Drop: a web app opens links in a new tab. |
 | `hub.prepare` | boolean: prepare AI guides for review requests in the background; missing means off | `Fetch.savePrepareGuides` (Settings, `hub-guides`) | one |
 | `hub.preparing` | `{ key: "owner/repo#n@<head>", at: seconds }`: the PR a window is preparing a guide for; another window passes that PR by until it is returned or 20 minutes old | `Prepare` (`src/hub/prepare.luau`) | one |

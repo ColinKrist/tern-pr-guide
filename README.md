@@ -161,11 +161,14 @@ failed checks from the same page.
 
 - **Agent fixes.** Your OMP agent resolves a conflict or addresses a bot review in an isolated
   worktree, never in your checkout. You follow its progress on the card: the step it is on, an
-  estimated progress bar and a clock, as you do for a feedback summary.
+  estimated progress bar and a clock, as you do for a feedback summary. A fix that is ready
+  survives a plugin reload and waits for review again; a run the reload stopped returns its
+  worktree to the pool.
 - **Open agent chat.** After a conflict fix ends, `⇧O` resumes the agent's conversation in an `omp`
   pane in the fix worktree, so you can ask why or have it change something. Back in the hub, edits
   made there become a new commit, the card reads **Review again**, and Push stays locked until you
-  review that commit. Bot-comment fixes keep no conversation.
+  review that commit. Bot-comment fixes keep no conversation. Conversations older than 30 days
+  are removed.
 - **Fewer tokens.** Conflicts are fixed by merging the base branch in. A clean merge costs no
   tokens, lockfiles are regenerated rather than merged, and only the conflicts left over go to the
   agent.
