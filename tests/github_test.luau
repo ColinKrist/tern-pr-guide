@@ -5,6 +5,7 @@ local Cases: any = require("../fixtures/hub/cases")
 local RawHub: any = require("../fixtures/hub/raw-hub-f")
 local RawThreads: any = require("../fixtures/hub/raw-threads")
 local RawChecks: any = require("../fixtures/hub/raw-checks")
+local RawMerged: any = require("../fixtures/hub/raw-merged")
 
 local COST_LIMIT = 18
 local BASE = { "gh", "api", "graphql", "-f" }
@@ -60,11 +61,14 @@ end
 local function checksEntry(reply: FakeRunner.Reply): FakeRunner.Entry
 	return { prefix = BASE, contains = "query Checks(", reply = reply }
 end
+local function mergedEntry(reply: FakeRunner.Reply): FakeRunner.Entry
+	return { prefix = BASE, contains = "query Merged(", reply = reply }
+end
 
-local BODIES = { ["hub-f"] = RawHub, threads = RawThreads, checks = RawChecks }
+local BODIES = { ["hub-f"] = RawHub, threads = RawThreads, checks = RawChecks, merged = RawMerged }
 local function fixtureClient(extra: { FakeRunner.Entry }?): (Github.Client, FakeRunner.Fake)
 	local script: { FakeRunner.Entry } = {
-		hubEntry({ stdout = "hub-f" }), threadsEntry({ stdout = "threads" }), checksEntry({ stdout = "checks" }),
+		hubEntry({ stdout = "hub-f" }), threadsEntry({ stdout = "threads" }), checksEntry({ stdout = "checks" }), mergedEntry({ stdout = "merged" }),
 	}
 	for _, entry in extra or {} do table.insert(script, 1, entry) end
 	local fake = FakeRunner.new(script)
@@ -225,18 +229,25 @@ local function testRefresh()
 	assert(string.find(query, "reviewThreads(first: 100) { totalCount nodes { isResolved } }", 1, true) ~= nil)
 	assert(not string.find(query, "isResolved comments", 1, true), "hub-f must not select thread authors")
 	assert(not string.find(query, "comments(first", 1, true), "hub-f must not select thread comments")
+	-- Recently merged beside them: one search, newest merge first.
+	same({ table.unpack(fake.calls[4].argv, 6) }, { "-f", "q=is:pr is:merged author:@me archived:false sort:updated-desc" }, "merged search")
+	same(value.merged, {
+		{ repo = "acme/web", number = 981, title = "Cache the avatar sprites", author = "", at = "2026-10-09T15:02:10Z" },
+		{ repo = "acme/api", number = 405, title = "Retry webhook deliveries with backoff", author = "", at = "2026-10-08T10:44:51Z" },
+		{ repo = "acme/api", number = 377, title = "Log slow queries", author = "", at = "2026-09-01T08:00:00Z" },
+	}, "merged rows")
 	-- Threads only for PRs with an unresolved thread, none of which is cached.
 	local expected = { "PR_acme/api#106", "PR_acme/api#108", "PR_acme/api#118", "PR_acme/api#119", "PR_acme/api#120", "PR_acme/api#121" }
-	local threadsCall = fake.calls[4]
+	local threadsCall = fake.calls[5]
 	assert(#threadsCall.argv == 5 + 2 * #expected and threadsCall.stdin == nil and threadsCall.cwd == nil)
 	assert(string.sub(threadsCall.argv[5], 1, 21) == "query=query Threads($")
 	for i, id in expected do
 		assert(threadsCall.argv[4 + 2 * i] == "-f" and threadsCall.argv[5 + 2 * i] == "ids[]=" .. id)
 	end
-	fake.expectOnly(4)
+	fake.expectOnly(5)
 
 	assert(value.viewer == "jubbydev" and #value.prs == 20 and value.partial == nil and value.truncated == false)
-	assert(#value.calls == 4 and value.rateLimit == value.calls[4])
+	assert(#value.calls == 5 and value.rateLimit == value.calls[5])
 	for _, pr in value.prs do
 		if pr.key ~= "acme/api#120" then same(pr, byKey[pr.key], pr.key) end
 	end
@@ -248,7 +259,7 @@ local function testRefresh()
 	assert(checksErr == nil)
 	local total = update.rateLimit.cost
 	for _, call in value.calls do total += call.cost end
-	assert(total == #searches * RawHub.data.rateLimit.cost + RawThreads.data.rateLimit.cost + RawChecks.data.rateLimit.cost)
+	assert(total == #searches * RawHub.data.rateLimit.cost + RawMerged.data.rateLimit.cost + RawThreads.data.rateLimit.cost + RawChecks.data.rateLimit.cost)
 	assert(total <= COST_LIMIT, "a refresh costs " .. total .. " points, the limit is " .. COST_LIMIT)
 	assert(update.byId["PR_acme/web#104"].checks.state == "failing")
 	-- checks: one query, the ids as array fields.
@@ -259,11 +270,11 @@ local function testRefresh()
 	checksFake.expectOnly(1)
 
 	-- Nothing changed since the last refresh: the searches alone, no threads call (a threads call would be unmatched).
-	local onlyHub = FakeRunner.new({ hubEntry({ stdout = "hub-f" }) })
+	local onlyHub = FakeRunner.new({ hubEntry({ stdout = "hub-f" }), mergedEntry({ stdout = "merged" }) })
 	local cached = Github.client(onlyHub.run, decoder(BODIES))
 	local again, againErr = first(function(done) cached.refresh({ added = {}, previous = value.prs }, done) end)
-	assert(againErr == nil and #again.calls == 3)
-	onlyHub.expectOnly(3)
+	assert(againErr == nil and #again.calls == 4)
+	onlyHub.expectOnly(4)
 	same(again.prs[11].reviews.threads, value.prs[11].reviews.threads, "cached threads")
 	for _, pr in again.prs do
 		if pr.key ~= "acme/api#120" then same(pr, byKey[pr.key], pr.key) end
@@ -274,12 +285,12 @@ local function testRefresh()
 	for _, pr in previous do
 		if pr.key == "acme/api#119" or pr.key == "acme/web#101" then pr.lastActivityAt = "2026-01-01T00:00:00Z" end
 	end
-	local oneThread = FakeRunner.new({ hubEntry({ stdout = "hub-f" }), threadsEntry({ stdout = "threads" }) })
+	local oneThread = FakeRunner.new({ hubEntry({ stdout = "hub-f" }), threadsEntry({ stdout = "threads" }), mergedEntry({ stdout = "merged" }) })
 	local changed = Github.client(oneThread.run, decoder(BODIES))
 	local _, changedErr = first(function(done) changed.refresh({ added = {}, previous = previous }, done) end)
 	assert(changedErr == nil)
-	oneThread.expectOnly(4)
-	assert(#oneThread.calls[4].argv == 7 and oneThread.calls[4].argv[7] == "ids[]=PR_acme/api#119", "only #119 has threads and changed")
+	oneThread.expectOnly(5)
+	assert(#oneThread.calls[5].argv == 7 and oneThread.calls[5].argv[7] == "ids[]=PR_acme/api#119", "only #119 has threads and changed")
 
 	-- Added by link: one alias per valid, distinct PR, ahead of the fragment, on the first search only.
 	local added, addedFake = fixtureClient()
@@ -320,14 +331,16 @@ local function testPagingAndRetry()
 		{ prefix = BASE, contains = REQ .. "n=10 -f after=r40", reply = { stdout = "req3" } },
 		{ prefix = BASE, contains = REQ .. "n=20", reply = { stdout = "req1" } },
 		{ prefix = BASE, contains = "reviewed-by:@me", reply = { stdout = "none" } },
+		mergedEntry({ stdout = "merged" }),
 	})
+	bodies.merged = RawMerged
 	local client = Github.client(fake.run, decoder(bodies))
 	local value, err = first(function(done) client.refresh({ added = {}, previous = {} }, done) end)
 	assert(err == nil, "refresh failed")
-	fake.expectOnly(8)
+	fake.expectOnly(9)
 	assert(#value.prs == 15 + 50, "all of mine and the first 50 requested: " .. #value.prs)
 	assert(value.truncated == true, "requested has more than 50")
-	assert(#value.calls == 6, "an envelope per page that answered")
+	assert(#value.calls == 7, "an envelope per page that answered, and the merged search's")
 end
 
 local function testRefreshGivesUp()
@@ -342,10 +355,12 @@ end
 local function testPartialThreadsFailure()
 	local fake = FakeRunner.new({
 		threadsEntry({ status = 1, stderr = "gh: HTTP 502: Bad Gateway\n" }), hubEntry({ stdout = "hub-f" }),
+		mergedEntry({ status = 1, stderr = "gh: HTTP 403: Forbidden\n" }),
 	})
 	local client = Github.client(fake.run, decoder(BODIES))
 	local value, err = first(function(done) client.refresh({ added = {}, previous = {} }, done) end)
 	assert(err == nil and #value.prs == 20 and #value.calls == 3)
+	assert(value.merged == nil, "a failed merged search leaves the list unknown, not empty")
 	local asked = 0
 	for _, call in fake.calls do
 		if string.find(call.argv[5], "query Threads(", 1, true) then asked += 1 end
@@ -493,7 +508,7 @@ local function testCommands()
 	for _, call in fake.calls do assert(call.stdin == nil) end
 
 	-- Adding by link needs no command: the refresh asks for the PR by its number.
-	local added = FakeRunner.new({ hubEntry({ stdout = "hub-f" }), threadsEntry({ stdout = "threads" }) })
+	local added = FakeRunner.new({ hubEntry({ stdout = "hub-f" }), threadsEntry({ stdout = "threads" }), mergedEntry({ stdout = "merged" }) })
 	first(function(done) Github.client(added.run, decoder(BODIES)).refresh({ added = { { repo = "o/r", number = 9 } }, previous = {} }, done) end)
 	assert(string.find(added.calls[1].argv[5], 'added0: repository(owner: "o", name: "r") { pullRequest(number: 9) { ...Hub } }', 1, true) ~= nil)
 end

@@ -2,8 +2,8 @@
 
 Reads the PR like an attacker would, and flags anything that could be misused.
 
-Review this PR with a security mindset. Besides explaining what it does, look for ways the changes
-could be abused, leak data, or let someone do what they shouldn't.
+Review this PR with a security mindset. Look for ways the changes could be abused, leak data, or
+let someone do what they shouldn't.
 
 Trace where untrusted input enters (requests, files, environment variables, webhooks, user-provided
 names or paths, model or tool output) and follow it to where it is used. Check in particular:
@@ -21,8 +21,7 @@ names or paths, model or tool output) and follow it to where it is used. Check i
   something open, or fall back to a less safe default?
 - New dependencies, build or CI changes, and anything that runs code it didn't write.
 
-In the overview, say plainly whether the PR touches anything security-sensitive and how. Order the
-steps so the security-relevant code comes first. Put real findings in `comments` as `problem`
-(something exploitable or clearly unsafe) or `question` (you can't tell from the diff); say what
-an attacker could do and what a fix looks like. Don't pad the review with style notes. If you find
-nothing concerning, say that in the summary rather than inventing issues.
+Put real findings in `comments` as `problem` (something exploitable or clearly unsafe) or
+`question` (you can't tell from the diff); say what an attacker could do and what a fix looks like.
+Don't pad the review with style notes. In the summary, say plainly whether the PR touches anything
+security-sensitive and how. If you find nothing concerning, say that rather than inventing issues.

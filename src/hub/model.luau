@@ -65,6 +65,9 @@ export type Placement = { tab: Tab, column: Column, reasons: { Reason } } -- rea
 export type RateLimit = { cost: number, remaining: number, limit: number, resetAt: string }
 export type Error = { operation: string, message: string, rateLimit: RateLimit? } -- operation is like "gh api graphql: hub"
 export type PRRef = { repo: string, number: number }
+-- A pull request listed by a row fold: Recently opened (hub.recent) or Recently merged (`at` is when it merged).
+export type Opened = { repo: string, number: number, title: string, author: string, at: string }
+
 -- What one GitHub refresh returns, normalized. Defined here so `sync` and `state` can use it without requiring `github`.
 export type Refresh = {
 	prs: { HubPR }, -- `tandem` and `addedByMe` false, `pending` nil: the block fills them from local facts
@@ -73,6 +76,7 @@ export type Refresh = {
 	calls: { RateLimit }, -- every call's envelope, in order: each hub-f page as it answered, then threads
 	truncated: boolean, -- a search returned more than 50
 	partial: Error?, -- threads failed: `prs` still stands, with threadsKnown = false
+	merged: { Opened }?, -- the viewer's recently merged PRs, newest first; nil when that search failed
 }
 
 export type Filter = { repositories: { [string]: boolean }?, search: string } -- nil repositories = all

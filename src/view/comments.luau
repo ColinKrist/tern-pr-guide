@@ -1,6 +1,5 @@
 --!strict
 -- Comment cards hung under code lines: suggested comments, the reader's own, and the composer.
-local Fields = require("../text-field")
 local Guide = require("../guide")
 local State = require("../state")
 local Text = require("../text")
@@ -72,7 +71,7 @@ end
 local function composer(c: State.Composer, enter: string): Node
  return el("div", { class = "gp-card gp-card-composer " .. enter, key = "composer" }, {
   head("gp-avatar-you", YOU, YOU, "are commenting", Text.lineSpan(c.from, c.to) .. (if c.from == c.to then "  ·  click another + to cover a range" else "")),
-  el("div", { class = "gp-card-body", key = "body" }, { Fields.node(c.field, "field", "Leave a comment…") }),
+  el("div", { class = "gp-card-body", key = "body" }, { Ui.field(c.field, "field", "Leave a comment…") }),
   el("div", { class = "gp-card-foot" }, {
    Ui.keyLine("gp-card-keys", { { "⏎", "comment" }, { "⇧⏎", "new line" }, { "esc", "cancel" } }),
    Ui.spacer(),

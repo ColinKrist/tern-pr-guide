@@ -2,7 +2,6 @@
 -- The hub page: header (title, search, freshness, settings), the tab row, the board's columns, the
 -- card folds and the hint bar. Everything it draws was decided by `State.project`.
 local Card = require("./card")
-local Fields = require("../../text-field")
 local Help = require("./help")
 local Hints = require("./hints")
 local Link = require("./link")
@@ -86,7 +85,7 @@ local function header(s: State.State): Node
 	local searching = s.mode == "search"
 	local search = el("div", { class = "gp-sr-box gp-hub-search" .. (if searching then " gp-hub-search-on" else ""), key = "search", actions = { click = "hub-search" } }, {
 		Ui.icon("search"),
-		Fields.node(s.search, "field", "Search pull requests"),
+		Ui.field(s.search, "field", "Search pull requests"),
 		Ui.keys("/"),
 	})
 	local fresh: { Node } = {}
@@ -217,7 +216,7 @@ local function fold(s: State.State, cardFold: State.CardFold, motion: Ui.Motion)
 	return el("div", { class = "gp-hub-fold", key = Paths.foldKey(cardFold.column) }, kids)
 end
 
--- One Recently opened row: repository and number, the title with its author under it, and when it was opened.
+-- One row of the row fold: repository and number, the title with its author under it, and when it was opened or merged.
 local function recentRow(s: State.State, opened: State.Opened): Node
 	local key = State.recentKey(opened)
 	local name = (string.match(opened.repo, "[^/]+$") :: string) .. " #" .. opened.number
@@ -234,17 +233,23 @@ local function recentRow(s: State.State, opened: State.Opened): Node
 	})
 end
 
--- The fold under Review requests: pull requests opened from any repo, newest first.
+local ROW_FOLDS: { [Model.Tab]: { title: string, note: string } } = {
+	mine = { title = "Recently merged", note = "Merged in the last 7 days" },
+	review = { title = "Recently opened", note = "Pull requests you opened, from any repository" },
+}
+
+-- The fold that ends the board: Recently merged under Your pull requests, Recently opened under Review requests, newest first.
 local function recentFold(s: State.State, motion: Ui.Motion): Node?
 	local list = s.board.recent
 	if #list == 0 then return nil end
 	local open = s.board.open.recent
+	local name, look = State.ROW_FOLD[s.tab], ROW_FOLDS[s.tab]
 	local kids: { Node } = {
-		el("div", { class = "gp-hub-foldhead", key = "head", actions = { click = "hub-fold=recent" } }, {
+		el("div", { class = "gp-hub-foldhead", key = "head", actions = { click = "hub-fold=" .. name } }, {
 			Ui.caret(open),
-			span("gp-panel-h", "Recently opened"),
+			span("gp-panel-h", look.title),
 			span("gp-hub-colcount", tostring(#list)),
-			span("gp-hub-foldnote", "Pull requests you opened, from any repository"),
+			span("gp-hub-foldnote", look.note),
 			Ui.spacer(),
 			Ui.keys("R"),
 		}),
@@ -252,10 +257,10 @@ local function recentFold(s: State.State, motion: Ui.Motion): Node?
 	if open then
 		local rows: { Node } = {}
 		for _, opened in list do table.insert(rows, recentRow(s, opened)) end
-		local enter = Ui.entering(motion, "fold:recent", "gp-enter-panel")
+		local enter = Ui.entering(motion, "fold:" .. name, "gp-enter-panel")
 		table.insert(kids, el("div", { class = "gp-hub-rcrows " .. enter, key = "rows" }, rows))
 	end
-	return el("div", { class = "gp-hub-fold", key = "recent" }, kids)
+	return el("div", { class = "gp-hub-fold", key = name }, kids)
 end
 
 local function body(s: State.State, motion: Ui.Motion): Node

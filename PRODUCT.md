@@ -25,7 +25,7 @@ Success means all four of these hold:
 
 ## Positioning
 
-The PR is read as a story, not a wall of files. The overview comes first, then a few changes, each with small steps the reader ticks off, with code and its exact lines highlighted beside each step. Diffs are built locally with git, so GitHub's diff size cap doesn't apply. The page draws only the code near the reader, so an 85-file PR and a 5,600-line file stay fast. The AI reviewer runs on the user's own OMP agent and model, and a lens steers it (Balanced, Security, Architecture, Quick skim, Teaching, or user-written).
+The PR is read as a story, not a wall of files. The overview comes first, then a few changes, each with small steps the reader ticks off, with code and its exact lines highlighted beside each step. Diffs are built locally with git, so GitHub's diff size cap doesn't apply. The page draws only the code near the reader, so an 85-file PR and a 5,600-line file stay fast. The AI runs on the user's own OMP agent in two passes started together: a fast model explains the PR, so the walkthrough shows early, and a stronger one drafts the review comments, which a lens steers (Balanced, Security, Architecture, Quick skim, or user-written).
 
 ## Operating Context
 
@@ -40,7 +40,7 @@ The PR is read as a story, not a wall of files. The overview comes first, then a
 - **AI is optional at runtime.** Without `omp` or a model there is no Generate button, and everything else works.
 - **Follows GitHub's rules.** Comments go only on changed lines, and a comment range stays within one block of changes. The review is Comment, Approve or Request changes, posted as a single review. Nothing is posted if the PR got new commits while the reader was on the page.
 - **Rendering limits (Tern).** Layout is flex only. Pinned elements use `position: sticky`. Plugins get no scroll events. Every color is a `light-dark()` pair. Plugin views have no inline SVG element, so icons are the host's named icons. Since Tern 0.8.3 a block can show an SVG as a picture (`cx:blob(svg, "image/svg+xml")` and an `image` node): colors and fonts must be attributes on each element (a `<style>` block is ignored), `polygon` doesn't draw (use `path`), `currentColor` follows the theme but fixed colors don't, and a picture has no clicks. The page draws about 600 lines of code at once at most.
-- **Code layout.** Only `src/fetch.luau` touches the outside world. `src/block.luau` owns window effects. Views in `src/view/` turn state into nodes. All styling lives in `guide.css` with `gp-` classes. `GUIDE.md`, `prompts/guide.md` and `src/guide.luau` change together.
+- **Code layout.** Only `src/fetch.luau` touches the outside world. `src/block.luau` owns window effects. Views in `src/view/` turn state into nodes. All styling lives in `guide.css` with `gp-` classes. `GUIDE.md`, `prompts/explain.md`, `prompts/review.md` and `src/guide.luau` change together.
 - **Terminology:** review, guided review, change, step, supporting changes, suggestion (an AI-suggested comment), lens, Guided | Files, mark reviewed, dry run.
 
 ## Brand Commitments

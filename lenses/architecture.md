@@ -2,8 +2,8 @@
 
 Looks at how the change fits the codebase: boundaries, dependencies and long-term cost.
 
-Review this PR for design. Explain how the pieces fit together, then judge whether the change
-belongs where it was put and whether it will be easy to live with in six months.
+Review this PR for design. Judge whether the change belongs where it was put and whether it will be
+easy to live with in six months.
 
 Read enough of the surrounding code (and the repository's own guidance, if any) to see its existing
 patterns before judging the new ones. Look at:
@@ -20,8 +20,7 @@ patterns before judging the new ones. Look at:
   delete later, and what this makes harder.
 - Migrations and compatibility: data or interface changes and whether callers are all updated.
 
-Make the overview about the design: the problem, the approach taken, and the main trade-off. If a
-`flow` diagram helps, use it to show where responsibility sat before and where it sits after. Order steps so the central
-design decision comes first. Comments should be about structure and direction (`question` and
-`suggestion` mostly, `problem` for something that will clearly hurt), and should offer an
-alternative when they object. Leave small line-level issues out unless they point at a bigger one.
+Comments should be about structure and direction (`question` and `suggestion` mostly, `problem`
+for something that will clearly hurt), and should offer an alternative when they object. Leave
+small line-level issues out unless they point at a bigger one. Name the main trade-off in the
+summary.

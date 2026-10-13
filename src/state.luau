@@ -21,10 +21,10 @@ export type Composer = { file: string, from: number, to: number, block: string?,
 
 export type SearchBox = { field: Fields.Field, results: { Search.Result }, selected: number }
 
--- The model dropdown: its filter and the text the list was last filtered by, the highlighted model
--- (an index into the models matching the filter), the effort the next pick gets, and the first
--- match its list shows.
-export type ModelBox = { field: Fields.Field, query: string, selected: number, effort: string?, top: number }
+-- The model dropdown: the pass it picks for, its filter and the text the list was last filtered
+-- by, the highlighted row (an index into `modelChoices`), the effort the next pick gets, and the
+-- first row its list shows.
+export type ModelBox = { slot: Agent.Pass, field: Fields.Field, query: string, selected: number, effort: string?, top: number }
 
 -- The changed line a search jumped to, marked until the next jump.
 export type Hit = { file: string, entry: number }
@@ -167,6 +167,24 @@ function M.new(pr: Pr.PR, guide: Guide.Guide, to: { repo: string?, dryRunPath: s
   keyed = false, submit = { repo = to.repo, dryRunPath = to.dryRunPath, confirming = false, sending = false, error = nil }, ai = nil,
   born = {}, booted = false, arrival = "load",
  }
+end
+
+-- Puts the review pass's comments and summary on the page in both views. The summary is replaced
+-- only while the reader hasn't touched it.
+function M.mergeDraft(s: State, draft: Guide.Draft)
+ local r = s.review
+ local untouched = not s.editingSummary and r.summary.text == r.guide.summary
+ r.guide = Guide.withDraft(r.guide, draft)
+ if s.other then s.other.reading.guide = Guide.withDraft(s.other.reading.guide, draft) end
+ if untouched then r.summary = Fields.create(draft.summary, true) end
+end
+
+-- Moves what the reader wrote on page `from` to `to`, the same PR with a new guide: their own
+-- comments, and the summary when they edited it.
+function M.carryOver(from: State, to: State)
+ to.review.own = from.review.own
+ local summary = from.review.summary
+ if summary.text ~= from.review.guide.summary then to.review.summary = summary end
 end
 
 function M.mode(s: State): Mode
@@ -577,18 +595,32 @@ function M.toggleItem(s: State, n: number)
  end
 end
 
--- The model dropdown, highlighting the model in use.
-function M.openModels(s: State, agent: Agent.Agent)
- local selected = 1
- for i, model in agent.models do
-  if model.selector == agent.model then selected = i end
- end
- s.models = { field = Fields.create(), query = "", selected = selected, effort = agent.effort, top = math.max(1, selected - 3) }
+-- The Review slot's first row, which turns the review off.
+M.OFF = { selector = "", name = "Off", efforts = {} } :: Agent.Model
+
+-- Whether `model` is the one `slot` uses; Off is when the review is off.
+function M.inUse(agent: Agent.Agent, slot: Agent.Pass, model: Agent.Model): boolean
+ if slot == "review" and not agent.review then return model == M.OFF end
+ return model ~= M.OFF and model.selector == Agent.choiceFor(agent, slot).model
 end
 
--- The models matching the dropdown's filter.
+-- The model dropdown on `slot`, highlighting what that pass uses.
+function M.openModels(s: State, agent: Agent.Agent, slot: Agent.Pass)
+ s.models = { slot = slot, field = Fields.create(), query = "", selected = 1, effort = Agent.choiceFor(agent, slot).effort, top = 1 }
+ local box = s.models :: ModelBox
+ for i, model in M.modelChoices(box, agent) do
+  if M.inUse(agent, slot, model) then box.selected = i end
+ end
+ box.top = math.max(1, box.selected - 3)
+end
+
+-- The rows matching the dropdown's filter: the models, under Off on the Review slot.
 function M.modelChoices(box: ModelBox, agent: Agent.Agent): { Agent.Model }
- return Agent.matching(agent.models, box.field.text)
+ local models = Agent.matching(agent.models, box.field.text)
+ if box.slot ~= "review" or #Agent.matching({ M.OFF }, box.field.text) == 0 then return models end
+ local rows = { M.OFF }
+ table.move(models, 1, #models, 2, rows)
+ return rows
 end
 
 -- Rows the model list fits before it scrolls.
@@ -617,14 +649,28 @@ function M.stepEffort(box: ModelBox, agent: Agent.Agent, delta: number)
  box.effort = model.efforts[(at - 1 + delta) % #model.efforts + 1]
 end
 
--- Makes the highlighted model, with the effort it can take, the one runs use; false when the
--- filter matches nothing.
+-- Makes the highlighted model, with the effort it can take, the one the slot's pass runs with, or
+-- turns the review off; false when the filter matches nothing.
 function M.chooseModel(box: ModelBox, agent: Agent.Agent): boolean
  local model = M.modelChoices(box, agent)[box.selected]
  if not model then return false end
- agent.model, agent.effort = model.selector, Agent.effortFor(model, box.effort)
- box.effort = agent.effort
+ if model == M.OFF then
+  agent.review = false
+  return true
+ end
+ local effort = Agent.effortFor(model, box.effort)
+ if box.slot == "review" then
+  agent.model, agent.effort, agent.review = model.selector, effort, true
+ else
+  agent.explain = { model = model.selector, effort = effort }
+ end
+ box.effort = effort
  return true
+end
+
+-- Whether the dropdown offers the lens: on the Review slot, while the review is on.
+function M.showsLens(box: ModelBox, agent: Agent.Agent): boolean
+ return box.slot == "review" and agent.review
 end
 
 -- Has runs use the lens after (`delta` 1) or before (-1) the current one, wrapping round.

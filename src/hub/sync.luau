@@ -1,7 +1,7 @@
 --!strict
 -- The PR hub's pure sync decisions: the cache's shape (validate, cap, merge a refresh into it), the
 -- per-repo merge-method record, the recent store, what changed between two refreshes, and when each
--- poll is due. It reads no clock and no `tern.*`: callers pass `now`, and sizes are injected.
+-- poll is due. It reads no clock and no Host: callers pass `now`, and sizes are injected.
 local Model = require("./model")
 
 type HubPR = Model.HubPR
@@ -21,6 +21,7 @@ export type Cache = {
 	rateLimit: RateLimit?,
 	lastModified: string?, -- the probe's validator
 	counts: Counts,
+	merged: { Opened }?, -- the last Recently merged list GitHub sent
 }
 export type Added = { [string]: PRRef } -- hub.added, by key
 export type Local = { added: Added, tandem: { [string]: boolean } }
@@ -29,7 +30,7 @@ export type MergeRecord = {
 	learnedAnswered: boolean, checkedAt: string?,
 	viewerDefault: string?, -- "squash", "merge" or "rebase": viewerDefaultMergeMethod when detection ran
 }
-export type Opened = { repo: string, number: number, title: string, author: string, at: string } -- hub.recent, newest first, at most RECENT_CAP
+export type Opened = Model.Opened -- hub.recent, newest first, at most RECENT_CAP
 
 local M = {}
 
@@ -97,7 +98,9 @@ function M.load(raw: any): Cache?
 	for _, pr in raw.prs do
 		if not validPr(pr) then return nil end
 	end
-	return plain(raw)
+	local cache = plain(raw)
+	cache.merged = if raw.merged == nil then nil else M.openedList(raw.merged)
+	return cache
 end
 
 -- The value for kv: `cache` with the oldest `lastActivityAt` dropped first until `size(value) <= capBytes`.
@@ -167,6 +170,7 @@ function M.merge(fresh: Refresh, previous: Cache?, localFacts: Local, now: numbe
 		schema = 1, refreshedAt = iso(now), viewer = fresh.viewer, prs = prs,
 		rateLimit = fresh.rateLimit, lastModified = if previous then previous.lastModified else nil,
 		counts = { toReview = toReview, needFixes = needFixes, flashAt = flashAt },
+		merged = fresh.merged or (if previous then previous.merged else nil),
 	}
 end
 

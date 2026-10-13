@@ -167,8 +167,8 @@ local function botEngine(mode: "ready" | "stop" | "unsandboxed" | "tracked" | "e
 	assert(#calls == #entries, "missing bot pipeline calls")
 end
 
--- The real src/hub/block.luau and the real Fetch.summarizeFeedback, driven through their own callbacks. Block
--- reads `tern` from its module environment, so the stub is written there (`getfenv`), not into a global.
+-- The real src/hub/block.luau and the real AgentHost.summarizeFeedback, driven through their own callbacks. Both reach
+-- the platform through src/host.luau, so the stub is written into the Host table's fields.
 -- Every process, GitHub and engine effect is a recorded call that a scenario settles by hand and in the order
 -- it chooses, so a guard between an effect and its result is proved by the state left when it is removed.
 local REFS = "REFS_JSON"
@@ -176,11 +176,13 @@ local REFS = "REFS_JSON"
 local function blockPaths()
 	local Block: any = require("../src/hub/block")
 	local Fetch: any = require("../src/fetch")
-	local env: any = getfenv(Block.init)
+	local Host: any = require("../src/host")
+	local AgentHost: any = require("../src/agent-host")
 	local kept: { [string]: any } = {}
-	for _, name in { "runner", "startAgentFix", "findRepo", "findAgentClone", "pushAgentFix", "returnAgentFix" } do kept[name] = Fetch[name] end
-	local hostTern = env.tern
-	env.tern = {
+	for _, name in { "runner", "findRepo" } do kept[name] = Fetch[name] end
+	local keptAgent: { [string]: any } = {}
+	for _, name in { "startAgentFix", "findAgentClone", "pushAgentFix", "returnAgentFix" } do keptAgent[name] = AgentHost[name] end
+	local stub: { [string]: any } = {
 		json = {
 			decode = function(text: string): any
 				if text == REFS then return { headRefName = "topic", baseRefName = "main", headRefOid = HEAD } end
@@ -191,9 +193,15 @@ local function blockPaths()
 		getenv = function(): string? return nil end,
 		kv = { get = function(): any return nil end, set = function() end },
 	}
+	local hostFields: { [string]: any } = {}
+	for name, value in stub do
+		hostFields[name] = Host[name]
+		Host[name] = value
+	end
 	local function restore()
-		env.tern = hostTern
+		for name in stub do Host[name] = hostFields[name] end
 		for name, value in kept do Fetch[name] = value end
+		for name, value in keptAgent do AgentHost[name] = value end
 	end
 
 	-- A live board (fixture=summary, then made a live one) whose every effect lands in `w`.
@@ -214,8 +222,8 @@ local function blockPaths()
 			if w.throws then error("spawn failed", 0) end
 		end
 		Fetch.findRepo = function(_dir: string, done: (any, string?) -> ()) done({ root = "/reader" }, nil) end
-		Fetch.findAgentClone = function(_near: any, _dir: string, _slug: string, _ask: any, done: (string?, string?) -> ()) done("/clone", nil) end
-		Fetch.startAgentFix = function(request: any, agent: any, _now: number, changed: (any) -> (), done: (any, string?) -> ()): any
+		AgentHost.findAgentClone = function(_near: any, _dir: string, _slug: string, _ask: any, done: (string?, string?) -> ()) done("/clone", nil) end
+		AgentHost.startAgentFix = function(request: any, agent: any, _now: number, changed: (any) -> (), done: (any, string?) -> ()): any
 			table.insert(w.started, { request = request, agent = agent, changed = changed, done = done })
 			return {
 				stop = function() w.stops += 1 end,
@@ -225,8 +233,8 @@ local function blockPaths()
 				busy = function(): boolean return false end,
 			}
 		end
-		Fetch.pushAgentFix = function() w.pushes += 1; error("push", 0) end
-		Fetch.returnAgentFix = function() w.pushes += 1; error("return", 0) end
+		AgentHost.pushAgentFix = function() w.pushes += 1; error("push", 0) end
+		AgentHost.returnAgentFix = function() w.pushes += 1; error("return", 0) end
 		local b: any = Block.init(cx, { "fixture=summary" }, nil)
 		b.fixture = nil
 		b.agent = { command = "/omp", path = "/omp", model = "provider/model", effort = "high", models = {}, lenses = {}, lens = "" }

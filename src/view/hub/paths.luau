@@ -25,7 +25,7 @@ function M.columnKey(column: string): string
 	return "col_" .. column
 end
 
--- The key of a fold's node under the board: "fold" for Inactive, else its name ("team", "approved", "recent").
+-- The key of a fold's node under the board: "fold" for Inactive, else its name ("team", "approved", "recent", "merged").
 function M.foldKey(column: string): string
 	return if column == "inactive" then "fold" else column
 end
@@ -49,14 +49,14 @@ function M.selection(group: string): string
 	return M.ROOT .. ".body.board." .. M.columnKey("ready") .. ".selection"
 end
 
--- The key of a Recently opened row's node (`key` is State.recentKey).
+-- The key of a row fold's row node (`key` is State.recentKey).
 function M.recentKey(key: string): string
 	return "rc_" .. Text.keyOf(key)
 end
 
--- A Recently opened row's node.
-function M.recentRow(key: string): string
-	return M.ROOT .. ".body.recent.rows." .. M.recentKey(key)
+-- A row fold's row node, in the fold `name` (State.ROW_FOLD).
+function M.recentRow(name: string, key: string): string
+	return M.ROOT .. ".body." .. name .. ".rows." .. M.recentKey(key)
 end
 
 -- The fixes page and the reply field inside the thread card on show. They follow the keys in fixes.luau.

@@ -1,5 +1,6 @@
 --!strict
 local FileTree = require("./file-tree")
+local Host = require("./host")
 local Pr = require("./pr")
 local Text = require("./text")
 
@@ -79,6 +80,10 @@ export type Guide = {
  -- The drafted opening comment of the review.
  summary: string,
 }
+
+-- What the review pass writes to `<n>.review.json`: the drafted comments and opening comment, who
+-- drafted them and through which lens. It lands on whatever guide the page shows (see `withDraft`).
+export type Draft = { author: string, lens: string?, comments: { Comment }, summary: string }
 
 type StepSpec = { file: string, side: Side, from: number, to: number, at: Span, title: string, note: string }
 type ChangeSpec = { title: string, why: string, steps: { StepSpec } }
@@ -380,12 +385,44 @@ end
 -- the plugin.
 function M.read(path: string, pr: Pr.PR): (Guide?, string?)
  local decoded, raw = pcall(function(): any
-  return tern.json.decode(tern.fs.read(path))
+  return Host.json.decode(Host.fs.read(path))
  end)
  if not decoded then return nil, Text.errorLine(raw) end
  local guide = M.parse(raw, pr)
  if not guide then return nil, "not a guided review (expected \"schema\": " .. SCHEMA .. ")" end
  return guide, nil
+end
+
+-- A review file from decoded JSON, or nil when it isn't one. Comments that don't fit the PR are
+-- dropped.
+function M.parseDraft(raw: any, pr: Pr.PR): Draft?
+ if type(raw) ~= "table" or raw.schema ~= SCHEMA then return nil end
+ return {
+  author = if type(raw.author) == "string" and raw.author ~= "" then raw.author else DEFAULT_AUTHOR,
+  lens = if type(raw.lens) == "string" and raw.lens ~= "" then raw.lens else nil,
+  comments = parseComments(raw.comments, indexFiles(pr)),
+  summary = text(raw.summary, ""),
+ }
+end
+
+-- The review file at `path` for `pr`, or why it can't be used. The one place review data enters
+-- the plugin.
+function M.readDraft(path: string, pr: Pr.PR): (Draft?, string?)
+ local decoded, raw = pcall(function(): any
+  return Host.json.decode(Host.fs.read(path))
+ end)
+ if not decoded then return nil, Text.errorLine(raw) end
+ local draft = M.parseDraft(raw, pr)
+ if not draft then return nil, "not a review file (expected \"schema\": " .. SCHEMA .. ")" end
+ return draft, nil
+end
+
+-- `guide` with `draft`'s comments, summary, author and lens in place of its own: a review file wins
+-- over comments written into the guide file.
+function M.withDraft(guide: Guide, draft: Draft): Guide
+ local merged = table.clone(guide)
+ merged.comments, merged.summary, merged.author, merged.lens = draft.comments, draft.summary, draft.author, draft.lens
+ return merged
 end
 
 -- Whether the PR has moved on since the guide was written.

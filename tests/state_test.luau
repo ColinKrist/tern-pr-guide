@@ -180,7 +180,7 @@ return function()
 	assert(State.move(s, "down") == false, "Inactive is folded")
 	State.toggleFold(s, "inactive")
 	assert(foldOpen(s, "inactive") and s.folded.inactive == false)
-	assert(State.move(s, "down") and s.selected == "acme/api#122")
+	assert(s.selected == "acme/api#122", "opening a fold selects its first row")
 	assert(State.move(s, "down") and s.selected == "acme/mono#216")
 	assert(State.move(s, "up") and State.move(s, "up") and s.selected == "acme/web#104", "up from Inactive returns to the board")
 	-- Right from a short row clamps to the last card of the next column.
@@ -336,6 +336,7 @@ return function()
 	assert(State.move(rs, "down") and rs.selected ~= nil and State.recentRow(rs, rs.selected) == nil)
 	State.toggleFold(rs, "recent")
 	assert(rs.board.open.recent and State.recentKey(recent[1]) == "rc:acme/api#9")
+	assert(rs.selected == "rc:acme/api#9", "opening the row fold selects its first row")
 	State.select(rs, "rc:acme/web#4")
 	local picked = State.selectedRecent(rs)
 	assert(picked and picked.number == 4 and State.selectedCard(rs) == nil)
@@ -355,10 +356,24 @@ return function()
 	assert(State.move(last, "down") and last.selected == "rc:acme/web#4")
 	assert(not State.move(last, "down") and last.selected == "rc:acme/web#4")
 	assert(State.move(last, "up") and last.selected == "rc:acme/api#9")
-	-- Your pull requests has no such fold
+	-- Your pull requests ends with Recently merged instead: the last 7 days of the cache's list, under its own fold name.
 	local mine = fresh({ tab = "mine" })
 	State.setRecent(mine, recent)
 	assert(#mine.board.recent == 0 and not mine.board.open.recent)
+	State.setMerged(mine, {
+		{ repo = "acme/web", number = 981, title = "Cache sprites", author = "", at = "2026-10-09T00:00:00Z" },
+		{ repo = "acme/api", number = 377, title = "Log slow queries", author = "", at = "2026-09-01T00:00:00Z" },
+	})
+	assert(#mine.board.recent == 1 and mine.board.recent[1].number == 981 and not mine.board.open.recent)
+	State.toggleFold(mine, "recent")
+	assert(not mine.board.open.recent, "Recently opened's flag doesn't open Recently merged")
+	State.toggleFold(mine, "merged")
+	assert(mine.board.open.recent)
+	State.setTab(mine, "review")
+	assert(#mine.board.recent == 2 and mine.board.recent[1].number == 9, "Review requests keeps Recently opened")
+	State.setMerged(mine, nil)
+	State.setTab(mine, "mine")
+	assert(#mine.board.recent == 0)
 
 	-- Card actions: Merge asks first, naming the repo's method; ⌘⏎ is the block's, Esc cancels.
 	local ms = fresh()

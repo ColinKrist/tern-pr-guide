@@ -9,7 +9,6 @@ local el, span = Ui.el, Ui.span
 
 local FIXED: { [State.Mode]: { title: string, keys: { { string } } } } = {
  search = { title = "Searching", keys = { { "↑ ↓", "choose" }, { "⏎", "go there" }, { "esc", "close" } } },
- models = { title = "Choosing a model", keys = { { "↑ ↓", "model" }, { "← →", "effort" }, { "⇧ ← →", "lens" }, { "⏎", "use it" }, { "esc", "close" } } },
  composer = { title = "Writing a comment", keys = { { "⏎", "save" }, { "⇧ ⏎", "new line" }, { "esc", "cancel" } } },
  summary = { title = "Editing the summary", keys = { { "⏎", "done" }, { "⇧ ⏎", "new line" }, { "esc", "done" } } },
  review = { title = "Finishing your review", keys = { { "j k", "move" }, { "x", "include or leave out" }, { "a", "include / exclude all" }, { "1 2 3", "verdict" }, { "e", "edit summary" }, { "⌘ ⏎", "submit" }, { "esc", "close" } } },
@@ -34,11 +33,27 @@ local function readingKeys(s: State.State): (string, { { string } })
  return "Step " .. r.cur .. " of " .. #r.steps .. "  ·  " .. step.title, keys
 end
 
+-- The model menu's keys; the lens's only where the menu shows it. Tab shows in the menu itself.
+local function modelKeys(s: State.State): { { string } }
+ local keys = { { "↑ ↓", "model" }, { "← →", "effort" } }
+ local box, run = s.models, s.ai
+ if box and run and State.showsLens(box, run.agent) then table.insert(keys, { "⇧ ← →", "lens" }) end
+ table.insert(keys, { "⏎", "use it" })
+ table.insert(keys, { "esc", "close" })
+ return keys
+end
+
 function M.view(s: State.State): Node
  local mode = State.mode(s)
  local fixed = FIXED[mode]
  local title, keys
- if fixed then title, keys = fixed.title, fixed.keys else title, keys = readingKeys(s) end
+ if fixed then
+  title, keys = fixed.title, fixed.keys
+ elseif mode == "models" then
+  title, keys = "Choosing models", modelKeys(s)
+ else
+  title, keys = readingKeys(s)
+ end
  local kids = { span("gp-hb-mode", title), Ui.spacer() }
  for _, key in keys do
   table.insert(kids, el("span", { class = "gp-hb-item" }, { Ui.keys(key[1]), span("gp-hb-label", key[2]) }))

@@ -29,9 +29,9 @@ local function searchKey(key: Key): Action?
 end
 
 -- Arrows: up and down pick the model, left and right its effort (the filter's cursor gives them up;
--- model names are short). Tab steps the effort too. Shift with left and right steps the review
--- lens, and ctrl-E opens the folder of the reader's own lenses.
-local function modelsKey(key: Key): Action?
+-- model names are short). Tab flips between the Explanation and Review slots. Shift with left and
+-- right steps the review lens, and ctrl-E opens the folder of the reader's own lenses.
+local function modelsKey(s: State.State, key: Key): Action?
  local name = key.name
  local plain = not (key.shift or key.ctrl or key.meta or key.alt)
  if name == "down" then return act("models-move", 1) end
@@ -42,7 +42,7 @@ local function modelsKey(key: Key): Action?
  if key.ctrl and name == "e" then return act("edit-lenses") end
  if plain and name == "right" then return act("models-effort", 1) end
  if plain and name == "left" then return act("models-effort", -1) end
- if name == "tab" then return act("models-effort", if key.shift then -1 else 1) end
+ if name == "tab" then return act("models-slot", if (s.models :: State.ModelBox).slot == "explain" then "review" else "explain") end
  if name == "enter" then return act("models-pick") end
  if name == "escape" then return act("toggle-models") end
  return nil
@@ -98,7 +98,7 @@ end
 function M.action(s: State.State, key: Key): Action?
  local mode = State.mode(s)
  if mode == "search" then return searchKey(key) end
- if mode == "models" then return modelsKey(key) end
+ if mode == "models" then return modelsKey(s, key) end
  if mode == "composer" or mode == "summary" then return nil end
  if mode == "review" and not isQuestionMark(key) then return reviewKey(s, key) end
  return readingKey(s, key)
@@ -189,7 +189,7 @@ local function hubBoardKey(s: HubState.State, key: Key): Action?
 	if name == "." or key.text == "." then return act("hub-next") end
 	if label == "T" then return act("hub-tab") end
 	if label == "I" then return act("hub-fold", "inactive") end
-	if label == "R" and s.tab == "review" then return act("hub-fold", "recent") end
+	if label == "R" then return act("hub-fold", HubState.ROW_FOLD[s.tab]) end
 	if label == "⇧T" and s.tab == "review" then return act("hub-fold", "team") end
 	if label == "A" and s.tab == "review" then return act("hub-fold", "approved") end
 	if label == "F" then return act("hub-menu", "repositories") end

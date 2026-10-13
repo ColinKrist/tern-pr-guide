@@ -1,7 +1,7 @@
 --!strict
 -- The PR hub's GitHub boundary. Every GitHub call goes through the injected `Runner` (the real one
 -- is `Fetch.runner`, tests pass a fake), JSON text is decoded by the injected `decode`
--- (`tern.json.decode`), and nothing here reads `tern`, the clock or a file. The parsers take
+-- (`Host.json.decode`), and nothing here reads Host, the clock or a file. The parsers take
 -- already decoded tables and never throw on a missing field. Each call returns its own rate-limit
 -- envelope; the caller sums them. Failures are `Error` values, never thrown.
 --
@@ -21,7 +21,7 @@ type MergeFailure = Model.MergeFailure
 type PendingMerge = Model.PendingMerge
 type FixDetails = Fixes.FixDetails
 
--- What `tern.process.run` gives and takes, minus the `cx`. src/fetch.luau exports the real runner.
+-- What `Host.process.run` gives and takes, minus the `cx`. src/fetch.luau exports the real runner.
 export type Out = { status: number, stdout: string, stderr: string, timed_out: boolean }
 export type Runner = (argv: { string }, opts: { cwd: string?, stdin: string?, timeout_ms: number? }, done: (out: Out) -> ()) -> ()
 export type Decode = (text: string) -> any
@@ -163,6 +163,13 @@ query Details($id: ID!) {
   } }
 }]=]
 
+-- This one mirrors docs/hub/queries/merged.graphql the same way.
+local MERGED_QUERY = [=[
+query Merged($q: String!) {
+  rateLimit { cost remaining limit resetAt }
+  merged: search(type: ISSUE, query: $q, first: 20) { nodes { ... on PullRequest { number title mergedAt repository { nameWithOwner } } } }
+}]=]
+
 -- GitHub stops a GraphQL query at about 10 s and answers 502, so a client wait past 30 s is a lost connection.
 local GRAPHQL_MS = 30_000
 local REST_MS = 30_000
@@ -176,6 +183,9 @@ local SEARCHES = {
 	{ alias = "requested", q = "is:pr is:open review-requested:@me archived:false" },
 	{ alias = "reviewed", q = "is:pr is:open reviewed-by:@me -author:@me archived:false" },
 }
+-- Recently merged: search can't sort by merge time, but a merge updates the PR, so the most recently updated hold the latest
+-- merges. `parseMerged` orders them by `mergedAt` and the board keeps the last 7 days.
+local MERGED_SEARCH = "is:pr is:merged author:@me archived:false sort:updated-desc"
 -- A search reads up to SEARCH_MAX PRs, PAGE_SIZE at a time: a 20-PR page costs 1 point and about 5 s on busy
 -- repos, where 50 at once passes GitHub's limit. A page GitHub drops is asked again at half the size, down to PAGE_MIN.
 local SEARCH_MAX = 50
@@ -385,6 +395,25 @@ function M.parseHub(raw: any): { prs: { HubPR }, viewer: string, rateLimit: Rate
 		if node then take(node, false) end
 	end
 	return { prs = prs, viewer = viewer, rateLimit = rateLimitOf(data.rateLimit) or NO_LIMIT, truncated = truncated }
+end
+
+-- merged
+
+-- The Recently merged rows in a merged.graphql answer, newest merge first, or nil without the search.
+function M.parseMerged(raw: any): { Model.Opened }?
+	local data = tbl(raw) and tbl(raw.data)
+	local block = data and tbl(data.merged)
+	if block == nil then return nil end
+	local out: { Model.Opened } = {}
+	for _, node in list(block.nodes) do
+		local repo = tbl(node.repository) and str(node.repository.nameWithOwner)
+		local at = str(node.mergedAt)
+		if repo and at and type(node.number) == "number" then
+			table.insert(out, { repo = repo, number = node.number, title = str(node.title) or "", author = "", at = at })
+		end
+	end
+	table.sort(out, function(a: Model.Opened, b: Model.Opened): boolean return a.at > b.at end)
+	return out
 end
 
 -- threads
@@ -772,6 +801,10 @@ M.commands = {
 	close = function(pr: HubPR): Command
 		return { argv = prArgv("close", pr), stdin = nil }
 	end,
+	-- The branch names and head an agent fix starts from, read again just before it starts.
+	refs = function(pr: HubPR): Command
+		return { argv = prArgv("view", pr, "--json", "headRefName,baseRefName,headRefOid"), stdin = nil }
+	end,
 	updateBranch = function(pr: HubPR): Command
 		return { argv = { "gh", "pr", "update-branch", tostring(pr.number), "--repo", pr.repo }, stdin = nil }
 	end,
@@ -1046,6 +1079,7 @@ function M.client(run: Runner, decode: Decode): Client
 
 	local function refresh(req: RefreshRequest, done: (value: Refresh?, err: Error?) -> ())
 		local calls: { RateLimit } = {}
+		local merged: { Model.Opened }? = nil
 		local function searched(doc: any)
 			local hub = M.parseHub(doc)
 			if hub == nil then
@@ -1053,7 +1087,7 @@ function M.client(run: Runner, decode: Decode): Client
 			end
 			local result: Refresh = {
 				prs = hub.prs, viewer = hub.viewer, rateLimit = calls[#calls] or NO_LIMIT, calls = calls,
-				truncated = hub.truncated, partial = nil,
+				truncated = hub.truncated, partial = nil, merged = merged,
 			}
 			local function finish()
 				local inFlight = inFlightMerges(hub.prs, req.previous)
@@ -1116,9 +1150,10 @@ function M.client(run: Runner, decode: Decode): Client
 				finish()
 			end)
 		end
-		-- The searches run at once and meet in one hub-f shaped document; the first failure ends the refresh.
+		-- The searches run at once and meet in one hub-f shaped document; the first failure ends the refresh. Recently merged
+		-- runs beside them, and its failure only leaves `merged` nil, so the board keeps the list it had.
 		local data: { [string]: any } = {}
-		local waiting, failed = #SEARCHES, false
+		local waiting, failed = #SEARCHES + 1, false
 		for i, spec in SEARCHES do
 			if failed then break end
 			search(spec.alias, spec.q, if i == 1 then req.added else {}, function(found, first, pageCalls, err)
@@ -1136,6 +1171,17 @@ function M.client(run: Runner, decode: Decode): Client
 				if waiting == 0 then searched({ data = data }) end
 			end)
 		end
+		if failed then return end
+		graphql(MERGED_QUERY, { "-f", "q=" .. MERGED_SEARCH }, "gh api graphql: merged", "read recently merged pull requests", function(doc, err)
+			if failed then return end
+			if doc then
+				merged = M.parseMerged(doc)
+				local used = rateLimitOf(tbl(doc.data) and doc.data.rateLimit)
+				if used then table.insert(calls, used) end
+			end
+			waiting -= 1
+			if waiting == 0 then searched({ data = data }) end
+		end)
 	end
 
 	local function probe(since: string?, done: (value: Probe?, err: Error?) -> ())

@@ -853,6 +853,10 @@
 .gp-md > * { flex-shrink: 0; }
 .gp-md, .gp-md * { font-family: var(--sans); }
 .gp-md .sf-kbd .kbd { font-family: var(--mono); }
+.gp-md-slots { display: flex; flex-direction: column; gap: 6px; padding: 10px 14px; border-bottom: 1px solid var(--l2); }
+.gp-md-slots-row { display: flex; gap: 12px; align-items: center; }
+.gp-md-hint { font-size: 12.5px; line-height: 1.4; color: var(--t3); }
+.gp-md-row-hint { min-width: 0; font-size: 12.5px; color: var(--t3); }
 .gp-md-search { display: flex; gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--l2); }
 .gp-md-search .sf-icon { color: var(--t3); }
 .gp-md-search .sf-input, .gp-md-search .sf-input.focused, .gp-sr-box .sf-input, .gp-sr-box .sf-input.focused { flex-grow: 1; border: none; outline: none; box-shadow: none; background: transparent; padding: 0; }
@@ -884,7 +888,18 @@
 /* the review lens: chosen in the model dropdown, named beside the model */
 .gp-ai-model-lens { color: var(--t2); }
 .gp-ai-model-sep { color: var(--t4); }
-.gp-ai-busy .gp-ai-bar { flex-shrink: 1; min-width: 40px; }
+.gp-ai-busy .gp-ai-bar, .gp-ai-quiet .gp-ai-bar { flex-shrink: 1; min-width: 40px; }
+/* the review still going under a page the reader can read: still and muted, so it never pulls the eye */
+.gp-ai-quiet { gap: 8px; min-height: 22px; }
+.gp-ai-quiet-icon { display: flex; color: var(--t3); }
+.gp-ai-quiet-icon .sf-icon, .gp-ai-quiet-icon .ico { width: 12px; height: 12px; }
+.gp-ai-quiet-text { flex-shrink: 0; font-family: var(--sans); font-size: 13px; color: var(--t2); }
+.gp-ai-quiet .gp-ai-bar { width: 120px; height: 3px; }
+.gp-ai-quiet .gp-ai-fill { background: var(--t4); }
+.gp-ai-model-pass { display: flex; gap: 4px; align-items: baseline; }
+.gp-ai-model-effort { color: var(--t4); }
+.gp-ai-model-role { color: var(--t3); }
+.gp-ai-model:hover .gp-ai-model-effort, .gp-ai-model-open .gp-ai-model-effort { color: var(--t3); }
 .gp-status-lens { color: var(--t3); }
 .gp-md-lens { flex-direction: column; align-items: stretch; gap: 8px; }
 .gp-md-lens-row { display: flex; gap: 12px; align-items: flex-start; }
@@ -897,14 +912,12 @@
 /* the AI writing a guide: a rare, minutes-long wait, so it gets some life */
 @keyframes gp-spark { 0% { transform: rotate(0deg) scale(1); } 50% { transform: rotate(180deg) scale(1.3); } 100% { transform: rotate(360deg) scale(1); } }
 @keyframes gp-write { from { opacity: 0; transform: translateY(4px); filter: blur(3px); } to { opacity: 1; transform: translateY(0); filter: blur(0); } }
-@keyframes gp-unwrite { from { opacity: 1; transform: translateY(0); filter: blur(0); } to { opacity: 0; transform: translateY(-4px); filter: blur(3px); } }
 @keyframes gp-shine { from { transform: translateX(-100%); } to { transform: translateX(400%); } }
 @keyframes gp-fade-in { from { opacity: 0; } to { opacity: 1; } }
 .gp-ai-busy { gap: 12px; }
 .gp-ai-spark { display: flex; color: var(--live); animation: gp-spark 2400ms var(--gp-ease-in-out) infinite; }
-.gp-ai-phrases { position: relative; display: flex; width: 210px; flex-shrink: 0; }
+.gp-ai-busy .gp-ai-phrase { width: 190px; flex-shrink: 0; }
 .gp-ai-phrase { display: flex; font-family: var(--sans); font-size: 13.5px; font-weight: 600; color: var(--t1); }
-.gp-ai-phrase-out { position: absolute; top: 0; left: 0; animation: gp-unwrite var(--gp-dur-in) var(--gp-ease-out) forwards; }
 .gp-ai-ch { display: inline-block; opacity: 0; animation: gp-write 260ms var(--gp-ease-out) forwards; }
 .gp-ai-bar { position: relative; width: 240px; height: 4px; border-radius: 2px; overflow: clip; background: var(--chip-bg); }
 .gp-ai-fill { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border-radius: 2px; background: var(--live); transform-origin: left center; transition: transform 1000ms linear; }
@@ -995,7 +1008,6 @@
   .gp-ai-spark, .gp-ai-shine { animation: none; }
   .gp-ai-shine { opacity: 0; }
   .gp-ai-ch { animation: gp-fade-in 200ms ease forwards; animation-delay: 0ms; }
-  .gp-ai-phrase-out { animation: none; opacity: 0; }
 }
 
 /* loading a PR: the stages finished so far ticked, the one under way, and a bar that sweeps for as long as the wait lasts */

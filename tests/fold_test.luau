@@ -1,7 +1,8 @@
 --!strict
 -- Opening a fold on the hub scrolls its header to the top of the board; closing one doesn't scroll.
 local Block: any = require("../src/hub/block")
-local Fields: any = require("../src/text-field")
+local Host: any = require("../src/host")
+local Ui: any = require("../src/view/ui")
 local Paths = require("../src/view/hub/paths")
 
 -- The node the board draws at `path`. parts[1] is "main", the block's root: the view's own outer node.
@@ -20,10 +21,9 @@ local function nodeAt(root: any, path: string): any
 end
 
 return function()
-	local blockEnv: any = getfenv(Block.init)
-	local fieldEnv: any = getfenv(Fields.node)
-	local hostBlock, hostField = blockEnv.tern, fieldEnv.tern
-	blockEnv.tern = {
+	local fieldEnv: any = getfenv(Ui.field)
+	local hostField = fieldEnv.tern
+	local stub: { [string]: any } = {
 		timer = function(_ms: number, fn: () -> ()): any
 			fn()
 			return { cancel = function() end }
@@ -32,6 +32,11 @@ return function()
 		getenv = function(): string? return nil end,
 		kv = { get = function(): any return nil end, set = function() end },
 	}
+	local hostFields: { [string]: any } = {}
+	for name, value in stub do
+		hostFields[name] = Host[name]
+		Host[name] = value
+	end
 	fieldEnv.tern = { ui = { node = function(kind: string, props: any): any return { k = kind, p = props } end } }
 
 	local ok, err = pcall(function()
@@ -51,6 +56,14 @@ return function()
 			local op = frames[#frames]
 			return if op then table.concat(op, " ") else ""
 		end
+		-- Your pull requests: R opens Recently merged.
+		press("r")
+		assert(b.s.folded.merged == false and b.s.folded.recent == true, "R opens Recently merged")
+		assert(lastFrame() == "reveal " .. Paths.foldHead("merged") .. " start", lastFrame())
+		local merged = nodeAt(Block.view(b).main, Paths.foldHead("merged"))
+		assert(merged and string.find(merged.p.class, "gp-hub-foldhead", 1, true), "Recently merged's header is drawn at Paths.foldHead")
+		press("r")
+		frames = {}
 		press("t")
 		assert(b.s.tab == "review" and #frames == 0)
 
@@ -66,6 +79,7 @@ return function()
 			assert(b.s.folded[fold] == true and #frames == before + 1, fold .. ": closing doesn't scroll")
 		end
 	end)
-	blockEnv.tern, fieldEnv.tern = hostBlock, hostField
+	for name in stub do Host[name] = hostFields[name] end
+	fieldEnv.tern = hostField
 	if not ok then error(err, 0) end
 end

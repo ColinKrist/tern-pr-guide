@@ -17,7 +17,7 @@ local GROUPS: { Group } = {
 		{ "I", "Show or hide Inactive" },
 		{ "⇧T", "Show or hide Team requests" },
 		{ "A", "Show or hide Approved, on Review requests" },
-		{ "R", "Show or hide Recently opened" },
+		{ "R", "Show or hide Recently merged, or Recently opened on Review requests" },
 	} },
 	{ title = "The selected card", keys = {
 		{ "A", "Fix with agent, Hand off to Tandem, Stop, Try again, Clone repo, or Summarize" },
