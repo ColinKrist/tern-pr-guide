@@ -22,7 +22,7 @@ type Handler = (s: State, cx: BlockCx, value: string) -> ()
 
 -- How the block was opened: a PR and its checkout, a directory with no PR (the PR hub picks one), or
 -- neither for the bundled sample.
-type Options = { pr: string?, repo: string?, guide: string?, post: boolean, generate: boolean? }
+type Options = { pr: string?, repo: string?, guide: string?, post: boolean, generate: boolean?, worst: boolean? }
 
 -- The review page once its PR has loaded; before that, what loading is doing.
 type Block = {
@@ -313,6 +313,7 @@ local ACTIONS: { [string]: Handler } = {
  end,
  ["open-all-supporting"] = function(s) State.toggleAllSupporting(s) end,
  ["toggle-help"] = toggleHelp,
+ ["toggle-tree"] = function(s) s.treeHidden = not s.treeHidden end,
  ["dismiss"] = function(s, cx)
   s.review.focus = nil
   if s.helpOpen then toggleHelp(s, cx) end
@@ -469,6 +470,10 @@ local function options(args: { string }): (Options?, string?)
  local given: { [string]: string } = {}
  for _, arg in args do
   local name, value = string.match(arg, "^(%a+)=(.*)$")
+  -- sample=worst opens the worst-case sample (fixtures/*-worst.json) with its guide, and
+  -- sample=worst-plain without one, offering the agent: they stress-test the page's layout.
+  if name == "sample" and value == "worst" and #args == 1 then return { guide = "fixtures/guide-worst.json", post = false, worst = true }, nil end
+  if name == "sample" and value == "worst-plain" and #args == 1 then return { post = false, worst = true }, nil end
   if name ~= "pr" and name ~= "repo" and name ~= "guide" and name ~= "post" and name ~= "generate" then
    return nil, "Unknown argument \"" .. arg .. "\". The block takes " .. ARGS .. "."
   end
@@ -683,8 +688,14 @@ local block: BlockDef<Block> = {
   if not opts then return { opts = { post = false }, dir = "", name = "", notice = Notice.failed("", problem :: string), guided = false } end
   local pr, dir = opts.pr, opts.repo
   local b: Block = { opts = opts, dir = dir or "", name = nameOf(pr), notice = if pr then Notice.loading(nameOf(pr), "") else Notice.findingRepo(), guided = false }
+  if opts.worst then
+   showPr(b, Pr.sample("worst"))
+   if not opts.guide then b.ai = Agent.idle(Host.json.decode(Host.fs.read("fixtures/agent-worst.json"))) end
+   offerAgent(b)
+   return b
+  end
   if not dir then
-   showPr(b, Pr.sample())
+   showPr(b, Pr.sample("350"))
    return b
   end
   if not pr then

@@ -50,7 +50,7 @@ local function arriving(s: State.State, blocks: { Node })
 end
 
 -- Without a guide, or in the file view of a PR that has one: the header, then the file tree pinned
--- beside the code with a scroll of its own,
+-- beside the code with a scroll of its own (or, hidden, a rail with the button that shows it),
 -- and the description at the top of the code. The code scrolls with the page: Tern's reveal into
 -- a nested scroller left the wheel unable to scroll past the revealed block. Keys match the guided
 -- page's first change row, so block paths are the same.
@@ -60,7 +60,9 @@ local function split(s: State.State, motion: Ui.Motion, plan: State.Plan): Node
  local main = {
   Header.view(s, motion),
   el("div", { class = "gp-split-row", key = "ch1" }, {
-   el("div", { class = "gp-split-left", key = "tree" }, { Change.view(s, 1) }),
+   if s.treeHidden
+    then el("div", { class = "gp-split-rail", key = "rail" }, { Change.treeToggle() })
+    else el("div", { class = "gp-split-left", key = "tree" }, { Change.view(s, 1) }),
    el("div", { class = "gp-code-col gp-split-right", key = "code" }, blocks),
   }),
  }

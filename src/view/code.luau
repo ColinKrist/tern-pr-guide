@@ -49,9 +49,14 @@ function M.head(s: State.State, file: Pr.File, head: Head): Node
   }),
   span("gp-frange", head.label or ""),
   Ui.spacer(),
-  span("gp-adds", "+" .. file.adds),
-  span("gp-dels", "−" .. file.dels),
  }
+ -- No diff rows: a binary file, or one renamed without changes, as GitHub says instead of "+0 −0".
+ if #file.rows == 0 then
+  table.insert(kids, span("gp-frange", if file.status == "renamed" then "Renamed without changes" elseif file.status == "added" then "Empty file" else "Binary file not shown"))
+ else
+  table.insert(kids, span("gp-adds", "+" .. file.adds))
+  table.insert(kids, span("gp-dels", "−" .. file.dels))
+ end
  if head.expanded and file.src then
   table.insert(kids, el("span", {
    class = "gp-wholefile",

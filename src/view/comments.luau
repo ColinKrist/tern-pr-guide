@@ -1,5 +1,6 @@
 --!strict
 -- Comment cards hung under code lines: suggested comments, the reader's own, and the composer.
+-- Bodies draw as Markdown, as GitHub shows them once posted.
 local Guide = require("../guide")
 local State = require("../state")
 local Text = require("../text")
@@ -51,7 +52,7 @@ local function suggestion(s: State.State, comment: Guide.Comment): (Node, number
  local decision = s.review.decisions[comment.id]
  local kind = Ui.kinds[comment.kind]
  local children = { head("gp-avatar-guide", author, author, kind.verb, "line " .. comment.line, kind.icon) }
- if decision ~= "dismissed" then table.insert(children, el("div", { class = "gp-card-body" }, { Ui.rich(comment.body) })) end
+ if decision ~= "dismissed" then table.insert(children, el("div", { class = "gp-card-body" }, { tern.ui.md(comment.body) })) end
  table.insert(children, el("div", { class = "gp-card-foot" }, suggestionFoot(comment.id, decision)))
  local class = "gp-card gp-card-" .. (decision or "open")
   .. (if comment.kind == "problem" then " gp-card-problem" else "")
@@ -63,7 +64,7 @@ end
 local function own(n: number, from: number, to: number, body: string, enter: string): (Node, number)
  local node = el("div", { class = "gp-card gp-card-you " .. enter, key = "you" .. n }, {
   head("gp-avatar-you", YOU, YOU, "commented", Text.lineSpan(from, to) .. "  ·  will be posted with your review"),
-  el("div", { class = "gp-card-body" }, { Ui.rich(body) }),
+  el("div", { class = "gp-card-body" }, { tern.ui.md(body) }),
  })
  return node, 63 + LINE_H * Text.wrappedLines(body, CHARS_PER_LINE) + CARD_GAP
 end

@@ -39,9 +39,9 @@ export type PR = {
 
 local M = {}
 
--- Reads the bundled sample PR, shown when the block opens without a PR.
-function M.sample(): PR
- local raw = Host.json.decode(Host.fs.read("fixtures/pr-350.json"))
+-- Reads the bundled sample PR `name` (fixtures/pr-<name>.json), shown when the block opens without a PR.
+function M.sample(name: string): PR
+ local raw = Host.json.decode(Host.fs.read("fixtures/pr-" .. name .. ".json"))
  local pr = raw.pr
  pr.files = raw.files
  for _, file in pr.files do file.group = FileGroup.of(file.path, false) end
