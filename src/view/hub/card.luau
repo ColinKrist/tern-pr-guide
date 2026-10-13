@@ -6,6 +6,7 @@ local Checks = require("../../hub/checks")
 local ChecksView = require("./checks")
 local Model = require("../../hub/model")
 local Paths = require("./paths")
+local Progress = require("../progress")
 local State = require("../../hub/state")
 local Ui = require("../ui")
 
@@ -59,7 +60,7 @@ local function confirmButtons(card: State.Card): Node
 end
 
 local function toneOf(card: State.Card): string
-	if card.agent and card.agent.kind == "ready" then return "done" end
+	if card.agent and card.agent.kind == "ready" then return if card.agent.fix.origin then "wait" else "done" end
 	local c = card.column
 	if c == "needs_fixes" then return "bad" end
 	if c == "to_review" then return "info" end
@@ -68,7 +69,8 @@ local function toneOf(card: State.Card): string
 	return "wait"
 end
 
-function M.view(card: State.Card, now: number, checksOpen: boolean?): Node
+-- `clock` (seconds) is what a loading row counts to; `now` dates the card.
+function M.view(card: State.Card, now: number, checksOpen: boolean?, clock: number?): Node
 	local pr = card.pr
 	local main = card.main
 	local lead: { Node } = {}
@@ -96,6 +98,9 @@ function M.view(card: State.Card, now: number, checksOpen: boolean?): Node
 	if card.asking then
 		meta[1] = el("span", { class = "gp-hc-lead", key = "lead" }, { span("gp-hc-ask", card.asking) })
 		table.insert(meta, el("span", { class = "gp-hc-acts", key = "acts" }, { confirmButtons(card) }))
+	elseif card.busy and card.work and card.agentSlot then
+		-- A summary under way shows in its loading row, with no action beside it.
+		table.insert(meta, el("span", { class = "gp-hc-acts", key = "acts" }))
 	elseif card.busy then
 		local status: { Node } = {}
 		if card.busy ~= State.SUMMARIZING then table.insert(status, span("gp-hc-spin", "")) end
@@ -117,7 +122,15 @@ function M.view(card: State.Card, now: number, checksOpen: boolean?): Node
 		table.insert(body, span("gp-hc-title", pr.title))
 	end
 	local summary = card.summary
-	if summary then
+	local work = card.work
+	if work and card.agentSlot then
+		-- The one card row that moves: the agent at work, in the first note row, so the card keeps its height.
+		local seconds = (clock or now) - work.since
+		table.insert(body, el("div", { class = "gp-hc-agent-note", key = "agent" }, {
+			el("span", { class = "gp-hc-note gp-hc-agent-message", key = "work" }, { Progress.row("span", "gp-hc-ai gp-ai-agent", "ai", work.phrase, seconds, work.expected) }),
+			span(if card.agent then "gp-hc-agent-path" else "gp-hc-note gp-hc-agent-message", card.agentPath or ""),
+		}))
+	elseif summary then
 		-- Each commenter gets one existing, single-line note row. Two rows reuse the reserved
 		-- region; longer feedback adds only the rows needed, with no entrance or height motion.
 		local rows: { Node } = {}

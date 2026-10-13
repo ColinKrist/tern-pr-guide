@@ -14,6 +14,7 @@ function M.spec(key: string): AgentFix.Spec
 		key = key, clone = Tree.get.cwd, checkout = "/reader", pool = "/pool", branch = "topic", base = "main",
 		headOid = string.rep("a", 40), number = tonumber(string.match(key, "#(%d+)$")) :: number,
 		tool = "/plugin/tools/conflicts", omp = Omp.argv[1], model = Omp.argv[4], effort = "high",
+		sessionDir = "/plugin-data/agent-sessions/" .. string.gsub(key, "[^%w]+", "-"),
 	}
 end
 
@@ -60,7 +61,7 @@ for i, event in M.events() do
 		M.agents[M.keys.ready] = { kind = "ready", fix = outcome.fix, reviewed = {} }
 	end
 end
-M.agents[M.keys.failed] = { kind = "failed", reason = "Agent exited before resolving the remaining hunk", worktree = Tree.get.reply.path }
+M.agents[M.keys.failed] = { kind = "failed", reason = "Agent exited before resolving the remaining hunk", worktree = Tree.get.reply.path, session = "/plugin-data/agent-sessions/acme-web-1804" }
 M.agents[M.keys.failed_no_worktree] = { kind = "failed", reason = "No worktree was available" }
 M.agents[M.keys.no_clone] = { kind = "no_clone", slug = "acme/web" }
 

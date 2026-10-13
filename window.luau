@@ -1,6 +1,7 @@
 --!strict
 -- The window half: the one way into the PR hub (the commands, the status segment and the link route that
--- opens a card's PR in the guide), kept fresh by a timer and by focus. The decisions are in src/links.luau.
+-- opens a card's PR in the guide, or an agent fix's conversation in an omp pane), kept fresh by a timer and by
+-- focus. The decisions are in src/links.luau.
 local Links = require("./src/links")
 
 -- The node a window-sent event names. A block's root is always drawn, so the event reaches it even if
@@ -69,8 +70,35 @@ tern.chrome.status(function(_pane): { StatusSegment }?
  } }
 end)
 
--- A claimed link opens the PR in the guide; any other link opens GitHub's own page.
-tern.route.link(function(link: LinkRequest, _cx: WindowCx): RouteDecision?
+-- Open agent chat's panes this window opened, by conversation: a second ⇧O focuses the one still open.
+local chats: { [string]: number } = {}
+
+-- Resumes conversation `id` in an `omp` pane beside the hub, from the record the hub wrote in `hub.chats`.
+local function openChat(id: string, link: LinkRequest, cx: WindowCx)
+ local pane = chats[id]
+ local info = if pane then cx.session:pane(pane) else nil
+ if pane and info and info.exited == nil then
+  if info.parked then cx.layout:unpark(pane) end
+  cx.layout:focus(pane)
+  return
+ end
+ local ok, saved = pcall(tern.kv.get, "hub.chats")
+ local launch = Links.chatLaunch(if ok and type(saved) == "table" then saved[id] else nil, id, tern.plugin.data .. "/agent-sessions")
+ if not launch then
+  cx:toast("error", "Couldn't open the agent chat: its conversation is missing")
+  return
+ end
+ local opened = cx.layout:split(link.pane, "right", { cwd = launch.cwd, command = launch.command })
+ if opened then chats[id] = opened else cx:toast("error", "Couldn't open the agent chat: Tern didn't open a pane") end
+end
+
+-- A claimed link opens the PR in the guide, or an agent fix's conversation; any other link opens GitHub's own page.
+tern.route.link(function(link: LinkRequest, cx: WindowCx): RouteDecision?
+ local chat = Links.chatRoute(link.url)
+ if chat then
+  openChat(chat, link, cx)
+  return { handled = true }
+ end
  local route = Links.openRoute(link.url)
  if not route then return nil end
  return { block = "prguide.guide", args = Links.routeArgs(route) }

@@ -196,6 +196,8 @@ ACTIONS["hub-focused"] = function(b, cx)
 	State.setRecent(b.s, Fetch.recentPrs())
 	b.sched.focusedAt = Host.time()
 	rearm(b, cx)
+	-- Back from Open agent chat: what it changed in a ready fix becomes a commit to review.
+	AgentRun.syncChats(b, cx)
 end
 
 -- The window sends this when ⌥⇧⌘R (true) or ⌥⌘R (false) finds the hub already open.
@@ -377,6 +379,8 @@ ACTIONS["card-agent-folder"] = function(b, cx, key) beginAgent(b, cx, key, "fold
 ACTIONS["card-agent-stop"] = AgentRun.stopAgent
 ACTIONS["card-agent-retry"] = AgentRun.retryAgent
 ACTIONS["card-agent-worktree"] = AgentRun.openWorktree
+-- ⇧O: the agent fix's saved conversation in an omp pane, or that pane again while it is open.
+ACTIONS["card-agent-chat"] = AgentRun.openChat
 ACTIONS["card-summarize"] = Ops.summarize
 
 ACTIONS["card-method"] = function(b, cx, key)
@@ -761,6 +765,7 @@ local block: BlockDef<Block> = {
 			},
 			closed = false, refetch = false, show = nil, step = 0, records = {}, detecting = {}, flakeTried = {},
 			histories = nil :: any, pages = { list = {}, shown = nil, opening = {} },
+			skew = if fixture then Host.time() - now else 0, chats = {},
 		}
 		b.histories = Github.historyCache(b.github)
 		if fixture then
@@ -791,9 +796,12 @@ local block: BlockDef<Block> = {
 			-- How each repo merges is known from the first frame, before any refresh.
 			loadMerges(b)
 			loadAgent(b, cx)
+			AgentRun.resumeAgent(b)
 			loadTandem(b, cx)
 			rearm(b, cx)
 		end
+		-- A board that opens on an agent at work (a sample) starts its loading rows' clock after the first render.
+		if State.working(s) then Host.timer(0, function() draw(b, cx) end) end
 		return b
 	end,
 	title = function(b: Block): string?

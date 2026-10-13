@@ -125,7 +125,7 @@ local function cards(s: State.State, list: { State.Card }): { Node }
 				span("gp-hub-repo-n", tostring(count)),
 			}))
 		end
-		table.insert(out, Card.view(card, s.now, s.checks ~= nil and s.checks.key == card.pr.key))
+		table.insert(out, Card.view(card, s.now, s.checks ~= nil and s.checks.key == card.pr.key, s.clock))
 	end
 	return out
 end

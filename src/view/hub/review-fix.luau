@@ -1,5 +1,6 @@
 --!strict
 -- The retained agent fix as review steps and tagged commit lines. Reads prepared state; builds nodes only.
+local AgentFix = require("../../hub/agent-fix")
 local State = require("../../hub/state")
 local Text = require("../../text")
 local Ui = require("../ui")
@@ -37,26 +38,32 @@ local function header(page: State.ReviewPage): Node
 	elseif page.loading then
 		status = { span("gp-status-text", "Reading fix…") }
 	else
+		local chatted = page.fix.origin ~= nil
 		status = {
-			span("gp-status-text", page.count .. " of " .. #page.fix.hunks .. (if page.bot then " changes reviewed" else " conflicts reviewed")),
+			span("gp-status-text", page.count .. " of " .. #page.fix.hunks .. (if page.bot or chatted then " changes reviewed" else " conflicts reviewed")),
 			span("gp-status-sep", "·"),
-			span("gp-rfix-agent", if page.fix.usedAgent then "Fix by agent" else "Merged without the agent"),
+			span("gp-rfix-agent", if chatted then "Fix updated from chat" elseif page.fix.usedAgent then "Fix by agent" else "Merged without the agent"),
 			span("gp-fx-repo", string.sub(page.fix.commit, 1, 7) .. " · " .. page.fix.branch),
 		}
+		if chatted and not page.all then
+			table.insert(status, span("gp-status-sep", "·"))
+			table.insert(status, span("gp-status-text", "Review again before Push"))
+		end
 	end
+	local actions: { Node } = {}
+	if page.fix.session then table.insert(actions, button("Open agent chat", "⇧O", "card-agent-chat=" .. page.pr.key, nil, page.busy or page.ask or cleanup)) end
+	table.insert(actions, button("Discard fix", "D", "review-fix-discard", nil, page.busy or page.ask or cleanup))
+	table.insert(actions, el("button", {
+		class = "gp-rv-button" .. (if page.all and page.completion ~= "discard" then "" else " gp-rfix-locked"),
+		disabled = page.busy or page.ask or page.completion == "discard",
+		attrs = { ["aria-disabled"] = not page.all or page.busy or page.ask or page.completion == "discard" },
+		actions = { click = "review-fix-push" },
+	}, { span("gp-rv-button-label", pushLabel), Ui.keys("P") }))
 	return el("div", { class = "gp-header gp-fx-head", key = "header" }, {
 		el("div", { class = "gp-title", key = "title" }, {
 			back(page.busy or page.ask),
 			span("gp-title-num", "#" .. page.pr.number), span("gp-title-text", page.pr.title), Ui.spacer(),
-			el("div", { class = "gp-fx-hdr gp-rfix-actions" }, {
-				button("Discard fix", "D", "review-fix-discard", nil, page.busy or page.ask or cleanup),
-				el("button", {
-					class = "gp-rv-button" .. (if page.all and page.completion ~= "discard" then "" else " gp-rfix-locked"),
-					disabled = page.busy or page.ask or page.completion == "discard",
-					attrs = { ["aria-disabled"] = not page.all or page.busy or page.ask or page.completion == "discard" },
-					actions = { click = "review-fix-push" },
-				}, { span("gp-rv-button-label", pushLabel), Ui.keys("P") }),
-			}),
+			el("div", { class = "gp-fx-hdr gp-rfix-actions" }, actions),
 		}),
 		el("div", { class = "gp-status gp-fx-status gp-rfix-status", key = "status" }, status),
 	})
@@ -68,7 +75,7 @@ local function outline(page: State.ReviewPage): Node
 		local here, reviewed = index == page.cur, page.reviewed[hunk.id] == true
 		local detail: { Node } = {}
 		if here then
-			if hunk.resolved then table.insert(detail, span("gp-fx-muted", if hunk.resolved.by == "rule" then "Resolved by rule" else (if page.bot then "Agent's changes" else "Agent's resolution"))) end
+			if hunk.resolved then table.insert(detail, span("gp-fx-muted", if hunk.resolved.by == "rule" then "Resolved by rule" elseif AgentFix.isChat(hunk) then "Changed in the chat" else (if page.bot then "Agent's changes" else "Agent's resolution"))) end
 			table.insert(detail, Ui.check(reviewed, "Reviewed", "review-fix-reviewed=" .. index, "⏎"))
 		end
 		table.insert(rows, el("div", {
@@ -78,7 +85,7 @@ local function outline(page: State.ReviewPage): Node
 			el("div", { class = "gp-ol-step" .. (if here then " gp-ol-here" else "") }, {
 				el("span", { class = "gp-ol-dot" .. (if reviewed then " gp-fx-dot-done" else "") }, { Ui.icon(if reviewed then "check" else "file-code") }),
 				el("span", { class = "gp-ol-steptitle gp-fx-st-t" }, {
-					span("", (if page.bot then "Change " else "Conflict ") .. index .. " of " .. #page.fix.hunks), span("gp-fx-pth", hunk.path),
+					span("", (if AgentFix.isChat(hunk) then "Chat change " elseif page.bot then "Change " else "Conflict ") .. index .. " of " .. #page.fix.hunks), span("gp-fx-pth", hunk.path),
 				}),
 			}),
 			el("div", { class = "gp-ol-stepbody" }, detail),

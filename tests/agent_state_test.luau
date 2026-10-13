@@ -27,6 +27,15 @@ local function main(s: State.State, key: string, label: string?, act: string?, s
 	assert(pressed and pressed.act == act and pressed.value == key, "button and key must dispatch the same ACTIONS entry")
 end
 
+-- A ready fix's split button: Review (⏎ opens Review fix, as a click does), its alternatives behind ▾.
+local function reviewMain(s: State.State, key: string, label: string)
+	local found = card(s, key)
+	assert(found.main and found.main.label == label and found.main.act == "open" and found.main.key == "⏎", "a ready fix opens Review fix")
+	State.select(s, key)
+	local pressed = Keys.hubAction(s, { name = "enter" } :: any)
+	assert(pressed and pressed.act == "hub-open")
+end
+
 local function begin(s: State.State, key: string)
 	assert(State.beginAgent(s, key, Cards.asOf))
 	assert(State.agentOutcome(s, key, { kind = "running", run = Cards.run(key) }))
@@ -251,7 +260,7 @@ return function()
 	assert(starts == 1 and s.agents[Cards.keys.failed] == nil and State.agentRunning(s) == key)
 	assert(not State.beginAgent(s, key, Cards.asOf))
 	finish(s, key)
-	main(s, key, nil, nil, nil)
+	reviewMain(s, key, "Review")
 	local ready = s.agents[key]
 	assert(ready and ready.kind == "ready")
 	if ready and ready.kind == "ready" then
@@ -287,7 +296,7 @@ return function()
 	begin(s, key)
 	main(s, key, "Stop", "card-agent-stop", "A")
 	finish(s, key)
-	main(s, key, nil, nil, nil)
+	reviewMain(s, key, "Review")
 	s = fresh()
 	begin(s, key)
 	assert(State.agentEvent(s, key, { kind = "stopped" }))
@@ -319,7 +328,7 @@ return function()
 	State.project(fixture)
 	main(fixture, Cards.keys.running, "Stop", "card-agent-stop", "A")
 	assert(card(fixture, Cards.keys.running).agentMessage == "Resolving conflicts…" and card(fixture, Cards.keys.running).chips[1].kind == "agent")
-	main(fixture, Cards.keys.ready, nil, nil, nil)
+	reviewMain(fixture, Cards.keys.ready, "Review")
 	main(fixture, Cards.keys.failed, "Try again", "card-agent-retry", "A")
 	assert(card(fixture, Cards.keys.failed).agentPath == "/pool/acme/web/wt-1" and card(fixture, Cards.keys.failed).more[1].act == "card-agent-worktree")
 	main(fixture, Cards.keys.no_clone, "Clone repo", "card-agent-clone", "A")

@@ -207,7 +207,7 @@ local function fixesKey(s: HubState.State, key: Key): Action?
 	if main and label ~= nil and s.route and (main.key == label or (label == "⇧A" and main.act == "card-summarize")) then return act(main.act, s.route.key) end
 	-- When Re-run moved first, the agent is the card's alternative and keeps its key.
 	local card = if s.route then HubState.card(s, s.route.key) else nil
-	if card and (label == "A" or label == "⇧A" or label == "O") and s.route then
+	if card and (label == "A" or label == "⇧A" or label == "O" or label == "⇧O") and s.route then
 		for _, more in card.more do
 			if more.key == label then return act(more.act, s.route.key) end
 		end
@@ -284,6 +284,7 @@ function M.hubAction(s: HubState.State, key: Key): Action?
 		if label == "B" then return act("review-fix-original") end
 		if label == "D" then return act("review-fix-discard") end
 		if label == "P" then return act("review-fix-push") end
+		if label == "⇧O" and page.fix.session then return act("card-agent-chat", page.pr.key) end
 		return nil
 	end
 	if mode == "search" then

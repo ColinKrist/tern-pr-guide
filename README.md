@@ -160,7 +160,15 @@ failed checks from the same page.
   **All checks**, under the steps, opens the checks list (`V`).
 
 - **Agent fixes.** Your OMP agent resolves a conflict or addresses a bot review in an isolated
-  worktree, never in your checkout. You follow its progress on the card.
+  worktree, never in your checkout. You follow its progress on the card: the step it is on, an
+  estimated progress bar and a clock, as you do for a feedback summary. A fix that is ready
+  survives a plugin reload and waits for review again; a run the reload stopped returns its
+  worktree to the pool.
+- **Open agent chat.** After a conflict fix ends, `⇧O` resumes the agent's conversation in an `omp`
+  pane in the fix worktree, so you can ask why or have it change something. Back in the hub, edits
+  made there become a new commit, the card reads **Review again**, and Push stays locked until you
+  review that commit. Bot-comment fixes keep no conversation. Conversations older than 30 days
+  are removed.
 - **Fewer tokens.** Conflicts are fixed by merging the base branch in. A clean merge costs no
   tokens, lockfiles are regenerated rather than merged, and only the conflicts left over go to the
   agent.
@@ -319,6 +327,7 @@ Press `?` for shortcuts that apply to the current page. In the hub, the panel fo
 | `V` | Show the selected card's checks: `j` `k` move, `⏎` opens a check, `Esc` closes |
 | `Q` | Re-request review |
 | `O` | Choose a clone or open a retained worktree |
+| `⇧O` | Open agent chat: resume the agent's conversation after a conflict fix ends, or focus its pane when it is open |
 | `Space` or ⌘-click | Select cards for a batch action |
 | `⇧X` | Select stale PRs |
 | `X` | Remove an added review request or close selected stale PRs |
@@ -379,6 +388,7 @@ Replies and resolves write to GitHub right away.
 | `t` | Next view: Fixes, Guided, Files |
 | `G` | Open GitHub's conflict editor |
 | `B` | Show bot comments |
+| `⇧O` | Open agent chat, after an agent fix ends |
 | `Esc` | Back to the hub with the same card selected |
 | `?` | Show shortcuts for the fixes page |
 
@@ -391,6 +401,7 @@ Replies and resolves write to GitHub right away.
 | `B` | Show the original conflict |
 | `P` | Push, once every conflict is reviewed |
 | `D` | Discard the fix, after a confirmation |
+| `⇧O` | Open agent chat in the fix worktree |
 | `Esc` | Back to the hub |
 | `?` | Show shortcuts for Review fix |
 

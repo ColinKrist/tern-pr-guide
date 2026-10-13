@@ -16,7 +16,7 @@ local Sync = require("./sync")
 
 type State = State.State
 
-export type Timers = { probe: TimerHandle?, refresh: TimerHandle?, checks: TimerHandle?, debounce: TimerHandle?, ring: TimerHandle? }
+export type Timers = { probe: TimerHandle?, refresh: TimerHandle?, checks: TimerHandle?, debounce: TimerHandle?, ring: TimerHandle?, pulse: TimerHandle? }
 
 -- What the schedule reads, kept between ticks. Times are seconds since the epoch.
 export type Sched = {
@@ -85,6 +85,8 @@ export type Block = {
 	flakeTried: { [string]: boolean }, -- cards (by key and head) whose evidence was read this session, success or not
 	step: number, -- fixture only: how many `refreshes` entries ⌘R has applied
 	pages: Pages,
+	skew: number, -- seconds the board's clock runs behind the wall clock: a sample board keeps its recorded time
+	chats: { [string]: string }, -- by card key: the head a chat sync last read, so a change it could not take is read once
 }
 
 export type Handler = (b: Block, cx: BlockCx, value: string) -> ()
@@ -183,17 +185,39 @@ local function stop(b: Block)
 	State.closeAgent(b.s)
 	if flight then closeAgentFlight(b, flight) end
 	local timers = b.timers :: any
-	for _, name in { "probe", "refresh", "checks", "debounce", "ring" } do
+	for _, name in { "probe", "refresh", "checks", "debounce", "ring", "pulse" } do
 		local handle: TimerHandle? = timers[name]
 		if handle then handle:cancel() end
 		timers[name] = nil
 	end
 end
 
--- Renders; a render that raises means the block is gone.
+-- Loading rows count each second while an agent works. A draw slower than SLOW_DRAW_MS (a large board) waits
+-- SLOW_PULSE_MS for the next, so the tick stays far inside Tern's 50 ms timer budget.
+local PULSE_MS, SLOW_PULSE_MS, SLOW_DRAW_MS = 1000, 5000, 20
+
+local pulse: (b: Block, cx: BlockCx, wait: number) -> ()
+
+-- Renders; a render that raises means the block is gone. A draw while an agent works starts the pulse.
 local function draw(b: Block, cx: BlockCx)
 	if b.closed then return end
-	if not pcall(function() cx:render() end) then stop(b) end
+	local working = State.working(b.s)
+	if working then b.s.clock = Host.time() - b.skew end
+	if not pcall(function() cx:render() end) then return stop(b) end
+	if working and not b.timers.pulse then pulse(b, cx, PULSE_MS) end
+end
+
+pulse = function(b, cx, wait)
+	b.timers.pulse = Host.timer(wait, function()
+		b.timers.pulse = nil
+		if b.closed or not State.working(b.s) then return end
+		b.s.clock = Host.time() - b.skew
+		-- A review page on show hides the board: keep counting, draw nothing.
+		if b.pages.shown then return pulse(b, cx, PULSE_MS) end
+		local started = Host.now()
+		if not pcall(function() cx:render() end) then return stop(b) end
+		pulse(b, cx, if Host.now() - started > SLOW_DRAW_MS then SLOW_PULSE_MS else PULSE_MS)
+	end)
 end
 
 -- How long an arrival's ring or wash is held before it fades, and how long the fade takes (--gp-dur-rare, plus a
@@ -237,6 +261,8 @@ local function isoNow(): string
 end
 
 return {
+	-- `Block.chats` while a chat sync reads the worktree; Push waits for it.
+	CHAT_SYNCING = "syncing",
 	FIXTURES = FIXTURES,
 	frameLater = frameLater,
 	revealSelected = revealSelected,

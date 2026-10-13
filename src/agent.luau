@@ -52,7 +52,13 @@ local M = {}
 -- `omp -p` reports nothing until it ends, so this eases toward 90% at `expected` and then creeps,
 -- never claiming more than 95% before the run is done.
 function M.progress(seconds: number, expected: number): number
- return math.min(0.95, 1 - math.exp(-2.3 * seconds / math.max(expected, 1)))
+ return math.min(0.95, 1 - math.exp(-2.3 * math.max(seconds, 0) / math.max(expected, 1)))
+end
+
+-- A run's clock: "1:07" after 67 seconds.
+function M.clock(seconds: number): string
+ local whole = math.max(0, math.floor(seconds))
+ return string.format("%d:%02d", whole // 60, whole % 60)
 end
 
 -- OMP's settings, under the home directory.
