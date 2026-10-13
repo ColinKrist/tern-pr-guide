@@ -97,6 +97,11 @@ local function readingKey(s: State.State, key: Key): Action?
  if name == "enter" and key.shift then return act("mark-change", step.change) end
  if name == "enter" then return act("review-step", step.key) end
  if name == "f" then return act("mark-file", step.file) end
+ -- Update branch, without opening Actions: only when the host offers it for this PR.
+ if name == "u" and not key.shift then
+  local update = State.actionIndex(s, "U")
+  return if update then act("actions-run", update) else nil
+ end
  if name == "a" then return act("decide-current", "added") end
  if name == "d" then return act("decide-current", "dismissed") end
  if name == "c" then return act("comment-step") end

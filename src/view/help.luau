@@ -41,6 +41,11 @@ local function groups(kind: Kind): { Group }
    if not kind.switch then table.insert(keys, { "⇧ G", "generate AI guide" }) end
    if kind.hosted then table.insert(keys, { "esc", "back to the board" }) end
    table.insert(keys, { "⇧ P", "actions: mark all reviewed, open on GitHub and more" })
+   if kind.hosted then
+    for _, row in kind.hosted.actions do
+     if row.key == "U" then table.insert(keys, { "u", "update branch" }) end
+    end
+   end
    if kind.hosted and kind.hosted.status then table.insert(keys, { "v", "reviewers and checks" }) end
    table.insert(keys, { "⇧ R", "generate LLM review" })
    table.insert(keys, { "⇧ M", "settings: AI models, effort and lens" })

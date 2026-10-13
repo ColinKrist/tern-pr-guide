@@ -231,6 +231,11 @@ return function()
 	local rows = State.actionRows(s)
 	assert(rows[1].host and rows[4].host and not rows[2].host and not rows[3].host, "the host runs its rows, the page its own")
 	s.actionsCursor = nil
+	assert(pressed("u") == "nil", "u on the page does nothing when the host offers no Update branch")
+	table.insert((s.hosted :: State.Hosted).actions, 2, { act = "card-update", value = "k", label = "Update branch", key = "U", group = "land" })
+	assert(pressed("u") == "actions-run=2", "u runs the Update branch row: " .. pressed("u"))
+	assert(pressed("m") == "mark-all" and pressed("g") == "open-github", "m and g keep their page keys")
+	s.actionsCursor = nil
 	s.hosted = nil
 
 	-- Arrowing down a list where every model has its own provider heading keeps the highlighted row

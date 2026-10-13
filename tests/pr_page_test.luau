@@ -6,6 +6,7 @@
 -- reviewers and checks.
 local Block: any = require("../src/hub/block")
 local Host: any = require("../src/host")
+local HubState = require("../src/hub/state")
 local Review = require("../src/review")
 local Ui: any = require("../src/view/ui")
 
@@ -126,6 +127,15 @@ return function()
 		assert(b.s.confirm and b.s.confirm.kind == "close", "X in the menu chooses Close")
 		press("escape")
 		assert(b.s.confirm == nil and b.pages.shown ~= nil, "Esc cancels the question, not the page")
+
+		-- `u` updates the branch only when the PR offers it: the Ready card doesn't, so nothing is sent.
+		local said = #toasts
+		press("u")
+		assert(#toasts == said and b.s.busy[KEY] == nil and page.actionsCursor == nil, "u does nothing without Update branch")
+		for _, pr in b.s.prs do if pr.key == KEY then pr.behind = true end end
+		HubState.project(b.s)
+		press("u")
+		assert(toasts[#toasts] == "The sample board doesn't update branches", tostring(toasts[#toasts]))
 
 		-- `v` opens the reviewers and checks under the page's status marks; its keys are the hub's until `v` closes it.
 		press("v")
