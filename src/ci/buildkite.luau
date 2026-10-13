@@ -53,13 +53,18 @@ function M.parseFailures(doc: any): { Failure }?
 	return out
 end
 
--- `bk job log --agent`: plain text, Buildkite's group markers ("+++ Run tests") kept as plain headings.
-function M.parseLog(stdout: string): { string }
-	local out: { string } = {}
-	for line in string.gmatch(stdout, "([^\n]*)\n?") do
-		table.insert(out, (string.gsub(line, "^[~+%-^][~+%-^][~+%-^] ", "")))
+-- `bk job log --agent`: plain text, Buildkite's group markers ("+++ Run tests") read as headings, and the runs it
+-- left out ("[… 212 lines omitted …]") as gaps.
+function M.parseLog(stdout: string): { Log.Line }
+	local raw: { string } = {}
+	for line in string.gmatch(stdout, "([^\n]*)\n?") do table.insert(raw, line) end
+	while #raw > 0 and string.match(raw[#raw], "^%s*$") do table.remove(raw) end
+	local out: { Log.Line } = {}
+	for _, line in raw do
+		local omitted = string.match(line, "^%[… (%d+) lines? omitted …%]$")
+		local gap: Log.Line? = if omitted then { kind = "gap", count = tonumber(omitted) :: number } else nil
+		table.insert(out, gap or Log.line(line))
 	end
-	while #out > 0 and string.match(out[#out], "^%s*$") do table.remove(out) end
 	return out
 end
 

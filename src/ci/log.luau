@@ -9,8 +9,12 @@ export type Run = (argv: { string }, opts: { timeout_ms: number?, env: { [string
 -- The part of a failing check a CI needs to find its log: GitHub's details link and, for Actions, the run.
 export type Check = { name: string, url: string, runId: number? }
 
+-- What a log line is, for how the page draws it: an error, a step's heading, a command the job ran, or the rest.
+export type Level = "error" | "heading" | "command" | "plain"
+-- A line of the log, or a run of lines the CI or the cut left out.
+export type Line = { kind: "text", text: string, level: Level } | { kind: "gap", count: number }
 -- One failed job or step, already cut down to the lines around its errors.
-export type Section = { title: string, lines: { string } }
+export type Section = { title: string, lines: { Line } }
 export type Log = { sections: { Section } }
 -- A place in the pull request's files that the log names, with the log line that names it.
 export type Ref = { path: string, line: number, text: string }
@@ -32,6 +36,57 @@ export type Group = { provider: Provider, checks: { Check } }
 local M = {}
 
 local MAX_REFS = 5
+
+-- How a raw log line reads, first match wins. `strip` is the CI's marker the page drops and keeps the rest of.
+type Rule = { level: Level, pattern: string, strip: boolean? }
+local RULES: { Rule } = {
+	{ level = "error", pattern = "^##%[error%]", strip = true }, -- Actions' own error flag
+	{ level = "heading", pattern = "^##%[group%]", strip = true }, -- an Actions step
+	{ level = "error", pattern = "^%-%-%- FAIL" }, -- go test, not a Buildkite group
+	{ level = "heading", pattern = "^[~+%-^][~+%-^][~+%-^] ", strip = true }, -- a Buildkite group: ---, +++, ~~~
+	{ level = "command", pattern = "^##%[command%]", strip = true },
+	{ level = "error", pattern = "%f[%a][Ee]rror[%s:%[]" },
+	{ level = "error", pattern = "error TS%d" },
+	{ level = "error", pattern = "FAIL" },
+	{ level = "error", pattern = "Traceback" },
+	{ level = "error", pattern = "panic:" },
+	{ level = "error", pattern = "^%s*●" }, -- jest
+	{ level = "error", pattern = "^E   " }, -- pytest
+	{ level = "error", pattern = "✕" },
+	{ level = "error", pattern = "✗" },
+	{ level = "error", pattern = "🚨" },
+	{ level = "command", pattern = "^%$ " },
+}
+
+local function ruleFor(text: string): Rule?
+	for _, rule in RULES do
+		if string.find(text, rule.pattern) then return rule end
+	end
+	return nil
+end
+
+function M.classify(text: string): Level
+	local rule = ruleFor(text)
+	return if rule then rule.level else "plain"
+end
+
+-- A raw log line as the page shows it: classified, with a CI's marker dropped ("##[group]Run tests" → "Run tests").
+-- Any other Actions marker ("##[warning]") is dropped too.
+function M.line(raw: string): Line
+	local rule = ruleFor(raw)
+	local text = if rule and rule.strip then string.gsub(raw, rule.pattern, "") else raw
+	text = string.gsub(text, "^##%[%a+%]", "")
+	return { kind = "text", text = text, level = if rule then rule.level else "plain" }
+end
+
+-- How many lines of `section` read as errors.
+function M.errors(section: Section): number
+	local count = 0
+	for _, line in section.lines do
+		if line.kind == "text" and line.level == "error" then count += 1 end
+	end
+	return count
+end
 
 -- The provider that owns `check`, the first in order.
 function M.providerFor(providers: { Provider }, check: Check): Provider?
@@ -77,7 +132,8 @@ function M.refs(log: Log, changedPaths: { string }): { Ref }
 	local out: { Ref } = {}
 	local seen: { [string]: boolean } = {}
 	for _, section in log.sections do
-		for _, text in section.lines do
+		for _, entry in section.lines do
+			local text = if entry.kind == "text" then entry.text else ""
 			for raw, line in string.gmatch(text, "([%w%._%-/]+%.%w+):(%d+)") do
 				for _, path in changedPaths do
 					local tail = string.sub(raw, -#path)

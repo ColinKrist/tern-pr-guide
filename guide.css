@@ -1451,6 +1451,15 @@
 .gp-fx-log .gp-body { padding: 4px 0; }
 .gp-fx-logskip, .gp-fx-logskip:hover { cursor: default; background: var(--sf-shade); }
 .gp-fx-logskip:hover .gp-gap-gut, .gp-fx-logskip:hover .gp-gap-count { color: var(--t3); }
+/* Log lines by level: errors take the removed-row tint and a Removed Red bar, steps read as quiet sans labels. */
+.gp-fx-lplain .gp-code { color: var(--t2); }
+.gp-fx-lcmd .gp-code { color: var(--t3); }
+.gp-fx-lerr { background: rgba(210,70,70,0.14); box-shadow: inset 3px 0 0 var(--gp-removed); }
+.gp-fx-lerr .gp-code { color: var(--t1); }
+.gp-fx-lhead { padding-top: 8px; }
+.gp-fx-lhead:first-child { padding-top: 2px; }
+.gp-fx-lhead .gp-code { font-family: var(--sans); font-size: 12px; font-weight: 600; color: var(--t3); }
+.gp-fx-lcount { font-size: 12.5px; color: var(--gp-removed); }
 .gp-fx-chk { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding: 0 4px; }
 .gp-fx-cname { font-family: var(--tv-font); font-size: 15px; font-weight: 650; }
 .gp-fx-cfail { font-family: var(--sans); font-size: 13px; font-weight: 600; color: var(--gp-danger-text); }

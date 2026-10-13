@@ -127,7 +127,8 @@ and conflicts, each next to its code. Reply to a thread, resolve it, read a chec
 failed checks from the same page.
 
 - **Check logs.** A failing check with no annotations shows its log, cut to the lines around the
-  error, with the changed lines it names shown in their files. This works for GitHub Actions
+  error, with the changed lines it names shown in their files. Error lines are marked in red, with
+  their count in the log's header, and the runner's setup is left out. This works for GitHub Actions
   (through `gh`) and Buildkite (through the [`bk` CLI](https://github.com/buildkite/cli), signed in
   with `bk auth login`; PR Guide asks for the organization in the check's link). Other CI shows the
   check's summary, and `⇧L` opens its page.

@@ -210,7 +210,7 @@ A failing check with no usable annotation shows its log on the fixes page, and R
 
 | Module | One job | Verdict | Tests |
 |---|---|---|---|
-| `src/ci/log.luau` | The shape of a failed-check log (`Log`, `Section`, `Load`), the `Provider` contract (`owns`, `read`, `retry`), `providerFor`, `byProvider` (failing checks by the module that owns them), `each` (one call after another) and `refs` (the changed files a log names). Pure. | Port 1:1. | `ci_log_test` |
+| `src/ci/log.luau` | The shape of a failed-check log (`Log`, `Section`, typed `Line`s, `Load`), `classify` and `line` (a raw line's level, its CI marker dropped), `errors`, the `Provider` contract (`owns`, `read`, `retry`), `providerFor`, `byProvider` (failing checks by the module that owns them), `each` (one call after another) and `refs` (the changed files a log names). Pure. | Port 1:1. | `ci_log_test` |
 | `src/ci/actions.luau` | GitHub Actions logs: which checks are Actions jobs, the `gh run view --log-failed` command (`command`), the cut that keeps 12 lines before and 3 after each error, 120 a job at most (`parse`), and `gh run rerun --failed` once per run (`retryCommand`). | Port `jobId` and `parse` 1:1. Replace the commands with the Actions API ([B.3.1](#b31-ci-logs)). | `ci_log_test` |
 | `src/ci/buildkite.luau` | Buildkite logs: which checks are Buildkite builds, the `bk build view`, `bk job log` and `bk job retry` commands, and the readers of their output. | Port `build`, `parseFailures` and `parseLog` 1:1. Replace `bk` with the Buildkite REST API ([B.3.1](#b31-ci-logs)). | `ci_log_test` |
 
@@ -449,7 +449,9 @@ From `Provider` in `src/ci/log.luau`. `hub/details.luau` asks the first provider
 
 ```ts
 type Check = { name: string; url: string; runId?: number }
-type Section = { title: string; lines: string[] }
+type Level = "error" | "heading" | "command" | "plain"
+type Line = { kind: "text"; text: string; level: Level } | { kind: "gap"; count: number }
+type Section = { title: string; lines: Line[] }
 type Log = { sections: Section[] }
 type Load = { state: "loading" } | { state: "loaded"; log: Log } | { state: "failed"; reason: string }
 interface Provider {

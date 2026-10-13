@@ -378,8 +378,13 @@ local function pinned(check: Fixes.FailingCheck, marks: { Fixes.Annotation }, de
 	return out
 end
 
--- A failed job's log in the excerpt's frame: its name, then its lines in the terminal font; the runs a CI left out
--- are muted bars like the excerpt's hidden lines.
+-- A failed job's log in the excerpt's frame: its name and error count, then its lines in the terminal font, errors
+-- marked in Removed Red and step headings as quiet labels; the runs a CI left out are muted bars like the excerpt's
+-- hidden lines.
+local LEVEL_CLASS: { [Log.Level]: string } = {
+	error = "gp-row gp-fx-lerr", heading = "gp-row gp-fx-lhead", command = "gp-row gp-fx-lcmd", plain = "gp-row gp-fx-lplain",
+}
+
 local function logBlock(section: Log.Section, index: number): Node
 	local body: { Node } = {}
 	local run: { Node } = {}
@@ -388,21 +393,22 @@ local function logBlock(section: Log.Section, index: number): Node
 		table.insert(body, lineRun(run, "h" .. #body))
 		run = {}
 	end
-	for k, text in section.lines do
-		local omitted = string.match(text, "^%[?… (%d+) lines? omitted")
-		if omitted then
+	for k, line in section.lines do
+		if line.kind == "gap" then
 			flush()
-			local count = tonumber(omitted) :: number
 			table.insert(body, el("div", { class = "gp-gap gp-fx-gap gp-fx-logskip", key = "skip" .. k }, {
-				span("gp-gap-gut", "⋯"), span("gp-gap-count", count .. " " .. (if count == 1 then "line" else "lines") .. " left out"),
+				span("gp-gap-gut", "⋯"), span("gp-gap-count", line.count .. " " .. (if line.count == 1 then "line" else "lines") .. " left out"),
 			}))
 		else
-			table.insert(run, el("div", { class = "gp-row", key = "r" .. k }, { el("span", { class = "gp-code", text = text }) }))
+			table.insert(run, el("div", { class = LEVEL_CLASS[line.level], key = "r" .. k }, { el("span", { class = "gp-code", text = line.text }) }))
 		end
 	end
 	flush()
+	local errors = Log.errors(section)
+	local head: { Node } = { span("gp-fbase", if section.title ~= "" then section.title else "Log"), Ui.spacer() }
+	if errors > 0 then table.insert(head, span("gp-fx-lcount", errors .. (if errors == 1 then " error" else " errors"))) end
 	return el("div", { class = "gp-excerpt gp-fx-log", key = "log" .. index }, {
-		el("div", { class = "gp-fhead", key = "fhead" }, { span("gp-fbase", if section.title ~= "" then section.title else "Log") }),
+		el("div", { class = "gp-fhead", key = "fhead" }, head),
 		el("div", { class = "gp-body", key = "body" }, body),
 	})
 end

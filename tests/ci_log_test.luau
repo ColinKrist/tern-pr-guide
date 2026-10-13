@@ -47,11 +47,25 @@ local function retry(provider: Log.Provider, checks: { Log.Check }): (number?, s
 	return count, err
 end
 
-local function has(lines: { string }, text: string): boolean
+-- The level of the text line that reads `text`, or nil when no line does.
+local function levelOf(lines: { Log.Line }, text: string): Log.Level?
 	for _, line in lines do
-		if line == text then return true end
+		if line.kind == "text" and line.text == text then return line.level end
 	end
-	return false
+	return nil
+end
+
+-- The lines as one string: "level:text" per text line, "gap:N" per gap.
+local function show(lines: { Log.Line }): string
+	local out: { string } = {}
+	for _, line in lines do
+		if line.kind == "text" then
+			table.insert(out, line.level .. ":" .. line.text)
+		else
+			table.insert(out, "gap:" .. line.count)
+		end
+	end
+	return table.concat(out, "\n")
 end
 
 local ACTIONS_CHECK: Log.Check = { name = "build", url = "https://github.com/acme/web/actions/runs/902/job/1", runId = 902 }
@@ -69,19 +83,51 @@ return function()
 	assert(Log.providerFor(providers, ACTIONS_CHECK) == actions and Log.providerFor(providers, BUILD_CHECK) == buildkite)
 	assert(Log.providerFor(providers, OTHER_CHECK) == nil)
 
+	-- Each line reads as one level, first rule first; the CI's own markers are dropped from what shows.
+	for text, level in {
+		["Error: Cannot find module './x'"] = "error", ["src/a.ts(3,1): error TS2304: Cannot find name 'x'."] = "error",
+		[" FAIL  src/a.test.ts"] = "error", ["  ● cart › reprices"] = "error", ["E   AssertionError: 1 != 2"] = "error",
+		["🚨 Error: The command exited with status 1"] = "error", ["##[error]Process completed with exit code 1."] = "error",
+		["--- FAIL: TestReprice (0.01s)"] = "error", ["Traceback (most recent call last):"] = "error",
+		["##[group]Run npm test"] = "heading", ["+++ :jest: Unit tests"] = "heading", ["--- Installing"] = "heading",
+		["~~~ Running commands"] = "heading", ["$ yarn jest --ci"] = "command", ["##[command]/usr/bin/git log"] = "command",
+		["Tests: 1 failed, 211 passed"] = "plain", ["errors: 0"] = "plain", ["Terror is a word"] = "plain", [""] = "plain",
+	} :: { [string]: Log.Level } do
+		assert(Log.classify(text) == level, text .. " reads as " .. Log.classify(text))
+		local line = Log.line(text)
+		assert(line.kind == "text" and line.level == level, text)
+	end
+	local heading = Log.line("##[group]Run npm test")
+	assert(heading.kind == "text" and heading.text == "Run npm test")
+	local bkHeading = Log.line("+++ :jest: Unit tests")
+	assert(bkHeading.kind == "text" and bkHeading.text == ":jest: Unit tests")
+	local flagged = Log.line("##[error]Process completed with exit code 1.")
+	assert(flagged.kind == "text" and flagged.text == "Process completed with exit code 1.")
+	local warned = Log.line("##[warning]Node 16 is deprecated")
+	assert(warned.kind == "text" and warned.text == "Node 16 is deprecated" and warned.level == "plain")
+
 	-- Actions: one job's failed steps, without timestamps, colors or group markers, cut to the lines around the error.
 	assert(table.concat(Actions.command("acme/web", ACTIONS_CHECK), " ") == "gh run view 902 --repo acme/web --log-failed --job 1")
 	local log = read(actions, ACTIONS_CHECK, "acme/web") :: Log.Log
 	assert(#log.sections == 1 and log.sections[1].title == "fail", "one section per job")
 	local lines = log.sections[1].lines
-	assert(has(lines, "Process completed with exit code 1.") and has(lines, "Run exit 1") and has(lines, "exit 1"), table.concat(lines, "\n"))
-	assert(string.match(lines[1], "^… %d+ lines omitted$"), lines[1])
+	assert(levelOf(lines, "Process completed with exit code 1.") == "error" and levelOf(lines, "Run exit 1") == "heading", show(lines))
+	assert(levelOf(lines, "exit 1") == "plain" and Log.errors(log.sections[1]) == 1, show(lines))
+	-- The runner's setup before the first step is left out, though it is within the window above the error.
+	local first, second = lines[1], lines[2]
+	assert(first.kind == "gap" and first.count == 44, show(lines))
+	assert(second.kind == "text" and second.text == "Run exit 1", show(lines))
+	assert(levelOf(lines, "Prepare all required actions") == nil and levelOf(lines, "Complete job name: fail") == nil, "setup is not kept")
 	for _, line in lines do
-		assert(not string.find(line, "##[", 1, true) and not string.find(line, "\27", 1, true) and not string.match(line, "^%d%d%d%d%-"), line)
+		local text = if line.kind == "text" then line.text else ""
+		assert(not string.find(text, "##[", 1, true) and not string.find(text, "\27", 1, true) and not string.match(text, "^%d%d%d%d%-"), text)
 	end
+	-- An error in the setup is still kept.
+	local setup = Actions.parse("j\ts\tError: no space left on device\nj\ts\tsetup\nj\ts\t##[group]Run make\nj\ts\tmake: ok\n")
+	assert(show(setup.sections[1].lines) == "error:Error: no space left on device\ngap:1\nheading:Run make\nplain:make: ok", show(setup.sections[1].lines))
 	-- A log with no line that reads as an error keeps its tail.
 	local quiet = Actions.parse("j\ts\t2026-10-10T08:46:49.1Z one\nj\ts\t2026-10-10T08:46:49.2Z two\n")
-	assert(#quiet.sections == 1 and table.concat(quiet.sections[1].lines, "|") == "one|two")
+	assert(#quiet.sections == 1 and show(quiet.sections[1].lines) == "plain:one\nplain:two", show(quiet.sections[1].lines))
 	local _, actionsErr = read(Actions.provider(fakeRun({}, { status = 1, stdout = "", stderr = "HTTP 404: Not Found\nmore", timed_out = false })), ACTIONS_CHECK, "acme/web")
 	assert(actionsErr == "HTTP 404: Not Found", actionsErr)
 
@@ -92,8 +138,12 @@ return function()
 	assert(calls[2].argv == "bk job log 0190046e-e199-453b-a302-a21a4d649d31 --agent --max-tokens 1500")
 	assert(calls[1].env and calls[1].env.BUILDKITE_ORGANIZATION_SLUG == "acme" and calls[2].env and calls[2].env.BUILDKITE_ORGANIZATION_SLUG == "acme")
 	assert(#bkLog.sections == 1 and bkLog.sections[1].title == ":jest: Unit tests")
-	assert(bkLog.sections[1].lines[1] == "Running commands" and has(bkLog.sections[1].lines, ":jest: Unit tests"), "group markers become plain headings")
-	assert(bkLog.sections[1].lines[#bkLog.sections[1].lines] == "🚨 Error: The command exited with status 1", "trailing blank lines dropped")
+	local bkLines = bkLog.sections[1].lines
+	assert(show({ table.unpack(bkLines, 1, 4) }) == "heading:Running commands\ncommand:$ yarn jest --ci\ngap:212\nheading::jest: Unit tests", show(bkLines))
+	assert(levelOf(bkLines, " FAIL  src/cart/reprice.test.ts") == "error" and levelOf(bkLines, "  ● reprice › keeps the promo code after a shipping change") == "error")
+	local last = bkLines[#bkLines]
+	assert(last.kind == "text" and last.text == "🚨 Error: The command exited with status 1" and last.level == "error", "trailing blank lines dropped")
+	assert(Log.errors(bkLog.sections[1]) == 3, tostring(Log.errors(bkLog.sections[1])))
 	-- A link to one job reads that job alone.
 	local jobRun, jobCalls = fakeRun(Recorded.outputs)
 	local jobLog = read(Buildkite.provider(jobRun, decode), JOB_CHECK, "acme/web") :: Log.Log
@@ -110,8 +160,8 @@ return function()
 	assert(#refs == 2, #refs)
 	assert(refs[1].path == "src/cart/reprice.test.ts" and refs[1].line == 42 and string.find(refs[1].text, "Object.<anonymous>", 1, true))
 	assert(refs[2].path == "src/cart/reprice.ts" and refs[2].line == 57)
-	assert(#Log.refs({ sections = { { title = "", lines = { "at x (lib/src/cart/reprice.ts:9)" } } } }, { "src/cart/reprice.ts" }) == 1)
-	assert(#Log.refs({ sections = { { title = "", lines = { "at x (mysrc/cart/reprice.ts:9)" } } } }, { "src/cart/reprice.ts" }) == 0, "a path ends at a folder boundary")
+	assert(#Log.refs({ sections = { { title = "", lines = { Log.line("at x (lib/src/cart/reprice.ts:9)"), { kind = "gap", count = 3 } } } } }, { "src/cart/reprice.ts" }) == 1)
+	assert(#Log.refs({ sections = { { title = "", lines = { Log.line("at x (mysrc/cart/reprice.ts:9)") } } } }, { "src/cart/reprice.ts" }) == 0, "a path ends at a folder boundary")
 
 	-- Re-run: each provider gets the failing checks it owns, and the rest are named as unreadable.
 	local groups, unowned = Log.byProvider(providers, { ACTIONS_CHECK, BUILD_CHECK, OTHER_CHECK, JOB_CHECK })
