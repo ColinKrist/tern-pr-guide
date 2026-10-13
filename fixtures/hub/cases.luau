@@ -432,4 +432,20 @@ return {
 		m({ 206 }), w({ 303 }), m({ 205 }), a({ 105 }), m({ 204, 203 }), w({ 111 }), m({ 202 }), a({ 112 }), m({ 201 }), w({ 104 })
 	),
 	refreshes = refreshes,
+	-- The sample board's merge setting and auto-land records. Only the block reads them; the rules above never see them.
+	merges = { ["acme/api"] = { method = { kind = "label", label = "merge-queue" }, source = "user", ask = false } },
+	landing = {
+		["acme/api#120"] = {
+			key = "acme/api#120", id = "PR_acme/api#120", phase = "waiting", tries = 2, head = "head120", adopt = false,
+			queuedAt = nil, approved = false, reason = nil, at = at("10-09", 10), rev = 7,
+		},
+		["acme/api#110"] = {
+			key = "acme/api#110", id = "PR_acme/api#110", phase = "queued", tries = 0, head = "head110", adopt = false,
+			queuedAt = at("10-09", 11), approved = true, reason = nil, at = at("10-09", 11), rev = 3,
+		},
+		["acme/mono#206"] = {
+			key = "acme/mono#206", id = "PR_acme/mono#206", phase = "stopped", tries = 1, head = "head206", adopt = false,
+			queuedAt = nil, approved = false, reason = "Merge conflict", at = at("10-09", 9), rev = 4,
+		},
+	},
 }

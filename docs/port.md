@@ -198,6 +198,8 @@ Each module's one job comes from its header comment. A verdict says what the por
 | `src/hub/runtime.luau` | The hub block's runtime record (`Block`) and what every hub module does to the window through it: `draw`, `stop`, frame ops, arrival alerts, fixtures. | Rewrite for the web host. | via `tandem_test`, `summary_test` |
 | `src/hub/store.luau` | The shared cache (`hub.cache`), write ids, edit replay, adoption, and the Tandem ownership guard. Also `hub.added` and `hub.status`. | Rewrite for the web host, minus Tandem. Keep the write-id and replay rules. | `tandem_test` (cache scenarios), `summary_test` |
 | `src/hub/lookups.luau` | How each repo merges (`hub.merge.<owner>/<repo>`, else GitHub's answer) and flake evidence for a failing check. | Port the logic. Swap `Host.kv` for the store. | `merge_test`, `flake_test` (pure parts) |
+| `src/hub/auto-land.luau` | Auto-land's state machine and the registry of merge kinds it knows (`label`, `comment`, `queue`), plus the kv codecs for its records and settings. Pure. | Port 1:1 with its tests. | `auto_land_test` |
+| `src/hub/auto-land-run.luau` | Runs auto-land while a hub block is open: owns `hub.autoland` and `hub.autoland.settings`, steps every record after a refresh and a checks update, and carries out the effect (queue with the repo's method, rebase or empty commit, read, stop). | Rewrite as a server job after each refresh; the revision check becomes a conditional write. Keep the order of each effect's guards. | `auto_land_block_test` |
 | `src/hub/prepare.luau` | Background guides (Settings, off by default): after each refresh and once on start, review requests of the viewer whose saved guide is missing or for another head are explained one at a time, through the `hub.preparing` lease so two windows don't take the same PR. Explanation only. | Rewrite as a worker job queued after a refresh; the lease becomes a job lock. | `prepare_test` |
 | `src/hub/refresh.luau` | The probe, refresh and checks timers armed from `Sync.schedule`, each answer laid onto the newest shared cache, `refetch`, the sample board's ⌘R, and `loadCheckList` (a PR's check list, read again on the checks timer while the popover is open and a check is unfinished). | Rewrite for the web host. Keep `Sync.schedule` as the only timing rule. | via `tandem_test` |
 | `src/hub/details.luau` | Reading what a PR's pages show: feedback details, the fixes page's details, local git and failed-check logs (`readLogs`, through `b.ci`), the review fix page's files. | Rewrite for the web host. The log reads go to the server ([B.3.1](#b31-ci-logs)). | via `summary_test` |
@@ -376,6 +378,13 @@ type CheckState = "failing" | "running" | "queued" | "passed" | "skipped"
 type CheckRow = { name: string; source?: string; state: CheckState; startedAt?: string; completedAt?: string; url: string }
 type CheckList = { headOid: string; rows: CheckRow[] }
 type RepoHistory = { base: string; byWorkflow: Record<string, { failed: number; total: number }> }
+type LabelEvent = { added: boolean; label: string; actor: string; bot: boolean; at: string }
+type LandFacts = {
+	id: string; state: "open" | "closed" | "merged"; draft: boolean; headOid: string
+	headAuthor?: string // unset when the head commit has no linked user
+	labels: string[]; events: LabelEvent[] // events oldest first
+	autoMerge: boolean
+}
 
 interface GithubClient {
 	refresh(req: RefreshRequest): Promise<Result<Refresh, Error>>
@@ -386,6 +395,7 @@ interface GithubClient {
 	history(repo: string, base: string): Promise<Result<RepoHistory, Error>>
 	runs(repo: string, sha: string): Promise<Result<RunRow[], Error>>
 	checkList(prId: string): Promise<Result<CheckList, Error>>
+	landFacts(ids: string[]): Promise<Result<{ byId: Record<string, LandFacts>; rateLimit: RateLimit }, Error>>
 	run(command: GithubCommand): Promise<Result<string, Error>>
 }
 ```
@@ -397,6 +407,7 @@ interface GithubClient {
 | `checks` | `gh api graphql` with `CHECKS_QUERY` (`checks.graphql`), `ids[]=` per node. Empty `ids` answers at once. | `POST /graphql`, same query. |
 | `details` | `gh api graphql` with `DETAILS_QUERY` (`details.graphql`), `id=<node id>`, `head=refs/pull/<number>/head`. `parseDetails` reads `baseRef.compare(headRef: $head).behindBy` into `behindBy` (nil for null) and `headRefName` with `headRepository.nameWithOwner` into `branch` (nil when the fork is gone). | `POST /graphql`, same query and variables. |
 | `checkList` | `gh api graphql` with `CHECK_LIST_QUERY` (`docs/hub/queries/check-list.graphql`, 1 point): every check on the head commit, `nodes(ids:)` on the PR's node id, parsed by `parseCheckList` (conclusions and statuses mapped to the five `CheckState`s). Read when the checks popover or the fixes page opens, and again on the checks timer while the popover is open and a check is unfinished. | `POST /graphql`, the same query. |
+| `landFacts` | `gh api graphql` with `AUTO_LAND_QUERY` (`docs/hub/queries/auto-land.graphql`, 1 point for any number): state, draft, head, labels, the last 30 label events with their actors, auto-merge and the head commit's author, `nodes(ids:)`. Empty `ids` answers at once. Parsed by `parseLandFacts`. | `POST /graphql`, the same query. |
 | `detect` | `gh api graphql` with `MERGE_DETECT_QUERY` (`merge-detect.graphql`), `owner`, `name`. | `POST /graphql`, same query. |
 | `history` | `gh api repos/<repo>/actions/runs?branch=<base>&status=completed&per_page=100`. | `GET` the same path. One page. |
 | `runs` | `gh api repos/<repo>/actions/runs?head_sha=<sha>&status=completed&per_page=50`. | `GET` the same path. One page. |
@@ -426,7 +437,8 @@ type GithubCommand =
 	| { kind: "requestReview"; pr: HubPR; logins: string[] }
 	| { kind: "close"; pr: HubPR }
 	| { kind: "refs"; pr: HubPR } // returns { headRefName, baseRefName, headRefOid }
-	| { kind: "updateBranch"; pr: HubPR }
+	| { kind: "updateBranch"; pr: HubPR; rebase?: boolean }
+	| { kind: "removeLabel"; pr: HubPR; label: string }
 	| { kind: "headTree"; repo: string; oid: string } // returns the commit's tree sha
 	| { kind: "emptyCommit"; repo: string; tree: string; parent: string } // returns the new commit's sha
 	| { kind: "moveBranch"; repo: string; branch: string; sha: string }
@@ -449,7 +461,8 @@ type GithubCommand =
 | `requestReview` | `gh pr edit N --repo R --add-reviewer a,b` | `POST /repos/{o}/{r}/pulls/{n}/requested_reviewers` with `{ reviewers }`. |
 | `close` | `gh pr close N --repo R` | `PATCH /repos/{o}/{r}/pulls/{n}` with `{ state: "closed" }`. |
 | `refs` | `gh pr view N --repo R --json headRefName,baseRefName,headRefOid` | `GET /repos/{o}/{r}/pulls/{n}`: `head.ref`, `base.ref`, `head.sha`. `hub/agent-run` reads it just before an engine starts and refuses when the head or base moved. |
-| `updateBranch` | `gh pr update-branch N --repo R` | `PUT /repos/{o}/{r}/pulls/{n}/update-branch` (a merge, not a rebase). |
+| `updateBranch` | `gh pr update-branch N --repo R`, plus `--rebase` for auto-land | `PUT /repos/{o}/{r}/pulls/{n}/update-branch` (a merge, not a rebase). The REST call has no rebase: the rebase form is GraphQL `updatePullRequestBranch` with `updateMethod: REBASE`. |
+| `removeLabel` | `gh pr edit N --repo R --remove-label <label>` | `DELETE /repos/{o}/{r}/issues/{n}/labels/{name}`. |
 | `headTree` | `gh api repos/R/git/commits/OID --jq .tree.sha` | `GET /repos/{o}/{r}/git/commits/{sha}`: `tree.sha`. R is the head repository, a fork's for a fork PR. |
 | `emptyCommit` | `gh api repos/R/git/commits -X POST -f message=… -f tree=T -f parents[]=OID --jq .sha` | `POST /repos/{o}/{r}/git/commits`: `sha`. |
 | `moveBranch` | `gh api repos/R/git/refs/heads/B -X PATCH -f sha=S -F force=false` | `PATCH /repos/{o}/{r}/git/refs/heads/{branch}` with `force: false`, so only a fast-forward lands; a moved branch answers 422 "Update is not a fast forward". |
@@ -614,6 +627,8 @@ The store is the `Host.kv` keys the plugin writes. Every window of a Tern sessio
 | `hub.agentFix` | `{ spec, lease, head, fix? }` or `false`: the Treehouse lease the running or ready agent fix holds, so a reload can bring the fix back or return the worktree | `AgentHost` (`keepAgentFix`), read by `AgentHost.resumeAgentFix` | one. Plugin only. Drop. |
 | `links` | `"tern" \| "browser"`: where GitHub links open | `Fetch.saveLinkTarget` (Settings, `hub-links`) | one. Drop: a web app opens links in a new tab. |
 | `hub.prepare` | boolean: prepare AI guides for review requests in the background; missing means off | `Fetch.savePrepareGuides` (Settings, `hub-guides`) | one |
+| `hub.autoland` | `{ schema: 1; prs: Record<key, AutoLandRecord> }`: every PR with auto-land on or stopped, each with a `rev` the writer compares before it acts | `AutoLandRun` (`src/hub/auto-land-run.luau`) | one per PR with auto-land |
+| `hub.autoland.settings` | `{ tries: number; label: string }`: the try cap (1 to 20, default 5) and the dequeue label (default `blocked`) | `AutoLandRun.saveSettings` (Settings, `hub-land-tries`, `hub-land-label-save`) | one |
 | `hub.preparing` | `{ key: "owner/repo#n@<head>", at: seconds }`: the PR a window is preparing a guide for; another window passes that PR by until it is returned or 20 minutes old | `Prepare` (`src/hub/prepare.luau`) | one |
 | `recent` | legacy list, deleted by `Fetch.migrateRecent` | none | Drop. |
 
@@ -756,6 +771,11 @@ Port the table as is, as a `Record<string, (b, cx, value) => void>` and one `dis
 | `card-cancel` | `Ops.cancelMerge` |
 | `card-auto` | `Ops.autoMerge` |
 | `card-rerequest` | `Ops.rerequest` |
+| `card-autoland` | `AutoLandRun.toggle` (⇧Q): on writes a fresh record and steps at once; off deletes it. A sample board flips the mark in memory |
+| `hub-land-tries` | `State.setLandTries` ("+1", "-1" or a number), `AutoLandRun.saveSettings` |
+| `hub-land-label` | `State.beginLandEdit`, focus `Paths.landField` |
+| `hub-land-label-save` | `State.saveLandEdit`, `AutoLandRun.saveSettings` |
+| `hub-land-label-cancel` | `State.cancelLandEdit` |
 | `hub-method-save` | `State.methodOfEdit`, `Lookups.setUserMethod` |
 | `hub-method-cancel` | `State.cancelMethodEdit` |
 | `hub-mark` | `State.toggleMark` |
@@ -811,7 +831,7 @@ The guide page has its own `ACTIONS` table in `src/review-page.luau`, with the s
 | Mode | Keys |
 |---|---|
 | `board` | `?` help. `/` search. ⌘R or Ctrl+R refresh. Esc `hub-escape`. ⏎ `hub-open`, ⇧⏎ `hub-open-generate`, ⌘⏎ `hub-open-pane`. Space `hub-mark`. ⇧X `hub-mark-stale` on the mine tab. With marks, M `hub-batch-merge` and X `hub-batch-close`. h j k l and the arrows `hub-move`. `.` `hub-next`. T `hub-tab`. I `hub-fold inactive`. R `hub-fold merged` on the mine tab and `hub-fold recent` on the review tab (`State.ROW_FOLD`). ⇧T `hub-fold team` and A `hub-fold approved` on the review tab. F `hub-menu filters`. S `hub-menu sort`. ⇧S or ⇧M `hub-menu settings`. N `hub-link`. V `hub-checks` on the selected card. Any other letter runs the selected card's main or alternative action whose `key` matches (⇧A also runs a main `card-summarize`). |
-| `menu` | j k and the arrows `hub-menu-move`. ⏎ `hub-menu-enter`. Space `hub-menu-select`. Esc `hub-menu-close`. In Settings, the review page's model menu keys (`Keys` `modelsKey`: ↑↓ `models-move`, ←→ `models-effort`, Tab `models-slot` (Explanation, Review, Lens), ⏎ `models-pick`, ⌃E `edit-lenses`), other keys type into its search field (`models-filter`), and L sends `hub-links` and ⇧G `hub-guides` while that field is empty. In Filter, Space toggles a saved rule and Enter edits it. In filter editors, Tab switches text/options, Enter applies text and Esc returns without saving; ordinary letters type. While a merge method is typed, ⏎ `hub-method-save` and Esc `hub-method-cancel`. |
+| `menu` | j k and the arrows `hub-menu-move`. ⏎ `hub-menu-enter`. Space `hub-menu-select`. Esc `hub-menu-close`. In Settings, the review page's model menu keys (`Keys` `modelsKey`: ↑↓ `models-move`, ←→ `models-effort`, Tab `models-slot` (Explanation, Review, Lens), ⏎ `models-pick`, ⌃E `edit-lenses`), other keys type into its search field (`models-filter`), and L sends `hub-links`, ⇧G `hub-guides`, `-` and `+` (or `=`) `hub-land-tries` and ⇧D `hub-land-label` while that field is empty. While the dequeue label is typed, ⏎ `hub-land-label-save` and Esc `hub-land-label-cancel`. In Filter, Space toggles a saved rule and Enter edits it. In filter editors, Tab switches text/options, Enter applies text and Esc returns without saving; ordinary letters type. While a merge method is typed, ⏎ `hub-method-save` and Esc `hub-method-cancel`. |
 | `search` | ⏎ `hub-search-done`. Esc `hub-search-clear`. Up and down `hub-move`. Other keys type, and a change sends `hub-searched` (`Keys.hubAfterTyping`). |
 | `link` | ⏎ `hub-link-add`. ⇧⏎ `hub-link-open`. Esc `hub-link-clear`. Other keys type. |
 | `confirm` | ⌘⏎ `hub-confirm`. Esc `hub-confirm-cancel`. |
@@ -833,6 +853,8 @@ Run all of them with `/opt/homebrew/bin/luau tests/run.luau`. `tests/run.luau` l
 |---|---|---|
 | `tests/model_test.luau` | `hub/model` | Placement (`classify`) of every fixture case with its reasons, column order for each sort, next up, the 7-day active window, what counts as feedback, drafts. |
 | `tests/github_test.luau` | `github`, `tests/fake-runner.luau` | Every parser over `fixtures/hub/raw-*.json` and that none throws, every `commands` argv, the paged searches and `added` aliases, the retry of a dropped read, the refresh's thread follow-up and a partial threads failure, probe and run, error values. |
+| `tests/auto_land_test.luau` | `hub/auto-land`, `github`, `hub/model`, `hub/state`, `keys` | Every `step` rule, each kind's queue and signal (with the recorded `raw-auto-land` read), `recovery`, the chip text, the kv codecs, the sample's cards and ⇧Q, Settings' keys and state. |
+| `tests/auto_land_block_test.luau` | the real `hub/block` and `hub/auto-land-run`, `Host` stubbed, a recording GitHub client | ⇧Q writes the record, a passing PR queues once, dequeues recover by rebase and by empty commit, the cap stops it, a closed block, Tandem, the sample board, Settings saving. |
 | `tests/state_test.luau` | `hub/model`, `hub/state`, `text-field` | The board projection, tabs, filter, sort, search, menus, cards and their actions. |
 | `tests/sync_test.luau` | `hub/model`, `hub/sync` | `load` validation, `save` under the cap, `merge` with local facts and pending merges, `diff` and `alerts`, `schedule`. |
 | `tests/links_test.luau` | `links` | Link and number parsing, `#prguide-open=` routes, pane choice (`hubEntry`), the status text and watcher timing. |

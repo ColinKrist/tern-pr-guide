@@ -23,7 +23,43 @@ local function columnOf(key: string): string
 	return Model.classify(byKey[key], NOW)
 end
 
+-- A copy of the fixture PR `key` with an auto-land mark.
+local function landing(key: string, mark: Model.LandMark): Model.HubPR
+	local copy = table.clone(byKey[key])
+	copy.autoLand = mark
+	return copy
+end
+
+local function testAutoLand()
+	local on: Model.LandMark = { state = "on", tries = 1 }
+	-- #104 fails a check: with auto-land on, the checks are auto-land's to handle, so it waits in In review.
+	local p104 = Model.placement(landing("acme/web#104", on), NOW)
+	assert(p104.column == "in_review" and #p104.reasons == 0, "an on mark hides failing checks")
+	-- #101's queue merge failed: auto-land handles that too.
+	assert(#Model.reasons(landing("acme/web#101", on), NOW) == 0, "an on mark hides a failed merge")
+	-- #116 has every reason: only feedback and the conflict stay.
+	assert(join(Model.reasons(landing("acme/api#116", on), NOW)) == "feedback,conflict", "feedback and conflicts stay")
+	assert(join(Model.reasons(landing("acme/api#105", on), NOW)) == "conflict")
+
+	local stopped: Model.LandMark = { state = "stopped", reason = "Merge conflict" }
+	local p110 = Model.placement(landing("acme/api#110", stopped), NOW)
+	assert(p110.column == "needs_fixes" and join(p110.reasons) == "auto_land", "a stopped mark puts a Ready card in Needs fixes")
+	assert(join(Model.reasons(landing("acme/api#116", stopped), NOW)) == "auto_land,merge_failed,feedback,checks,conflict", "auto_land comes first")
+	assert(#Model.reasons(landing("acme/mono#213", stopped), NOW) == 0, "a draft has no reasons, stopped or not")
+	assert(Model.handoffReason(landing("acme/api#110", stopped), NOW) == "PR hub: auto-land stopped")
+
+	-- It ranks with a merge failure: before #103's person waiting.
+	local prs = { landing("acme/api#110", stopped), byKey["acme/web#103"], byKey["acme/web#101"] }
+	local queue = Model.queue(prs, NOW)
+	assert(queue[3].key == "acme/web#103" and queue[1].reason ~= "feedback" and queue[2].reason ~= "feedback", "a stopped auto-land ranks with a merge failure")
+
+	assert(Model.mergeable(byKey["acme/api#110"]), "#110 can merge")
+	assert(not Model.mergeable(landing("acme/api#110", on)), "not while auto-land is on")
+	assert(Model.mergeable(landing("acme/api#110", stopped)), "a stopped mark doesn't block merging by hand")
+end
+
 return function()
+	testAutoLand()
 	-- The clock is frozen in the fixture, not read.
 	assert(Cases.asOf == Model.epoch(Cases.asOfIso), "asOf matches asOfIso")
 	assert(Cases.asOf == 1791547200)

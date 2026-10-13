@@ -4,7 +4,7 @@
 
 export type Tab = "mine" | "review"
 export type Column = "needs_fixes" | "in_review" | "ready" | "inactive" | "to_review" | "waiting_on_author" | "approved" | "team"
-export type Reason = "merge_failed" | "feedback" | "checks" | "conflict" -- in this order: severity, and the chip order
+export type Reason = "auto_land" | "merge_failed" | "feedback" | "checks" | "conflict" -- in this order: severity, and the chip order
 export type Sort = "repository" | "priority" | "newest" | "oldest" | "smallest"
 
 export type CheckState = "none" | "pending" | "passing" | "failing"
@@ -34,6 +34,17 @@ export type ReviewState = {
 export type MergeFailure = { kind: "queue" | "aviator" | "comment" | "check" | "bot", reason: string }
 -- A merge asked for and not finished: the repo's queue, a posted command, or a label.
 export type PendingMerge = { method: "queue" | "comment" | "label", at: string }
+-- Auto-land on a PR as the rules read it, derived from the auto-land record (hub/auto-land): on, with the recoveries
+-- used so far, or stopped with why. Filled by the block like `tandem`, never by GitHub.
+export type LandMark = { state: "on", tries: number } | { state: "stopped", reason: string }
+-- What the auto-land read (docs/hub/queries/auto-land.graphql) says about one PR.
+export type LabelEvent = { added: boolean, label: string, actor: string, bot: boolean, at: string }
+export type LandFacts = {
+	id: string, state: "open" | "closed" | "merged", draft: boolean, headOid: string,
+	headAuthor: string?, -- the head commit author's GitHub login, nil when the commit has no linked user
+	labels: { string }, events: { LabelEvent }, -- events oldest first, as GitHub lists them
+	autoMerge: boolean, -- autoMergeRequest is set
+}
 
 export type HubPR = {
 	key: string, -- "owner/repo#123", the repo as GitHub spells it; unique on the board
@@ -61,6 +72,7 @@ export type HubPR = {
 	pending: PendingMerge?,
 	tandem: boolean, -- Tandem watches the branch; filled by the block, never by GitHub
 	addedByMe: boolean, -- on the board through a pasted link; filled from `hub.added`
+	autoLand: LandMark?, -- filled by the block from the auto-land records, never by GitHub
 }
 
 export type Placement = { tab: Tab, column: Column, reasons: { Reason } } -- reasons is empty outside needs_fixes
@@ -243,12 +255,15 @@ function M.actionableFailures(pr: HubPR, ignored: { IgnoredCheck }?): number
 	return failures
 end
 
+-- Auto-land that is on handles a failed merge and failing checks itself, so neither needs the viewer; one that stopped does.
 function M.reasons(pr: HubPR, now: number, ignored: { IgnoredCheck }?): { Reason }
 	local out: { Reason } = {}
 	if pr.role ~= "mine" or pr.draft or not active(pr, now) then return out end
-	if pr.mergeFailure then out[#out + 1] = "merge_failed" end
+	local landing = pr.autoLand ~= nil and pr.autoLand.state == "on"
+	if pr.autoLand and pr.autoLand.state == "stopped" then out[#out + 1] = "auto_land" end
+	if pr.mergeFailure and not landing then out[#out + 1] = "merge_failed" end
 	if personFeedback(pr) then out[#out + 1] = "feedback" end
-	if pr.checks.state == "failing" and (pr.checks.failing == 0 or M.actionableFailures(pr, ignored) > 0) then out[#out + 1] = "checks" end
+	if not landing and pr.checks.state == "failing" and (pr.checks.failing == 0 or M.actionableFailures(pr, ignored) > 0) then out[#out + 1] = "checks" end
 	if pr.conflicts then out[#out + 1] = "conflict" end
 	return out
 end
@@ -355,7 +370,7 @@ end
 
 -- The reason a hand-off gives Tandem: what is wrong with the PR now, in the rules' own words.
 local REASON_TEXT: { [string]: string } = {
-	merge_failed = "the merge failed", feedback = "review feedback to address", checks = "failing checks", conflict = "merge conflicts",
+	auto_land = "auto-land stopped", merge_failed = "the merge failed", feedback = "review feedback to address", checks = "failing checks", conflict = "merge conflicts",
 }
 
 function M.handoffReason(pr: HubPR, now: number): string
@@ -365,11 +380,12 @@ function M.handoffReason(pr: HubPR, now: number): string
 	return "PR hub: " .. table.concat(parts, ", ")
 end
 
--- Ready, not behind, nothing pending: the cards Space may select.
+-- Ready, not behind, nothing pending, not auto-landing: the cards Space may select.
 function M.mergeable(pr: HubPR): boolean
 	return pr.role == "mine" and not pr.draft and pr.reviews.decision == "approved"
 		and (pr.checks.state == "passing" or pr.checks.state == "none")
 		and not pr.conflicts and not pr.behind and pr.pending == nil and pr.mergeFailure == nil
+		and not (pr.autoLand ~= nil and pr.autoLand.state == "on")
 end
 
 function M.size(pr: HubPR): number
@@ -410,10 +426,11 @@ local function has(reasons: { Reason }, reason: Reason): boolean
 	return false
 end
 
--- How urgent a your-turn card is, 0 first: a merge failure, then a person waiting on the viewer, then a machine.
+-- How urgent a your-turn card is, 0 first: a merge failure or a stopped auto-land, then a person waiting on the viewer,
+-- then a machine.
 local function urgency(pr: HubPR, placement: Placement): number
 	if placement.column == "needs_fixes" then
-		if has(placement.reasons, "merge_failed") then return 0 end
+		if has(placement.reasons, "merge_failed") or has(placement.reasons, "auto_land") then return 0 end
 		if has(placement.reasons, "feedback") then return 1 end
 		return 2
 	end

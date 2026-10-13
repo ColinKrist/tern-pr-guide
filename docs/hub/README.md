@@ -188,6 +188,28 @@ Each repo has one merge setting, stored in kv. It's one of six kinds:
 - **Queued merges:** the card shows "Commented /merge · waiting for the merge" or "Queued in Aviator". A queue rejection moves the PR to Needs fixes as **Merge failed**, with the reason from GitHub's `RemovedFromMergeQueueEvent.reason` or Aviator's blocked status. For comment merges, failure is known only from a check failing after the comment, or from the bot's reply. That lookup (`merge-failure.graphql`, 1 point for all of them) runs only for PRs whose comment or label merge the hub started and whose head commit has not changed; the lookup reads the latest 10 comments and the head's first 50 check contexts, and counts only what came after the merge was asked for. A merge started outside the hub is not watched.
 - **The chooser** (`,` or the ▾ on Merge) lists the six kinds. "Comment a command" and "Add a label" ask for text in the menu's foot: `/merge`, or `/merge | /cancel` to name the cancel comment.
 
+### Auto-land
+
+Auto-land keeps one of your PRs moving until it merges: it asks for the merge with the repo's method, and when checks fail before the merge or the repo's tool dequeues the PR, it recovers the branch and asks again.
+
+- **Per PR, by key:** `⇧Q` (or "Turn on auto-land" behind the ▾) on your own cards in Needs fixes, In review and Ready, when the repo's merge setting is one auto-land knows and the setting is confirmed (a learned suggestion nobody answered is not). Turning it on is the consent: nothing inside auto-land asks again. `⇧Q` again turns it off, and so does Cancel merge. Merge (`M`) by hand overrides it: auto-land turns off ("Auto-land off for #N: merging by hand") and the merge goes out once. A PR Tandem watches can't have it (`TANDEM_OWNS`).
+- **Hub-only:** it runs only while a hub block is open, after each refresh and each checks update. No daemon, and not Tandem.
+- **Recovery, in this order:** a branch behind its base is rebased on GitHub's side (`gh pr update-branch <n> --repo <r> --rebase`); an up-to-date one gets an empty commit through Push empty commit's three calls. Auto-land never re-runs CI jobs. It then queues again. Each recovery is one try.
+- **Settings (`⇧S`):** "Auto-land tries" (`-` and `+`, 1 to 20, default 5) and "Auto-land dequeue label" (`⇧D`, default `blocked`, used by the label kind). kv `hub.autoland.settings`.
+- **It stops** when the tries run out ("Tried 5 times"), on a merge conflict, on new commits from anyone but you ("New commits from @maria-k"; your own pushes keep it on), when changes are requested, or when an approval it had is gone. A stopped PR moves to Needs fixes with a red **Auto-land stopped** chip and the reason as its detail, and an error toast says "Auto-land stopped on #N: <reason>". A closed, merged or draft PR drops its record quietly. A merge-queue label a person removed (not a bot, and with no dequeue label added) means they cancelled: auto-land turns off with an info toast.
+- **The card:** a purple agent chip, "Auto-land" before any recovery and "Auto-land · try 2 of 5" after. While it is on, failing checks and a failed merge are auto-land's to handle, so the card stays out of Needs fixes for them; feedback and conflicts still count. Space can't select it for a batch merge, and Merge when ready is not offered.
+- **Two windows:** each record carries a revision. A window acts on a step only when the store still holds the revision it stepped from and then holds its own write, so two windows deciding in the same instant can still both act. Every op is safe to repeat except a merge comment.
+
+| Kind | Queue | Dequeued signal | Requeue | Cancelled |
+|---|---|---|---|---|
+| `label` | Remove the dequeue label when it is on, then add the merge label | The dequeue label added since the merge was asked for; or a bot removed the merge label and 600 s passed with no dequeue label (Aviator without one) | Recover, then queue again | A person removed the merge label: off, "the <label> label was removed" |
+| `comment` | Post the command | `mergeFailure` (the merge-failure read: a bot's reply or a check that failed after the comment) | Recover, then post again | Never |
+| `queue` | `gh pr merge --auto` | `mergeFailure` of kind `queue` (hub-f's `RemovedFromMergeQueueEvent`) | Recover, then `--auto` again | Auto-merge turned off with no failure: off, "auto-merge was turned off" |
+
+`squash`, `merge` and `rebase` repos are not offered auto-land: GitHub merges those at once, so there is nothing to keep in a queue.
+
+**Adding a kind** is one entry in `AutoLand.KINDS` (`needsFacts`, `queue`, `signal`, `cancelled`), plus a builder in `Github.commands` if its queue needs a write `merge` can't send.
+
 ### Adding a PR by link
 
 To review has its own field: "Paste a pull request link to review" (`N`, from either tab).
@@ -231,10 +253,11 @@ To review has its own field: "Paste a pull request link to review" (`N`, from ei
 | R | Show or hide Recently merged (Your pull requests) or Recently opened (Review requests) |
 | F / S | Filter / Sort menu (menus: j/k, ⏎ or Space, Esc) |
 | V | The selected card's checks (on the fixes page, all checks): j/k move, ⏎ opens a check, ⇧R re-runs failed checks, Esc closes |
-| ⇧S, ⇧M | Settings: typing searches, ↑↓ model, ←→ effort, ⇧←→ lens, Tab Explanation or Review, ⏎ choose and close, ⌃E edit lenses, L where links open and ⇧G background guides (empty search only) |
+| ⇧S, ⇧M | Settings: typing searches, ↑↓ model, ←→ effort, ⇧←→ lens, Tab Explanation or Review, ⏎ choose and close, ⌃E edit lenses, L where links open, ⇧G background guides, `-` `+` auto-land tries and ⇧D its dequeue label (⏎ saves, Esc cancels) (empty search only) |
 | N | Add a PR by link |
 | / | Search |
 | A, ⇧A, P, D, O, C, M, `,`, X | Card actions (see the table above) |
+| ⇧Q | Turn auto-land on or off for the selected card (see Auto-land) |
 | ⌘⏎ / Esc | Confirm / cancel inline questions |
 | ⌘R | Refresh |
 
@@ -255,11 +278,12 @@ To review has its own field: "Paste a pull request link to review" (`N`, from ei
 | Fixes-page details: threads with path/line/body, changes-requested reviews, failing check runs with annotations, the head branch and how far behind its base it is | 1 pt | | When a Needs fixes PR is opened |
 | `merge-detect.graphql`: what a repo declares (`.aviator/config.yml`, a merge queue) and its last 8 merged PRs with `mergedBy` and comments. Measured on the smoke repo 2026-10-10 | 1 pt | | Once per repo, for repos with a Ready card; the result is cached in kv |
 | `merge-failure.graphql`: latest comments and head check contexts, via `nodes(ids:)` | 1 pt for any number of PRs (measured for 2) | | After hub-f, only when a comment or label merge is in flight on the same head |
+| `auto-land.graphql`: state, draft, head, labels, the last 30 label events with their actors, auto-merge and the head commit's author, via `nodes(ids:)` | 1 pt for any number of PRs, measured 2026-10-13 on the smoke repo for 3 | | After a refresh, only while a PR has auto-land on; after a checks update only when a step needs it |
 
 - **Don't** put thread authors inside the search query. Measured at **159 points** per call.
 - **Pages, not one query.** GitHub stops a GraphQL query at about 10 s and answers HTTP 502. Measured 2026-10-12 on busy repos (vscode, next.js): the three searches at 50 each in one query got 502 after about 11 s every time, and so did a single search at 50; a 20-PR page took 4.4–6.6 s. A page that fails with a 502, 503 or 504, GitHub's "Something went wrong" timeout body, or the 30 s client timeout is asked again with half the PRs, down to 5; later pages of that search keep the smaller size. Every other GraphQL read retries those failures once; writes never retry.
 - **Opt-in check names:** `check-names.graphql` reads names and aggregate counts for failing PRs in configured repositories. It adds calls beyond the ordinary budget below; live cost has not been measured. The default refresh budget is unchanged.
-- **Per refresh:** hub-f 4 (40 PRs) + merged 1 + threads 5 + checks 1 = 11, under the 18-point limit the tests hold. A cost depends on the connections a query selects times the PRs it can return (`first:` on a connection under a search doesn't change it), so a page's `$n` sets its cost and an added connection is paid 20 times per page. Alias-added PRs ride on the first `mine` page.
+- **Per refresh:** hub-f 4 (40 PRs) + merged 1 + threads 5 + checks 1 = 11, and 12 with the auto-land read, under the 18-point limit the tests hold. A cost depends on the connections a query selects times the PRs it can return (`first:` on a connection under a search doesn't change it), so a page's `$n` sets its cost and an added connection is paid 20 times per page. Alias-added PRs ride on the first `mine` page.
 - **Budget:** about 140 pts/hr while the hub block exists (12 refreshes at 11, plus checks). Even the 30 s debounce ceiling (about 2,200/hr at the 18-point limit) fits the 5,000/hr GraphQL budget, which Tandem's pr-watch shares. An open checks popover with a check unfinished adds 1 point every 30 s (at most 120/hr), and only while it stays open.
 - **Latency is the real cost.** Always render from the kv cache first, then refresh in the background.
 - **Check annotations include noise.** Drop paths under `.github/` and messages like "Process completed with exit code". Measured on Tagalingo-App #1013, the useful one was `src/lib/query-persister.ts:39 Type …`.
@@ -288,15 +312,16 @@ Every issue builds against these types and signatures. An issue that needs a cha
 | `src/hub/checks.luau` | `model` |
 | `src/github.luau` | `model`, `fixes`, `checks`. No `tern.*` at load; parsers take already decoded tables (`tern.json.decode` runs in the caller). |
 | `src/hub/sync.luau` | `model` |
+| `src/hub/auto-land.luau` | `model` |
 | `src/hub/agent-fix.luau` | `model`, `fixes` |
 | `src/hub/review-fix.luau` | `agent-fix`, `fixes` (pure commit excerpts and effect plans) |
 | `src/hub/summary.luau` | `model`, `fixes` |
 | `window.luau` | `src/links.luau` |
-| `src/hub/state.luau` | `model`, `sync`, `fixes`, `checks`, `agent-fix`, `review-fix`, `summary`, `src/text-field.luau`, `src/links.luau` (pure: link parsing and the `#prguide-open=` link). Never `fetch`, `github` or `block`. |
+| `src/hub/state.luau` | `model`, `sync`, `fixes`, `checks`, `agent-fix`, `review-fix`, `summary`, `auto-land`, `src/text-field.luau`, `src/links.luau` (pure: link parsing and the `#prguide-open=` link). Never `fetch`, `github` or `block`. |
 | `src/keys.luau` | `src/hub/state.luau`, plus what it requires today minus `picker` |
 | `src/view/hub/*.luau` | `state`, `model`, `fixes`, `checks`, `src/view/ui.luau`, `src/text.luau`. Never `sync` or `github`. |
 | `src/fetch.luau`, `src/prdata.luau`, `src/agent-host.luau`, `src/tandem.luau` | `model` and `fixes` for types, `github` for the `Runner` type, `review-fix` for validated command plans, `src/links.luau`, `src/hub/sync.luau` (the recent store), plus what it requires today minus `picker`. prdata, agent-host and tandem run commands through fetch's runners. |
-| `src/hub/runtime.luau`, `store`, `lookups`, `tandem`, `prepare`, `refresh`, `details`, `agent-run`, `ops`, `block` | everything above, in that require order; `src/hub/block.luau` is the glue that wires them, and no module requires it |
+| `src/hub/runtime.luau`, `store`, `lookups`, `tandem`, `prepare`, `auto-land-run`, `refresh`, `details`, `agent-run`, `ops`, `block` | everything above, in that require order; `src/hub/block.luau` is the glue that wires them, and no module requires it |
 | `tools/conflicts` | nothing (a standalone script) |
 
 ### `src/links.luau` (pure; the picker's link parsing, moved, and the way in's decisions)
@@ -337,7 +362,7 @@ With `search` the root is a folder to look for a checkout in (no clone was found
 ```luau
 export type Tab = "mine" | "review"
 export type Column = "needs_fixes" | "in_review" | "ready" | "inactive" | "to_review" | "waiting_on_author" | "approved" | "team"
-export type Reason = "merge_failed" | "feedback" | "checks" | "conflict"   -- in this order: severity, and the chip order
+export type Reason = "auto_land" | "merge_failed" | "feedback" | "checks" | "conflict"   -- in this order: severity, and the chip order
 export type Sort = "repository" | "priority" | "newest" | "oldest" | "smallest"
 
 export type CheckState = "none" | "pending" | "passing" | "failing"
@@ -364,6 +389,16 @@ export type ReviewState = {
 export type MergeFailure = { kind: "queue" | "aviator" | "comment" | "check" | "bot", reason: string }
 -- A merge asked for and not finished: the repo's queue, a posted command, or a label.
 export type PendingMerge = { method: "queue" | "comment" | "label", at: string }
+-- Auto-land on a PR as the rules read it, from its record: on with the recoveries so far, or stopped with why. Filled by the block.
+export type LandMark = { state: "on", tries: number } | { state: "stopped", reason: string }
+-- What auto-land.graphql says about one PR.
+export type LabelEvent = { added: boolean, label: string, actor: string, bot: boolean, at: string }
+export type LandFacts = {
+	id: string, state: "open" | "closed" | "merged", draft: boolean, headOid: string,
+	headAuthor: string?,              -- the head commit author's login; nil when the commit has no linked user
+	labels: { string }, events: { LabelEvent },   -- events oldest first
+	autoMerge: boolean,               -- autoMergeRequest is set
+}
 
 export type HubPR = {
 	key: string,                      -- "owner/repo#123", the repo as GitHub spells it; unique on the board
@@ -383,6 +418,7 @@ export type HubPR = {
 	pending: PendingMerge?,
 	tandem: boolean,                  -- Tandem watches the branch; filled by the block, never by GitHub
 	addedByMe: boolean,               -- on the board through a pasted link; filled from `hub.added`
+	autoLand: LandMark?,              -- filled by the block from the auto-land records, never by GitHub
 }
 
 export type Placement = { tab: Tab, column: Column, reasons: { Reason } }   -- reasons is empty outside needs_fixes
@@ -406,7 +442,8 @@ function M.reasons(pr: HubPR, now: number, ignored: { IgnoredCheck }?): { Reason
 function M.placement(pr: HubPR, now: number, ignored: { IgnoredCheck }?): Placement
 function M.classify(pr: HubPR, now: number, ignored: { IgnoredCheck }?): Column     -- placement(pr, now).column
 function M.botFeedback(pr: HubPR): boolean              -- a bot's latest review or unresolved thread, for Fix bot comments
-function M.mergeable(pr: HubPR): boolean                -- ready, not behind, nothing pending: the cards Space may select
+function M.mergeable(pr: HubPR): boolean                -- ready, not behind, nothing pending, auto-land not on: the cards Space may select
+-- `reasons`: a stopped mark adds "auto_land" first; an on mark drops "merge_failed" and "checks". auto_land ranks with merge_failed.
 function M.selectGroup(pr: HubPR, now: number): ("ready" | "inactive")?, string?   -- the group Space may select it in, or nil and why not; the viewer's Inactive rows (drafts too) always qualify, review requests never do
 function M.stale(pr: HubPR, now: number): boolean       -- Inactive for 7+ days of silence and not a draft: what Close stale (⇧X) selects
 function M.confirmList(prs: { HubPR }): { shown: { HubPR }, more: number }   -- the first CONFIRM_TITLES (5), then the count left
@@ -564,6 +601,7 @@ export type Client = {
 	runs: (repo: string, sha: string, done: (value: { RunRow }?, err: Error?) -> ()) -> (),   -- gh api repos/<r>/actions/runs?head_sha=<sha>&status=completed&per_page=50 (the "passed earlier on this commit" basis)
 	detect: (repo: string, done: (value: Detected?, err: Error?) -> ()) -> (),
 	checkList: (prId: string, done: (value: Checks.CheckList?, err: Error?) -> ()) -> (),   -- check-list.graphql on one PR node id
+	landFacts: (ids: { string }, done: (value: LandFactsUpdate?, err: Error?) -> ()) -> (),   -- auto-land.graphql, one nodes(ids:) call
 	run: (command: Command, done: (stdout: string?, err: Error?) -> ()) -> (),   -- executes a command from `commands`
 }
 export type Decode = (text: string) -> any      -- `tern.json.decode`, passed in so `github` never touches `tern`
@@ -580,6 +618,7 @@ function M.parseThreads(raw: any): { threads: { [string]: { OpenThread } }, rate
 function M.parseChecks(raw: any): ChecksUpdate?
 function M.parseProbe(stdout: string): Probe?             -- `gh api -i`: 200 or 304, Last-Modified, X-Poll-Interval
 function M.parseDetails(raw: any, pr: HubPR): FixDetails?
+function M.parseLandFacts(raw: any): LandFactsUpdate?   -- { byId, rateLimit }; a bot actor is __typename Bot or a login with "bot" or "aviator"
 function M.parseCheckList(raw: any): Checks.CheckList?   -- conclusions SUCCESS/NEUTRAL passed, SKIPPED/STALE skipped, FAILURE/TIMED_OUT/CANCELLED/ACTION_REQUIRED/STARTUP_FAILURE failing; statuses IN_PROGRESS running, QUEUED/PENDING/WAITING/REQUESTED queued; StatusContext SUCCESS passed, FAILURE/ERROR failing, PENDING running, EXPECTED queued
 function M.parseRuns(raw: any): { RunRow }                                  -- REST actions/runs
 function M.parseHistory(raw: any, base: string): RepoHistory                -- cancelled and skipped runs are not counted
@@ -591,7 +630,8 @@ function M.historyCache(client: Client): HistoryCache
 M.commands = {
 	merge = function(pr: HubPR, method: MergeMethod): Command end,   -- squash, merge, rebase: `gh pr merge <n> --repo <owner/repo> --squash|--merge|--rebase`; queue: `--auto`; comment: `gh pr comment <n> --repo <r> --body <command>`; label: `gh pr edit <n> --repo <r> --add-label <label>`
 	cancelMerge = function(pr: HubPR, method: MergeMethod): Command end,   -- queue: `gh pr merge … --disable-auto`; comment: `--body <cancel>`; label: `--remove-label`; raises for a GitHub merge and for a comment with no cancel
-	updateBranch = function(pr: HubPR): Command end,
+	updateBranch = function(pr: HubPR, rebase: boolean?): Command end,   -- gh pr update-branch <n> --repo <r>, plus --rebase with `rebase`
+	removeLabel = function(pr: HubPR, label: string): Command end,   -- gh pr edit <n> --repo <r> --remove-label <label>
 	headTree = function(repo: string, oid: string): Command end,   -- gh api repos/<repo>/git/commits/<oid> --jq .tree.sha
 	emptyCommit = function(repo: string, tree: string, parent: string): Command end,   -- POST repos/<repo>/git/commits, --jq .sha
 	moveBranch = function(repo: string, branch: string, sha: string): Command end,   -- PATCH repos/<repo>/git/refs/heads/<branch>, force=false
@@ -621,7 +661,7 @@ export type Cache = {
 	counts: Counts,
 }
 export type Added = { [string]: PRRef }       -- hub.added, by key
-export type Local = { added: Added, tandem: { [string]: boolean } }
+export type Local = { added: Added, tandem: { [string]: boolean }, landing: { [string]: Model.LandMark } }   -- `merge` fills `pr.autoLand` from `landing`; `load` accepts a PR with or without a valid mark
 export type MergeRecord = { schema: 1, user: MergeMethod?, declared: MergeMethod?, learned: MergeMethod?, learnedAnswered: boolean, checkedAt: string?, viewerDefault: string? }
 export type Opened = { repo: string, number: number, title: string, author: string, at: string }   -- hub.recent, newest first, at most RECENT_CAP
 
@@ -669,6 +709,61 @@ function M.schedule(input: ScheduleInput): Schedule
 	-- probe: PROBE_EVERY after the last one. refresh: REFRESH_EVERY after the last, or sooner when a probe saw a change
 	-- or the hub regained focus, but never within DEBOUNCE of the last. checks: CHECKS_EVERY, only while `running` is not empty.
 ```
+
+### `src/hub/auto-land.luau` (pure; the auto-land state machine and its merge kinds)
+
+```luau
+export type Phase = "waiting" | "queued" | "recovering" | "stopped"
+export type Record = {
+	key: string, id: string,          -- the board key and node id (the id lets the read ask about a PR the board dropped)
+	phase: Phase, tries: number,      -- recoveries made
+	head: string,                     -- the head auto-land accepts: turned on at, the viewer's push, or one it made
+	adopt: boolean,                   -- a rebase was sent and its head is not known yet
+	queuedAt: string?,                -- when the merge was last asked for; label events after it count
+	approved: boolean,                -- approved while on, so losing the approval stops it
+	reason: string?, at: string, rev: number,   -- why it stopped; when the phase changed; bumped on every write
+}
+export type Settings = { tries: number, label: string }   -- M.DEFAULTS = { tries = 5, label = "blocked" }
+export type Op = { kind: "merge" } | { kind: "remove_label", label: string }
+export type Signal = "queued" | "dequeued" | "cancelled"
+export type Kind = {
+	needsFacts: boolean,
+	queue: (method: MergeMethod, facts: LandFacts?, settings: Settings) -> { Op }?,   -- nil: can't decide yet
+	signal: (record: Record, pr: HubPR, facts: LandFacts?, method: MergeMethod, settings: Settings, now: number) -> Signal,
+	cancelled: ((method: MergeMethod) -> string)?,   -- the info toast's notice for "cancelled"
+}
+export type Effect = { kind: "queue", ops: { Op } } | { kind: "recover" } | { kind: "read" }
+	| { kind: "stopped", reason: string } | { kind: "off", notice: string? }
+export type Context = { now: number, iso: string, viewer: string, method: MergeMethod?, settings: Settings }
+
+M.KINDS: { [string]: Kind }       -- label, comment, queue
+function M.supports(resolution: MergeResolution?): boolean   -- confirmed, and its kind is in KINDS
+function M.start(pr: HubPR, iso: string): Record
+function M.mark(record: Record?): LandMark?
+function M.step(record: Record, pr: HubPR?, facts: LandFacts?, ctx: Context): (Record?, Effect?)   -- nil record: off
+function M.recovery(behindBy: number?, conflicts: boolean): ("rebase" | "empty")?
+function M.recovered(record: Record, how: "rebase" | "empty", sha: string?, iso: string): Record
+function M.stop(record: Record, reason: string, iso: string): Record
+function M.label(mark: LandMark, cap: number): string   -- "Auto-land", "Auto-land · try 2 of 5", "Auto-land stopped"
+function M.loadRecords(raw: any): { [string]: Record }   -- kv hub.autoland = { schema = 1, prs }; a bad record is left out
+function M.saveRecords(records: { [string]: Record }): any
+function M.loadSettings(raw: any): Settings   -- tries clamped to 1..20, label trimmed, defaults otherwise
+```
+
+`step`, in order: closed or merged → off. Stopped → off when the head moved (the viewer pushed), else unchanged. Off the board → unchanged. Draft → off; Tandem → off with a notice. No supported method → stop "The merge method changed". Head moved → adopt a rebase's head, accept the viewer's own (the read's head author), stop on anyone else's, or read. Conflict → stop. Changes requested, or an approval it had gone → stop. Recovering → unchanged for 600 s, then waiting. Waiting → recover on failing checks, queue when passing (or none) and approved (or no review required). Queued → the kind's signal: dequeued recovers, cancelled turns off. Recover past the cap → stop "Tried N times".
+
+### `src/hub/auto-land-run.luau` (the workflow; owns kv `hub.autoland` and `hub.autoland.settings`)
+
+```luau
+function M.settings(): AutoLand.Settings
+function M.saveSettings(settings: AutoLand.Settings): string?
+function M.marks(): { [string]: LandMark }   -- Sync.Local.landing
+function M.toggle(b: Block, cx: BlockCx, key: string, refetchSoon: (Block, BlockCx) -> ())   -- card-autoland
+function M.off(b: Block, cx: BlockCx, key: string)   -- Cancel merge, and ⇧Q's off
+function M.run(b: Block, cx: BlockCx, read: boolean, refetchSoon: (Block, BlockCx) -> ())   -- after a refresh (read) and a checks update
+```
+
+It never requires `refresh` (refresh requires it), never runs on a sample board (the sample's records live in `b.sampleLanding`, toggled in memory), skips a busy card, joins Tandem's ownership before every write, and keeps every card change in the shared cache (`keepCache`).
 
 ### `src/hub/agent-fix.luau` (the agent run state machine)
 
@@ -898,7 +993,11 @@ function M.reviewRequest(s: State): ReviewFix.Request?
 function M.mergeMethodFor(s: State, pr: HubPR): "squash" | "merge" | "rebase"   -- the repo's resolved method when it is a GitHub one, else squash (viewerDefaultMergeMethod arrives with #10's detection)
 function M.mergeStep(s: State, pr: HubPR): "confirm" | "ask" | "run"   -- M on a card: a GitHub method asks first, a learned command asks once, a chosen or declared comment, label or queue runs at once
 function M.setMerge(s: State, repo: string, resolution: MergeResolution)   -- the block resolves a repo's record into the board
-function M.setPending(s: State, key: string, pending: PendingMerge?)       -- a merge in flight (or cleared)
+function M.setPending(s: State, key: string, pending: PendingMerge?, fresh: boolean?)   -- a merge in flight (or cleared); `fresh` drops the old failure
+function M.setAutoLand(s: State, key: string, mark: LandMark?)   -- the card's auto-land mark (copies the list and the PR)
+function M.stampLanding(s: State, records: { [string]: AutoLand.Record })   -- the sample board's marks, and a queued record's merge as pending
+function M.setLandTries(s: State, value: string)   -- "+1", "-1" or a number; 1..20
+function M.beginLandEdit(s: State) ; function M.cancelLandEdit(s: State) ; function M.saveLandEdit(s: State): boolean   -- Settings' dequeue label (`s.landEdit`)
 function M.beginMethodEdit(s: State, kind: "comment" | "label") / M.cancelMethodEdit(s) / M.methodOfEdit(s): MergeMethod?   -- the merge menu's text field
 function M.askMerge(s: State, key: string): boolean      -- opens the "Squash and merge #n?" question; mode "confirm", `confirm = { kind = "merge", keys = { key } }`
 function M.cancelConfirm(s: State)
@@ -1042,6 +1141,8 @@ The hub is the PR's container: ⏎, a click and ⇧⏎ open the PR's review page
 | `hub.preparing` | `{ key = "owner/repo#n@<head>", at }`: the PR a window is preparing a guide for, so another window passes it by; returned when the run ends, ignored after 20 minutes | one |
 | `hub.clones` | slug (`owner/repo`) → the clone path the viewer chose ("Choose folder…"), for the agent's clone lookup | one per repo |
 | `hub.merge.<owner>/<repo>` | `Sync.MergeRecord`: your choice, what the repo declares, the learned habit, whether you answered the suggestion, `viewerDefault` and when it was checked | one per repo |
+| `hub.autoland` | `{ schema = 1, prs = { [key] = AutoLand.Record } }`: every PR with auto-land on or stopped; read and written by `src/hub/auto-land-run.luau` | one per PR with auto-land |
+| `hub.autoland.settings` | `{ tries, label }`: auto-land's try cap and dequeue label (Settings) | one |
 
 Never store raw GraphQL, tokens or diffs. `src/hub/store.luau` reads and writes `hub.cache`, `hub.status` and `hub.added`, `src/hub/lookups.luau` the `hub.merge.*` records, and `src/fetch.luau` `hub.recent`; `hub.clones` is read and written by `src/agent-host.luau` at the clone lookup boundary. The guide's `model` key is `src/agent-host.luau`'s, and `runSeconds` and the retired `recent` keys stay in `src/fetch.luau`, which deletes `recent` after the migration. AGENTS.md's Boundary and Glue lines are amended in the PRs that add `src/github.luau` and `src/hub/block.luau`, so they name those modules next to `src/fetch.luau` and `src/block.luau`.
 

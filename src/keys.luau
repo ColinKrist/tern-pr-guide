@@ -138,15 +138,24 @@ local function hubMenuKey(s: HubState.State, key: Key): Action?
 		if name == "escape" then return act("hub-method-cancel") end
 		return nil
 	end
+	-- Settings is editing auto-land's dequeue label: ⏎ saves, Esc cancels, the rest is typed.
+	if s.menu == "settings" and s.landEdit then
+		if name == "enter" then return act("hub-land-label-save") end
+		if name == "escape" then return act("hub-land-label-cancel") end
+		return nil
+	end
 	if name == "escape" then return act("hub-menu-close") end
 	-- Settings is the model and lens menu, its search field taking the letters; while the field is
-	-- empty, L switches where links open and ⇧G whether guides are prepared in the background (plain G
-	-- would take the first letter of "gpt" and "gemini").
+	-- empty, L switches where links open, ⇧G whether guides are prepared in the background (plain G
+	-- would take the first letter of "gpt" and "gemini"), - and + auto-land's tries and ⇧D its dequeue label.
 	if s.menu == "settings" then
 		local box = s.models
 		local empty = (not box or box.field.text == "") and not (key.ctrl or key.meta or key.alt)
 		if name == "l" and empty then return act("hub-links") end
 		if ((name == "g" and key.shift) or name == "G") and empty then return act("hub-guides") end
+		if empty and (name == "-" or key.text == "-") then return act("hub-land-tries", "-1") end
+		if empty and (name == "+" or name == "=" or key.text == "+" or key.text == "=") then return act("hub-land-tries", "+1") end
+		if ((name == "d" and key.shift) or name == "D") and empty then return act("hub-land-label") end
 		return if box then modelsKey(box, key) else nil
 	end
 	if name == "down" or name == "j" then return act("hub-menu-move", 1) end

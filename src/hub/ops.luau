@@ -4,6 +4,7 @@
 -- adding and removing a PR by link, replying to and resolving a thread, summarizing feedback, and pushing or discarding
 -- an agent's fix. Each keeps the shared cache in step through hub/store (`keepCache`). Block's ACTIONS table calls them.
 local Agent = require("../agent")
+local AutoLandRun = require("./auto-land-run")
 local AgentHost = require("../agent-host")
 local Details = require("./details")
 local Fetch = require("../fetch")
@@ -114,6 +115,12 @@ local function runMerge(b: Block, cx: BlockCx, pr: Model.HubPR, done: ((err: str
 		if done then return done(TANDEM_OWNS) end
 		return cx:toast("error", "Couldn't merge #" .. pr.number .. ": " .. TANDEM_OWNS, pr.repo)
 	end
+	-- Merging by hand overrides auto-land: it steps aside rather than ask for the merge a second time.
+	if owned and owned.autoLand and owned.autoLand.state == "on" then
+		AutoLandRun.off(b, cx, pr.key)
+		if b.closed then return end
+		if not done then cx:toast("info", "Auto-land off for #" .. pr.number .. ": merging by hand", pr.title) end
+	end
 	local method = methodOf(b, pr)
 	local head = pr.headOid
 	local mark = MERGE_BUSY[method.kind] or "Merging…"
@@ -200,6 +207,9 @@ local function cancelMerge(b: Block, cx: BlockCx, key: string)
 			cx:toast("error", "Couldn't cancel the merge of #" .. pr.number .. ": " .. reasonOf(err.message), pr.repo)
 		else
 			keepCache(b, cx, function() State.setPending(s, key, nil) end, key, head)
+			if b.closed then return end
+			-- Cancelling the merge takes it back from auto-land too, which would only ask again.
+			if pr.autoLand then AutoLandRun.off(b, cx, key) end
 			if b.closed then return end
 			if method.kind == "comment" then
 				cx:toast("success", "Commented " .. (method.cancel or "") .. " on #" .. pr.number, pr.title)

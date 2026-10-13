@@ -31,6 +31,8 @@ export type RefreshRequest = { added: { PRRef }, previous: { HubPR }, checkNames
 export type Probe = { changed: boolean, lastModified: string?, pollSeconds: number? }
 export type ChecksUpdate = { byId: { [string]: { headOid: string, checks: Checks } }, rateLimit: RateLimit }
 export type Command = { argv: { string }, stdin: string? }
+-- What the auto-land read says, by PR node id.
+export type LandFactsUpdate = { byId: { [string]: Model.LandFacts }, rateLimit: RateLimit }
 -- What a repo declares and what its last merges show. `checkedAt` is "" here: the block stamps it, because this module reads no clock.
 export type Detected = { declared: MergeMethod?, learned: MergeMethod?, viewerDefault: "squash" | "merge" | "rebase", autoMergeAllowed: boolean, checkedAt: string }
 
@@ -49,6 +51,7 @@ export type Client = {
 	history: (repo: string, base: string, done: (value: RepoHistory?, err: Error?) -> ()) -> (),
 	runs: (repo: string, sha: string, done: (value: { RunRow }?, err: Error?) -> ()) -> (),
 	checkList: (prId: string, done: (value: Checks.CheckList?, err: Error?) -> ()) -> (),
+	landFacts: (ids: { string }, done: (value: LandFactsUpdate?, err: Error?) -> ()) -> (),
 	run: (command: Command, done: (stdout: string?, err: Error?) -> ()) -> (),
 }
 
@@ -203,6 +206,22 @@ local MERGED_QUERY = [=[
 query Merged($q: String!) {
   rateLimit { cost remaining limit resetAt }
   merged: search(type: ISSUE, query: $q, first: 20) { nodes { ... on PullRequest { number title mergedAt repository { nameWithOwner } } } }
+}]=]
+
+-- This one mirrors docs/hub/queries/auto-land.graphql the same way.
+local AUTO_LAND_QUERY = [=[
+query AutoLand($ids: [ID!]!) {
+  rateLimit { cost remaining limit resetAt }
+  nodes(ids: $ids) { ... on PullRequest { id state isDraft headRefOid
+    autoMergeRequest { enabledAt }
+    labels(first: 30) { nodes { name } }
+    timelineItems(last: 30, itemTypes: [LABELED_EVENT, UNLABELED_EVENT]) { nodes {
+      __typename
+      ... on LabeledEvent { createdAt actor { __typename login } label { name } }
+      ... on UnlabeledEvent { createdAt actor { __typename login } label { name } }
+    } }
+    commits(last: 1) { nodes { commit { oid author { user { login } } } } }
+  } }
 }]=]
 
 -- GitHub stops a GraphQL query at about 10 s and answers 502, so a client wait past 30 s is a lost connection.
@@ -907,8 +926,14 @@ M.commands = {
 	refs = function(pr: HubPR): Command
 		return { argv = prArgv("view", pr, "--json", "headRefName,baseRefName,headRefOid"), stdin = nil }
 	end,
-	updateBranch = function(pr: HubPR): Command
-		return { argv = { "gh", "pr", "update-branch", tostring(pr.number), "--repo", pr.repo }, stdin = nil }
+	-- Catches the branch up with its base on GitHub's side: a merge commit, or with `rebase` the branch rebased onto it.
+	updateBranch = function(pr: HubPR, rebase: boolean?): Command
+		local argv = { "gh", "pr", "update-branch", tostring(pr.number), "--repo", pr.repo }
+		if rebase then table.insert(argv, "--rebase") end
+		return { argv = argv, stdin = nil }
+	end,
+	removeLabel = function(pr: HubPR, label: string): Command
+		return { argv = prArgv("edit", pr, "--remove-label", label), stdin = nil }
 	end,
 	-- Push empty commit, through GitHub's git database so no checkout is needed: the head's tree, a commit of that tree
 	-- on the head, then the branch moved to it. `force=false` only fast-forwards, so a branch that moved meanwhile refuses.
@@ -1020,6 +1045,49 @@ function M.parseMergeFailure(raw: any, pending: PendingMerge): MergeFailure?
 	if check == nil then return nil end
 	if string.find(string.lower(check), "aviator", 1, true) then return { kind = "aviator", reason = check .. " failed" } end
 	return { kind = if pending.method == "comment" then "comment" else "check", reason = check }
+end
+
+local LAND_STATES: { [string]: "open" | "closed" | "merged" } = { OPEN = "open", CLOSED = "closed", MERGED = "merged" }
+
+-- One PR from `auto-land.graphql`, or nil when the node is not a pull request it can read.
+local function landFactsOf(node: any): Model.LandFacts?
+	local id, head, state = str(node.id), str(node.headRefOid), LAND_STATES[str(node.state) or ""]
+	if id == nil or head == nil or state == nil then return nil end
+	local labels: { string } = {}
+	for _, label in list(tbl(node.labels) and node.labels.nodes) do
+		local name = str(label.name)
+		if name then table.insert(labels, name) end
+	end
+	local events: { Model.LabelEvent } = {}
+	for _, row in list(tbl(node.timelineItems) and node.timelineItems.nodes) do
+		local label = tbl(row.label)
+		local name, at = label and str(label.name), str(row.createdAt)
+		local actor = tbl(row.actor)
+		if name and at and (row.__typename == "LabeledEvent" or row.__typename == "UnlabeledEvent") then
+			table.insert(events, {
+				added = row.__typename == "LabeledEvent", label = name, actor = str(actor and actor.login) or "", bot = isBot(actor), at = at,
+			})
+		end
+	end
+	local commit = list(tbl(node.commits) and node.commits.nodes)[1]
+	local author = commit and tbl(commit.commit) and tbl(commit.commit.author)
+	local user = author and tbl(author.user)
+	return {
+		id = id, state = state, draft = node.isDraft == true, headOid = head, headAuthor = user and str(user.login),
+		labels = labels, events = events, autoMerge = tbl(node.autoMergeRequest) ~= nil,
+	}
+end
+
+-- `auto-land.graphql`'s answer by PR node id, or nil when it is not that document.
+function M.parseLandFacts(raw: any): LandFactsUpdate?
+	local data = tbl(raw) and tbl(raw.data)
+	if data == nil or tbl(data.nodes) == nil then return nil end
+	local byId: { [string]: Model.LandFacts } = {}
+	for _, node in list(data.nodes) do
+		local facts = landFactsOf(node)
+		if facts then byId[facts.id] = facts end
+	end
+	return { byId = byId, rateLimit = rateLimitOf(data.rateLimit) or NO_LIMIT }
 end
 
 local ENUM_METHODS: { [string]: "squash" | "merge" | "rebase" } = { SQUASH = "squash", MERGE = "merge", REBASE = "rebase" }
@@ -1406,6 +1474,17 @@ function M.client(run: Runner, decode: Decode): Client
 		end)
 	end
 
+	local function landFacts(ids: { string }, done: (value: LandFactsUpdate?, err: Error?) -> ())
+		if #ids == 0 then return done({ byId = {}, rateLimit = NO_LIMIT }, nil) end
+		local operation, what = "gh api graphql: auto-land", "read pull requests with auto-land on"
+		graphql(AUTO_LAND_QUERY, idArgs(ids), operation, what, function(doc, err)
+			if err then return done(nil, err) end
+			local found = M.parseLandFacts(doc)
+			if found == nil then return done(nil, failure(operation, what, "GitHub sent a response without nodes", nil)) end
+			done(found, nil)
+		end)
+	end
+
 	local function detect(repo: string, done: (value: Detected?, err: Error?) -> ())
 		local owner, name = string.match(repo, "^([%w_.%-]+)/([%w_.%-]+)$")
 		if owner == nil or name == nil then
@@ -1471,7 +1550,7 @@ function M.client(run: Runner, decode: Decode): Client
 		end)
 	end
 
-	return { refresh = refresh, probe = probe, checks = checks, checkNames = checkNames, details = details, detect = detect, history = history, runs = runs, checkList = checkList, run = runCommand }
+	return { refresh = refresh, probe = probe, checks = checks, checkNames = checkNames, details = details, detect = detect, history = history, runs = runs, checkList = checkList, landFacts = landFacts, run = runCommand }
 end
 
 return M

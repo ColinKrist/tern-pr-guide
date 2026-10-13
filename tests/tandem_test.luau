@@ -729,7 +729,7 @@ local function counts()
 		local b = live(w, Block)
 		local FLASH = 1234
 		local fresh: any = { viewer = "jubbydev", prs = copy(Cases.prs), rateLimit = nil, calls = {}, truncated = false }
-		local cache = Sync.merge(fresh, nil, { added = {}, tandem = {} }, Cases.asOf)
+		local cache = Sync.merge(fresh, nil, { added = {}, tandem = {}, landing = {} }, Cases.asOf)
 		cache.counts.flashAt = FLASH
 		b.cache = cache
 		State.replace(b.s, cache.prs, Cases.asOf, Cases.asOfIso)
@@ -942,7 +942,7 @@ local function storedCache(owned: { string }, at: number): any
 	local tandem: { [string]: boolean } = {}
 	for _, key in owned do tandem[key] = true end
 	local fresh: any = { viewer = "jubbydev", prs = copy(Cases.prs), rateLimit = nil, calls = {}, truncated = false }
-	return Sync.save(Sync.merge(fresh, nil, { added = {}, tandem = tandem }, at), math.huge, function() return 1 end)
+	return Sync.save(Sync.merge(fresh, nil, { added = {}, tandem = tandem, landing = {} }, at), math.huge, function() return 1 end)
 end
 
 -- A GitHub client that answers `refresh` as the test settles it and nothing else.
@@ -1040,7 +1040,7 @@ local function sharedCache()
 		local b = live(w, Block)
 		reads(w)[1].done(out("WATCH"))
 		local fresh: any = { viewer = "jubbydev", prs = copy(Cases.prs), rateLimit = nil, calls = {}, truncated = false }
-		b.cache = Sync.merge(fresh, nil, { added = {}, tandem = Model.tandemFlags(b.watched, fresh.prs) }, Cases.asOf)
+		b.cache = Sync.merge(fresh, nil, { added = {}, tandem = Model.tandemFlags(b.watched, fresh.prs), landing = {} }, Cases.asOf)
 		State.replace(b.s, b.cache.prs, Cases.asOf, Cases.asOfIso)
 		Block.event(b, { ev = "action", act = "card-handoff", value = KEY } :: any, w.cx)
 		handoffs(w)[1].done(out("KEPT"))
@@ -1180,7 +1180,7 @@ local function reverseSharedCache()
 		local b = live(w, Block)
 		reads(w)[1].done(out("WATCH"))
 		local fresh: any = { viewer = "jubbydev", prs = copy(Cases.prs), rateLimit = nil, calls = {}, truncated = false }
-		b.cache = Sync.merge(fresh, nil, { added = {}, tandem = Model.tandemFlags(b.watched, fresh.prs) }, Cases.asOf)
+		b.cache = Sync.merge(fresh, nil, { added = {}, tandem = Model.tandemFlags(b.watched, fresh.prs), landing = {} }, Cases.asOf)
 		State.replace(b.s, b.cache.prs, Cases.asOf, Cases.asOfIso)
 		assert(b.watched[KEY] == nil and not card(b.s, KEY).pr.tandem)
 
@@ -1239,7 +1239,7 @@ local function delayedRefresh()
 		local b = live(w, Block)
 		reads(w)[1].done(out("WATCH"))
 		local fresh: any = { viewer = "jubbydev", prs = copy(Cases.prs), rateLimit = nil, calls = {}, truncated = false }
-		b.cache = Sync.merge(fresh, nil, { added = {}, tandem = Model.tandemFlags(b.watched, fresh.prs) }, Cases.asOf)
+		b.cache = Sync.merge(fresh, nil, { added = {}, tandem = Model.tandemFlags(b.watched, fresh.prs), landing = {} }, Cases.asOf)
 		State.replace(b.s, b.cache.prs, Cases.asOf, Cases.asOfIso)
 		local answer: any = nil
 		b.github = quietGithub(function(_, done) answer = done end)
@@ -1289,7 +1289,7 @@ local function delayedRefresh()
 		local b = live(w, Block)
 		reads(w)[1].done(out("WATCH"))
 		local fresh: any = { viewer = "jubbydev", prs = copy(Cases.prs), rateLimit = nil, calls = {}, truncated = false }
-		b.cache = Sync.merge(fresh, nil, { added = {}, tandem = Model.tandemFlags(b.watched, fresh.prs) }, Cases.asOf + 120)
+		b.cache = Sync.merge(fresh, nil, { added = {}, tandem = Model.tandemFlags(b.watched, fresh.prs), landing = {} }, Cases.asOf + 120)
 		State.replace(b.s, b.cache.prs, Cases.asOf, Cases.asOfIso)
 		local answer: any = nil
 		b.github = quietGithub(function(_, done) answer = done end)
@@ -1359,7 +1359,7 @@ local function sharedStore()
 	withWorld(function(w, Fetch, Block)
 		local b = live(w, Block)
 		reads(w)[1].done(out("WATCH"))
-		b.cache = Sync.merge(fresh(), nil, { added = {}, tandem = Model.tandemFlags(b.watched, fresh().prs) }, Cases.asOf + 60)
+		b.cache = Sync.merge(fresh(), nil, { added = {}, tandem = Model.tandemFlags(b.watched, fresh().prs), landing = {} }, Cases.asOf + 60)
 		State.replace(b.s, b.cache.prs, Cases.asOf, Cases.asOfIso)
 		local answer: any = nil
 		b.github = quietGithub(function(_, done) answer = done end)

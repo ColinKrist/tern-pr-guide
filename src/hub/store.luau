@@ -49,7 +49,7 @@ local function readLocal(): Sync.Local
 			end
 		end
 	end
-	return { added = added, tandem = {} }
+	return { added = added, tandem = {}, landing = {} }
 end
 
 -- `prs` with Tandem's flag set. The list a fixture hands over is shared data, so a flagged PR is a copy of it.

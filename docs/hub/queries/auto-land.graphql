@@ -1,0 +1,15 @@
+# After a refresh, only for PRs with auto-land on: whether each is still open, its labels, the latest label events
+# (who added or removed which label, and when), whether auto-merge is on, and who wrote the head commit.
+query AutoLand($ids: [ID!]!) {
+  rateLimit { cost remaining limit resetAt }
+  nodes(ids: $ids) { ... on PullRequest { id state isDraft headRefOid
+    autoMergeRequest { enabledAt }
+    labels(first: 30) { nodes { name } }
+    timelineItems(last: 30, itemTypes: [LABELED_EVENT, UNLABELED_EVENT]) { nodes {
+      __typename
+      ... on LabeledEvent { createdAt actor { __typename login } label { name } }
+      ... on UnlabeledEvent { createdAt actor { __typename login } label { name } }
+    } }
+    commits(last: 1) { nodes { commit { oid author { user { login } } } } }
+  } }
+}

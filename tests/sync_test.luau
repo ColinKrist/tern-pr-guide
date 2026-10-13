@@ -72,7 +72,7 @@ end
 local function testLoadSave()
 	local prs = Cases.prs
 	local cache = Sync.merge({ prs = prs, viewer = "jubbydev", rateLimit = { cost = 1, remaining = 4999, limit = 5000, resetAt = "2026-10-09T13:00:00Z" }, calls = {}, truncated = false, partial = nil } :: any,
-		nil, { added = {}, tandem = {} }, NOW)
+		nil, { added = {}, tandem = {}, landing = {} }, NOW)
 	assert(cache.refreshedAt == "2026-10-09T12:00:00Z", cache.refreshedAt)
 	-- Round trip: the stored value loads back equal and saves again without change under a large cap.
 	local stored = Sync.save(cache, math.huge, function() return 1 end)
@@ -91,6 +91,21 @@ local function testLoadSave()
 	local badPr: any = table.clone(stored)
 	badPr.prs = { { key = "a/b#1" } }
 	assert(Sync.load(badPr) == nil)
+	-- An auto-land mark is optional, and a malformed one rejects the cache.
+	local function withMark(mark: any): any
+		local value: any = table.clone(stored)
+		value.prs = table.clone(stored.prs)
+		local pr = table.clone(stored.prs[1])
+		pr.autoLand = mark
+		value.prs[1] = pr
+		return value
+	end
+	local on = Sync.load(withMark({ state = "on", tries = 2 }))
+	assert(on ~= nil and on.prs[1].autoLand ~= nil and (on.prs[1].autoLand :: any).tries == 2, "an on mark loads")
+	assert(Sync.load(withMark({ state = "stopped", reason = "Merge conflict" })) ~= nil, "a stopped mark loads")
+	assert(Sync.load(withMark({ state = "on" })) == nil, "an on mark without tries is malformed")
+	assert(Sync.load(withMark({ state = "stopped" })) == nil, "a stopped mark without a reason is malformed")
+	assert(Sync.load(withMark({ state = "maybe", tries = 1 })) == nil and Sync.load(withMark("on")) == nil, "an unknown mark is malformed")
 	local badCounts: any = table.clone(stored)
 	badCounts.counts = { toReview = "x" }
 	assert(Sync.load(badCounts) == nil)
@@ -118,10 +133,14 @@ local function testMerge()
 	moved.key = "acme/web#999"
 	moved.pending = nil
 	local refresh: any = { prs = { fresh, moved }, viewer = "jubbydev", rateLimit = { cost = 1, remaining = 1, limit = 2, resetAt = "" }, calls = {}, truncated = false }
-	local localFacts: Sync.Local = { added = { ["acme/web#999"] = { repo = "acme/web", number = 999 } }, tandem = { ["acme/web#104"] = true } }
+	local localFacts: Sync.Local = { added = { ["acme/web#999"] = { repo = "acme/web", number = 999 } }, tandem = { ["acme/web#104"] = true },
+		landing = { ["acme/web#999"] = { state = "stopped", reason = "Merge conflict" } } }
 	local merged = Sync.merge(refresh, previous, localFacts, NOW)
 	assert(merged.prs[1].tandem == true and merged.prs[1].addedByMe == false)
 	assert(merged.prs[2].tandem == false and merged.prs[2].addedByMe == true)
+	assert(merged.prs[1].autoLand == nil, "a PR with no auto-land record has no mark")
+	local mark = merged.prs[2].autoLand
+	assert(mark ~= nil and mark.state == "stopped" and mark.reason == "Merge conflict", "merge fills the mark from landing")
 	local carried = merged.prs[1].pending
 	assert(carried ~= nil and carried.method == "queue", "pending kept while the head is the same")
 	assert(merged.prs[2].pending == nil)
@@ -130,13 +149,13 @@ local function testMerge()
 	assert(Sync.merge(refresh, previous, localFacts, NOW).prs[1].pending == nil)
 	-- Counts rebuilt: #104 is watched by Tandem, so it waits in In review and only #999 is in Needs fixes; flash rises with the count.
 	assert(merged.counts.needFixes == 1 and merged.counts.toReview == 0 and merged.counts.flashAt == NOW)
-	local calm = Sync.merge({ prs = {}, viewer = "jubbydev", rateLimit = refresh.rateLimit, calls = {}, truncated = false } :: any, merged, { added = {}, tandem = {} }, NOW + 60)
+	local calm = Sync.merge({ prs = {}, viewer = "jubbydev", rateLimit = refresh.rateLimit, calls = {}, truncated = false } :: any, merged, { added = {}, tandem = {}, landing = {} }, NOW + 60)
 	assert(calm.counts.needFixes == 0 and calm.counts.flashAt == NOW and calm.refreshedAt == "2026-10-09T12:01:00Z")
 	-- Recently merged: a refresh's list replaces the cache's, and a refresh whose merged search failed keeps it.
 	local list = { { repo = "acme/web", number = 981, title = "Cache sprites", author = "", at = "2026-10-09T00:00:00Z" } }
-	local withMerged = Sync.merge({ prs = {}, viewer = "jubbydev", rateLimit = refresh.rateLimit, calls = {}, truncated = false, merged = list } :: any, merged, { added = {}, tandem = {} }, NOW)
+	local withMerged = Sync.merge({ prs = {}, viewer = "jubbydev", rateLimit = refresh.rateLimit, calls = {}, truncated = false, merged = list } :: any, merged, { added = {}, tandem = {}, landing = {} }, NOW)
 	assert(withMerged.merged == list)
-	assert(Sync.merge({ prs = {}, viewer = "jubbydev", rateLimit = refresh.rateLimit, calls = {}, truncated = false } :: any, withMerged, { added = {}, tandem = {} }, NOW).merged == list)
+	assert(Sync.merge({ prs = {}, viewer = "jubbydev", rateLimit = refresh.rateLimit, calls = {}, truncated = false } :: any, withMerged, { added = {}, tandem = {}, landing = {} }, NOW).merged == list)
 	local stored = Sync.load(Sync.save(withMerged, math.huge, function() return 1 end))
 	assert(stored and stored.merged and #stored.merged == 1 and stored.merged[1].number == 981, "the list survives kv")
 	local junk: any = Sync.save(withMerged, math.huge, function() return 1 end)
@@ -145,7 +164,7 @@ local function testMerge()
 	assert(cleaned and #(cleaned.merged :: any) == 1, "a malformed row is skipped, not the cache")
 	-- Counts over the whole fixture.
 	local added = { ["acme/web#303"] = { repo = "acme/web", number = 303 } }
-	local all = Sync.merge({ prs = Cases.prs, viewer = "jubbydev", rateLimit = refresh.rateLimit, calls = {}, truncated = false } :: any, nil, { added = added, tandem = {} }, NOW)
+	local all = Sync.merge({ prs = Cases.prs, viewer = "jubbydev", rateLimit = refresh.rateLimit, calls = {}, truncated = false } :: any, nil, { added = added, tandem = {}, landing = {} }, NOW)
 	local fixes, review = 0, 0
 	for _, pr in Cases.prs do
 		local column = require("../src/hub/model").classify(pr, NOW)

@@ -24,7 +24,7 @@ export type Cache = {
 	merged: { Opened }?, -- the last Recently merged list GitHub sent
 }
 export type Added = { [string]: PRRef } -- hub.added, by key
-export type Local = { added: Added, tandem: { [string]: boolean } }
+export type Local = { added: Added, tandem: { [string]: boolean }, landing: { [string]: Model.LandMark } } -- landing: auto-land marks by key
 export type MergeRecord = {
 	schema: number, user: MergeMethod?, declared: MergeMethod?, learned: MergeMethod?,
 	learnedAnswered: boolean, checkedAt: string?,
@@ -64,9 +64,17 @@ local function fieldsOk(value: any, fields: { [string]: (any) -> boolean }): boo
 	return true
 end
 
+local function validMark(mark: any): boolean
+	if mark == nil then return true end
+	if type(mark) ~= "table" then return false end
+	if mark.state == "on" then return isNumber(mark.tries) end
+	return mark.state == "stopped" and isString(mark.reason)
+end
+
 -- A PR the rules can place without raising.
 local function validPr(pr: any): boolean
 	if not fieldsOk(pr, PR_FIELDS) or not fieldsOk(pr.checks, CHECK_FIELDS) or not fieldsOk(pr.reviews, REVIEW_FIELDS) then return false end
+	if not validMark(pr.autoLand) then return false end
 	if pr.checks.failedNames ~= nil then
 		if type(pr.checks.failedNames) ~= "table" or #pr.checks.failedNames > pr.checks.failing then return false end
 		local count = 0
@@ -167,6 +175,7 @@ function M.merge(fresh: Refresh, previous: Cache?, localFacts: Local, now: numbe
 		local pr = table.clone(source)
 		pr.tandem = localFacts.tandem[pr.key] == true
 		pr.addedByMe = localFacts.added[pr.key] ~= nil
+		pr.autoLand = localFacts.landing[pr.key]
 		local old = before[pr.key]
 		local removed = pr.mergeFailure ~= nil and pr.mergeFailure.kind == "queue" -- the queue dropped it: nothing is in flight
 		if pr.pending == nil and old and old.pending and old.headOid == pr.headOid and not removed then pr.pending = old.pending end
@@ -255,7 +264,7 @@ export type Changes = {
 }
 
 local REASON_TEXT: { [Reason]: string } = {
-	merge_failed = "merge failed", feedback = "new feedback", checks = "failing check", conflict = "conflict",
+	auto_land = "auto-land stopped", merge_failed = "merge failed", feedback = "new feedback", checks = "failing check", conflict = "conflict",
 }
 
 -- What `fresh` changed against `old`. A PR missing from `old` (new, or evicted by the cap) never arrives, since
