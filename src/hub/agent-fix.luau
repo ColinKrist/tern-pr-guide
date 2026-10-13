@@ -358,16 +358,10 @@ local function runAt(lines: { string }, at: number, run: { string }): boolean
  return true
 end
 
--- A resolved conflict in `text`, its file at a commit made after the agent's: whatever now sits between its recorded
--- context lines is its resolution. The hunk itself when that is still the agent's; nil when the context no longer marks
--- exactly one place.
-function M.reanchor(hunk: ConflictHunk, text: string): ConflictHunk?
- local resolution = hunk.resolved
- if not resolution then return nil end
- local lines = fileLines(text)
- local before, after = hunk.context.before, hunk.context.after
+-- Where `before` then `after` mark one region of `lines`: its first line and the line after it. Nil when they mark
+-- none; "many" when they mark more than one. No lines before means the file's start, none after its end.
+local function place(lines: { string }, before: { string }, after: { string }): ({ number } | "many")?
  local found: { number }? = nil
- -- With no context before, the conflict opens the file; with none after, it runs to the end.
  for start = 1, if #before == 0 then 1 else #lines - #before + 1 do
   if not runAt(lines, start, before) then continue end
   local from = start + #before
@@ -378,24 +372,54 @@ function M.reanchor(hunk: ConflictHunk, text: string): ConflictHunk?
    end
   end
   if to then
-   if found then return nil end
+   if found then return "many" end
    found = { from, to }
   end
  end
+ return found
+end
+
+-- A resolved conflict in `text`, its file at a commit made after the agent's: whatever now sits between its context
+-- lines is its resolution. A chat may also have edited those context lines, so the context nearest the conflict is
+-- tried when the whole no longer matches, keeping at least one line on each side that had one. The hunk itself when
+-- nothing changed; nil when no context marks exactly one place.
+function M.reanchor(hunk: ConflictHunk, text: string): ConflictHunk?
+ local resolution = hunk.resolved
+ if not resolution then return nil end
+ local lines = fileLines(text)
+ local before, after = hunk.context.before, hunk.context.after
+ local found: { number }? = nil
+ local kept = { before = before, after = after }
+ for total = #before + #after, (if #before > 0 then 1 else 0) + (if #after > 0 then 1 else 0), -1 do
+  for b = math.min(#before, total), (if #before > 0 then 1 else 0), -1 do
+   local a = total - b
+   if a > #after or (#after > 0 and a < 1) then continue end
+   local nearBefore = table.move(before, #before - b + 1, #before, 1, {})
+   local nearAfter = table.move(after, 1, a, 1, {})
+   local at = place(lines, nearBefore, nearAfter)
+   if at == "many" then return nil end
+   if at then
+    found, kept = at, { before = nearBefore, after = nearAfter }
+    break
+   end
+  end
+  if found then break end
+ end
  if not found then return nil end
  local from, to = found[1], found[2]
- local same = to - from == #resolution.lines
+ local unchanged = to - from == #resolution.lines
  local resolved: { ResolvedLine } = {}
  for i = from, to - 1 do
   local old = resolution.lines[i - from + 1]
-  if not old or old.text ~= lines[i] then same = false end
+  if not old or old.text ~= lines[i] then unchanged = false end
   table.insert(resolved, { tag = "agent", text = lines[i] })
  end
- if same then return hunk end
- -- Decoded sides are shared as they are: Tern tags decoded arrays with a metatable table.clone refuses.
+ if unchanged and #kept.before == #before and #kept.after == #after then return hunk end
+ -- Decoded sides are shared as they are: Tern tags decoded arrays with a metatable table.clone refuses. An untouched
+ -- resolution keeps who wrote each line.
  return {
   id = hunk.id, path = hunk.path, start = hunk.start, base = hunk.base, ours = hunk.ours, theirs = hunk.theirs,
-  context = hunk.context, subjects = hunk.subjects, resolved = { by = "agent", lines = resolved },
+  context = kept, subjects = hunk.subjects, resolved = if unchanged then resolution else { by = "agent", lines = resolved },
  }
 end
 

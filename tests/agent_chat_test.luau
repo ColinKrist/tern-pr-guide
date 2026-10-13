@@ -102,6 +102,19 @@ local function chatFix(): AgentFix.Fix
 	assert(moved.resolved.lines[1].text == "const cache = combineCaches({ warm: true });" and moved.resolved.lines[1].tag == "agent")
 	assert(AgentFix.reanchor(cache, CHAT_FILES["src/fonts.ts"] .. CHAT_FILES["src/fonts.ts"]) == nil, "ambiguous context fails closed")
 	assert(AgentFix.reanchor(cache, "// cache\nnothing after\n") == nil, "missing context fails closed")
+	-- Found live: the chat edited a line of the recorded context (line five), not the resolution. The context nearest the
+	-- conflict still marks it, and the hunk keeps the agent's resolution with the context that still matches.
+	local edge: AgentFix.ConflictHunk = {
+		id = "h1", path = "chat-conflict.txt", start = 3, base = { "line three" }, ours = { "line three, topic" }, theirs = { "line three, main" },
+		context = { before = { "line one", "line two" }, after = { "line four", "line five" } }, subjects = { ours = {}, theirs = {} },
+		resolved = { by = "agent", lines = { { tag = "ours", text = "line three, topic" }, { tag = "theirs", text = "line three, main" } } },
+	}
+	local edited = AgentFix.reanchor(edge, "line one\nline two\nline three, topic\nline three, main\nline four\nline five, edited in the chat.\n")
+	assert(edited and edited.resolved == edge.resolved and #edited.context.after == 1 and edited.context.after[1] == "line four")
+	local review = ReviewFix.build({ worktree = "/w", branch = "b", base = "main", headOid = string.rep("a", 40), commit = string.rep("b", 40),
+		hunks = { edited :: AgentFix.ConflictHunk }, summary = "", usedAgent = true },
+		{ ["chat-conflict.txt"] = "line one\nline two\nline three, topic\nline three, main\nline four\nline five, edited in the chat.\n" }, nil)
+	assert(review.verified, review.error)
 
 	local updated, why = AgentFix.fromChat(fix, CHAT_COMMIT, CHAT_FILES, CHAT_DIFF)
 	assert(updated and not why)
