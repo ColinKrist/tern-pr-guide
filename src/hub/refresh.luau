@@ -180,6 +180,7 @@ startRefresh = function(b: Block, cx: BlockCx)
 			b.cache = cache
 			b.sched.probeChanged, b.sched.focusedAt = false, nil
 			State.replace(b.s, cache.prs, now, cache.refreshedAt)
+			State.setMerged(b.s, cache.merged)
 			-- This answer may predate a local edit no write has stored (a close whose save failed): it lays that PR back, so the
 			-- still-valid retained edits apply again before the counts and the write, which then store their effects.
 			if replayEdits(b, requested) then recount(b) end

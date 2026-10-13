@@ -9,6 +9,7 @@ local Fixture: any = require("../fixtures/hub/merge-methods")
 local RawHub: any = require("../fixtures/hub/raw-hub-f")
 local RawThreads: any = require("../fixtures/hub/raw-threads")
 local RawChecks: any = require("../fixtures/hub/raw-checks")
+local RawMerged: any = require("../fixtures/hub/raw-merged")
 
 local NOW: number = Fixture.asOf
 local COST_LIMIT = 18
@@ -190,7 +191,7 @@ local function refreshClient(): (Github.Client, FakeRunner.Fake)
 	local node = clone(Fixture.failures.comment)
 	node.id, node.headRefOid = "PR_acme/api#109", "head109"
 	local bodies: { [string]: any } = {
-		["hub-f"] = RawHub, threads = RawThreads, checks = RawChecks,
+		["hub-f"] = RawHub, threads = RawThreads, checks = RawChecks, merged = RawMerged,
 		failure = { data = {
 			rateLimit = { cost = 1, remaining = 4900, limit = 5000, resetAt = "2026-10-09T13:00:00Z" },
 			nodes = { node },
@@ -201,15 +202,16 @@ local function refreshClient(): (Github.Client, FakeRunner.Fake)
 		{ prefix = BASE, contains = "query Hub(", reply = { stdout = "hub-f" } },
 		{ prefix = BASE, contains = "query Threads(", reply = { stdout = "threads" } },
 		{ prefix = BASE, contains = "query Checks(", reply = { stdout = "checks" } },
+		{ prefix = BASE, contains = "query Merged(", reply = { stdout = "merged" } },
 	})
 	return Github.client(fake.run, function(text: string): any return bodies[text] end), fake
 end
 
 local function testRefresh()
 	local client, fake = refreshClient()
-	-- No merge in flight: the three searches and threads.
+	-- No merge in flight: the three searches, Recently merged and threads.
 	local plain = first(function(done) client.refresh({ added = {}, previous = {} }, done) end)
-	assert(#plain.calls == 4 and #fake.calls == 4)
+	assert(#plain.calls == 5 and #fake.calls == 5)
 	local base = clone(plain.prs)
 	local target: any
 	for _, pr in base do
@@ -221,8 +223,8 @@ local function testRefresh()
 	local pending = clone(target)
 	pending.pending = { method = "comment", at = Fixture.pendingAt }
 	local value = first(function(done) client.refresh({ added = {}, previous = { pending } }, done) end)
-	assert(#fake.calls == 9 and #value.calls == 5)
-	local lookup = fake.calls[9]
+	assert(#fake.calls == 11 and #value.calls == 6)
+	local lookup = fake.calls[11]
 	assert(string.find(lookup.argv[5], "query MergeFailure(", 1, true) ~= nil)
 	same({ table.unpack(lookup.argv, 6) }, { "-f", "ids[]=PR_acme/api#109" }, "lookup ids")
 	local failing: any
@@ -231,7 +233,7 @@ local function testRefresh()
 		if pr.id ~= "PR_acme/api#109" then assert(pr.mergeFailure == nil or pr.mergeFailure.kind == "queue") end
 	end
 	same(failing.mergeFailure, { kind = "comment", reason = "ci" }, "failure from the lookup")
-	assert(value.rateLimit == value.calls[5])
+	assert(value.rateLimit == value.calls[6])
 	-- The whole refresh, with the lookup, stays under the budget the tests hold.
 	local total = 0
 	for _, call in value.calls do total += call.cost end
@@ -243,7 +245,7 @@ local function testRefresh()
 	moved.headOid = "older-head"
 	local calls = #fake.calls
 	local after = first(function(done) client.refresh({ added = {}, previous = { moved } }, done) end)
-	assert(#fake.calls == calls + 4 and #after.calls == 4)
+	assert(#fake.calls == calls + 5 and #after.calls == 5)
 	for _, pr in after.prs do
 		if pr.id == "PR_acme/api#109" then assert(pr.mergeFailure == nil) end
 	end
@@ -259,16 +261,17 @@ local function testRefresh()
 	queued.pending = { method = "queue", at = Fixture.pendingAt }
 	calls = #fake.calls
 	first(function(done) client.refresh({ added = {}, previous = { queued } }, done) end)
-	assert(#fake.calls == calls + 4)
+	assert(#fake.calls == calls + 5)
 
 	-- A lookup that fails leaves the refresh standing.
 	local broken = FakeRunner.new({
 		{ prefix = BASE, contains = "query MergeFailure(", reply = { status = 1, stderr = "gh: HTTP 502" } },
 		{ prefix = BASE, contains = "query Hub(", reply = { stdout = "hub-f" } },
 		{ prefix = BASE, contains = "query Threads(", reply = { stdout = "threads" } },
+		{ prefix = BASE, contains = "query Merged(", reply = { stdout = "merged" } },
 	})
 	local survivor = Github.client(broken.run, function(text: string): any
-		return if text == "hub-f" then RawHub else RawThreads
+		return if text == "hub-f" then RawHub elseif text == "merged" then RawMerged else RawThreads
 	end)
 	local ok = first(function(done) survivor.refresh({ added = {}, previous = { pending } }, done) end)
 	assert(#ok.prs == #base and ok.partial ~= nil and ok.partial.message == "Couldn't check merges in flight: HTTP 502")

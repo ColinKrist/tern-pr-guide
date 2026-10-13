@@ -132,6 +132,17 @@ local function testMerge()
 	assert(merged.counts.needFixes == 1 and merged.counts.toReview == 0 and merged.counts.flashAt == NOW)
 	local calm = Sync.merge({ prs = {}, viewer = "jubbydev", rateLimit = refresh.rateLimit, calls = {}, truncated = false } :: any, merged, { added = {}, tandem = {} }, NOW + 60)
 	assert(calm.counts.needFixes == 0 and calm.counts.flashAt == NOW and calm.refreshedAt == "2026-10-09T12:01:00Z")
+	-- Recently merged: a refresh's list replaces the cache's, and a refresh whose merged search failed keeps it.
+	local list = { { repo = "acme/web", number = 981, title = "Cache sprites", author = "", at = "2026-10-09T00:00:00Z" } }
+	local withMerged = Sync.merge({ prs = {}, viewer = "jubbydev", rateLimit = refresh.rateLimit, calls = {}, truncated = false, merged = list } :: any, merged, { added = {}, tandem = {} }, NOW)
+	assert(withMerged.merged == list)
+	assert(Sync.merge({ prs = {}, viewer = "jubbydev", rateLimit = refresh.rateLimit, calls = {}, truncated = false } :: any, withMerged, { added = {}, tandem = {} }, NOW).merged == list)
+	local stored = Sync.load(Sync.save(withMerged, math.huge, function() return 1 end))
+	assert(stored and stored.merged and #stored.merged == 1 and stored.merged[1].number == 981, "the list survives kv")
+	local junk: any = Sync.save(withMerged, math.huge, function() return 1 end)
+	junk.merged = { { repo = 5 }, list[1] }
+	local cleaned = Sync.load(junk)
+	assert(cleaned and #(cleaned.merged :: any) == 1, "a malformed row is skipped, not the cache")
 	-- Counts over the whole fixture.
 	local added = { ["acme/web#303"] = { repo = "acme/web", number = 303 } }
 	local all = Sync.merge({ prs = Cases.prs, viewer = "jubbydev", rateLimit = refresh.rateLimit, calls = {}, truncated = false } :: any, nil, { added = added, tandem = {} }, NOW)

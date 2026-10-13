@@ -53,6 +53,13 @@ local SAMPLE_RECENT: { Sync.Opened } = {
 }
 
 
+-- The merged pull requests a fixture board shows, against its clock: the last one is past the 7 days, so it stays hidden.
+local SAMPLE_MERGED: { Sync.Opened } = {
+	{ repo = "acme/web", number = 981, title = "Cache the avatar sprites", author = "", at = "2026-10-08T15:02:10Z" },
+	{ repo = "acme/api", number = 405, title = "Retry webhook deliveries with backoff", author = "", at = "2026-10-05T10:44:51Z" },
+	{ repo = "acme/api", number = 377, title = "Log slow queries", author = "", at = "2026-09-01T08:00:00Z" },
+}
+
 -- The agent a fixture board shows, so Settings has something to choose from without running omp. Names and
 -- efforts are as long as omp's real ones.
 local SAMPLE_AGENT: State.AgentChoice = {
@@ -615,10 +622,12 @@ local block: BlockDef<Block> = {
 		s.links = Fetch.linkTarget()
 		if fixture then
 			State.setRecent(s, SAMPLE_RECENT)
+			State.setMerged(s, SAMPLE_MERGED)
 		else
 			-- The picker's list moves to hub.recent the first time the hub loads.
 			Fetch.migrateRecent()
 			State.setRecent(s, Fetch.recentPrs())
+			State.setMerged(s, if cache then cache.merged else nil)
 		end
 		s.refreshedAt = refreshedAt
 		s.loading = live and cache == nil
