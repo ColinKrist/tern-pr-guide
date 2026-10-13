@@ -9,14 +9,14 @@ export type Span = { from: number, to: number }
 export type Interval = { first: number, last: number }
 export type Move = Moves.Move
 
--- One line of the new-side file. Lines the PR's diff lists carry `diff = true`, the word-diff span
--- of a paired removed/added line, and the hunk label when they open a hunk. Unchanged lines
+-- One line of the new-side file. Lines the PR's diff lists carry `diff = true`, the word-diff spans
+-- of a paired removed/added line (in order, apart), and the hunk label when they open a hunk. Unchanged lines
 -- between hunks are filled in from the file source. A line that was cut and pasted elsewhere in
--- the PR carries `moved`, and no word-diff span.
+-- the PR carries `moved`, and no word-diff spans.
 export type Entry = {
  row: Pr.Line,
  diff: boolean,
- changed: Span?,
+ changed: { Span }?,
  label: string?,
  -- The new-side line the entry sits at; a removed line belongs with the line after it.
  anchor: number?,
@@ -181,65 +181,189 @@ local WHOLE_MAX = 800
 -- Lines one click on a gap opens.
 local EXPAND_STEP = 20
 
+-- Word-diff pairing needs a removed and an added line to share at least this share of their
+-- visible characters (in words both keep). Below it the leftovers are confetti, so the lines show as
+-- a plain removal and addition. Weighing by characters keeps `(`, `)` from pairing `bar(x)` with `f()`.
+local SIMILAR = 0.4
+-- ponytail: the word LCS skips lines whose differing middles multiply past this many word pairs
+-- (about 100 x 100 words), and then marks the whole middle changed; and a removed/added run larger
+-- than MAX_PAIRS line pairs pairs by position instead of by similarity.
+local MAX_CELLS = 10000
+local MAX_PAIRS = 400
+
 local M = {}
 
--- Changed middle of a paired removed/added line: the span on each side.
-local function changedMiddle(old: string, new: string): (Span, Span)
- local prefix = 0
- while prefix < #old and prefix < #new and string.byte(old, prefix + 1) == string.byte(new, prefix + 1) do prefix += 1 end
- local suffix = 0
- while suffix < #old - prefix and suffix < #new - prefix and string.byte(old, #old - suffix) == string.byte(new, #new - suffix) do suffix += 1 end
- return { from = prefix + 1, to = #old - suffix + 1 }, { from = prefix + 1, to = #new - suffix + 1 }
+-- A line cut into words: runs of letters, digits and `_`, runs of whitespace, and single other
+-- characters, with each word's first byte.
+type Words = { list: { string }, starts: { number }, text: string }
+
+local function words(text: string): Words
+ local list, starts = {}, {}
+ local i = 1
+ while i <= #text do
+  local _, last = string.find(text, "^[%w_]+", i)
+  if not last then _, last = string.find(text, "^%s+", i) end
+  if not last then _, last = string.find(text, "^" .. utf8.charpattern, i) end
+  local stop = last or i
+  table.insert(list, string.sub(text, i, stop))
+  table.insert(starts, i)
+  i = stop + 1
+ end
+ return { list = list, starts = starts, text = text }
 end
 
-local function rowText(row: Pr.Row): string
- return if row.kind == "hunk" then "" else row.text
+-- The words of `a` and `b` a longest common subsequence keeps, by index.
+local function common(a: { string }, b: { string }): ({ [number]: boolean }, { [number]: boolean })
+ local keptA, keptB = {}, {}
+ local lo, hiA, hiB = 1, #a, #b
+ while lo <= hiA and lo <= hiB and a[lo] == b[lo] do
+  keptA[lo], keptB[lo] = true, true
+  lo += 1
+ end
+ while hiA >= lo and hiB >= lo and a[hiA] == b[hiB] do
+  keptA[hiA], keptB[hiB] = true, true
+  hiA -= 1
+  hiB -= 1
+ end
+ local n, m = hiA - lo + 1, hiB - lo + 1
+ if n == 0 or m == 0 or n * m > MAX_CELLS then return keptA, keptB end
+ -- after[i * w + j + 1]: the LCS length of a's middle from i and b's middle from j, 0-based.
+ local w = m + 1
+ local after = table.create((n + 1) * w, 0)
+ for i = n - 1, 0, -1 do
+  for j = m - 1, 0, -1 do
+   after[i * w + j + 1] = if a[lo + i] == b[lo + j] then after[(i + 1) * w + j + 2] + 1
+    else math.max(after[(i + 1) * w + j + 1], after[i * w + j + 2])
+  end
+ end
+ local i, j = 0, 0
+ while i < n and j < m do
+  if a[lo + i] == b[lo + j] then
+   keptA[lo + i], keptB[lo + j] = true, true
+   i += 1
+   j += 1
+  elseif after[(i + 1) * w + j + 1] >= after[i * w + j + 2] then
+   i += 1
+  else
+   j += 1
+  end
+ end
+ return keptA, keptB
 end
 
-local function trimmed(span: Span, text: string): Span
- local first = string.find(text, "%S") or (#text + 1)
- local last = #text
- while last > 0 and string.match(string.sub(text, last, last), "%s") do last -= 1 end
- return { from = math.max(span.from, first), to = math.min(span.to, last + 1) }
+local function visible(word: string): number
+ return #(string.gsub(word, "%s", ""))
 end
 
--- Pairs each run of removed lines with the added lines after it: row index -> changed span. Moved
--- lines pair with nothing.
-local function pairChanges(rows: { Pr.Row }, moves: { [number]: Move }): { [number]: Span }
- local spans: { [number]: Span } = {}
+-- The words a line lost (or gained) as spans. A span starts and ends on a visible word, and changed
+-- words with only whitespace between them join, so a whitespace-only change marks nothing.
+local function spansOf(line: Words, kept: { [number]: boolean }): { Span }
+ local spans: { Span } = {}
+ for k, word in line.list do
+  if kept[k] or visible(word) == 0 then continue end
+  local from, to = line.starts[k], line.starts[k] + #word
+  local prev = spans[#spans]
+  if prev and string.find(string.sub(line.text, prev.to, from - 1), "^%s*$") then
+   prev.to = to
+  else
+   table.insert(spans, { from = from, to = to })
+  end
+ end
+ return spans
+end
+
+-- How alike a removed and an added line are (0 to 1), and the words each changed.
+type Compared = { score: number, old: { Span }, new: { Span } }
+
+local function compare(old: Words, new: Words): Compared
+ local keptOld, keptNew = common(old.list, new.list)
+ local shared, total = 0, 0
+ for k, word in old.list do
+  local size = visible(word)
+  total += size
+  if keptOld[k] then shared += size end
+ end
+ for _, word in new.list do total += visible(word) end
+ return {
+  score = if total == 0 then 1 else 2 * shared / total,
+  old = spansOf(old, keptOld),
+  new = spansOf(new, keptNew),
+ }
+end
+
+-- Pairs removed lines with the added lines they most likely became, in order and without crossing:
+-- the pairs whose similarity adds up highest, each at least SIMILAR. Fills `spans` by row index.
+local function pairRun(rows: { Pr.Row }, dels: { number }, adds: { number }, spans: { [number]: { Span } })
+ local d, a = #dels, #adds
+ if d == 0 or a == 0 then return end
+ local function wordsAt(index: number): Words return words((rows[index] :: Pr.Line).text) end
+ local oldWords, newWords = {}, {}
+ for k, index in dels do oldWords[k] = wordsAt(index) end
+ for k, index in adds do newWords[k] = wordsAt(index) end
+ local function record(i: number, j: number, c: Compared)
+  if #c.old > 0 then spans[dels[i]] = c.old end
+  if #c.new > 0 then spans[adds[j]] = c.new end
+ end
+ if d * a > MAX_PAIRS then
+  for k = 1, math.min(d, a) do
+   local c = compare(oldWords[k], newWords[k])
+   if c.score >= SIMILAR then record(k, k, c) end
+  end
+  return
+ end
+ local compared: { { Compared } } = {}
+ -- best[i * (a + 1) + j + 1]: the highest total similarity pairing the first i removed with the first j added.
+ local w = a + 1
+ local best = table.create((d + 1) * w, 0)
+ for i = 1, d do
+  compared[i] = {}
+  for j = 1, a do
+   local c = compare(oldWords[i], newWords[j])
+   compared[i][j] = c
+   local take = if c.score >= SIMILAR then best[(i - 1) * w + j] + c.score else 0
+   best[i * w + j + 1] = math.max(take, best[(i - 1) * w + j + 1], best[i * w + j])
+  end
+ end
+ local i, j = d, a
+ while i > 0 and j > 0 do
+  local here = best[i * w + j + 1]
+  if here == best[(i - 1) * w + j + 1] then
+   i -= 1
+  elseif here == best[i * w + j] then
+   j -= 1
+  else
+   record(i, j, compared[i][j])
+   i -= 1
+   j -= 1
+  end
+ end
+end
+
+-- Pairs each run of removed lines with the run of added lines after it: row index -> changed spans.
+-- Moved lines pair with nothing.
+local function pairChanges(rows: { Pr.Row }, moves: { [number]: Move }): { [number]: { Span } }
+ local spans: { [number]: { Span } } = {}
  local i = 1
  while i <= #rows do
   if rows[i].kind == "del" and not moves[i] then
-   local firstDel = i
-   while i <= #rows and rows[i].kind == "del" and not moves[i] do i += 1 end
-   local firstAdd = i
-   while i <= #rows and rows[i].kind == "add" and not moves[i] do i += 1 end
-   local dels, adds = firstAdd - firstDel, i - firstAdd
-   for k = 0, math.min(dels, adds) - 1 do
-    spans[firstDel + k], spans[firstAdd + k] = changedMiddle(rowText(rows[firstDel + k]), rowText(rows[firstAdd + k]))
+   local dels, adds = {}, {}
+   while i <= #rows and rows[i].kind == "del" and not moves[i] do
+    table.insert(dels, i)
+    i += 1
    end
-   if dels > 0 and adds > 0 and dels ~= adds then
-    -- Several removed lines collapsed into one added line (or the reverse): compare the joined removed text.
-    local firstText = rowText(rows[firstDel])
-    local joined = ""
-    for k = 0, dels - 1 do
-     joined ..= (if k == 0 then "" else " ") .. string.gsub(rowText(rows[firstDel + k]), "^%s+", "")
-    end
-    joined = (string.match(firstText, "^%s*") :: string) .. joined
-    local _, addedSpan = changedMiddle(joined, rowText(rows[firstAdd]))
-    spans[firstAdd] = addedSpan
-    for k = 1, dels - 1 do spans[firstDel + k] = { from = 1, to = #rowText(rows[firstDel + k]) + 1 } end
-    spans[firstDel] = (changedMiddle(firstText, rowText(rows[firstAdd])))
+   while i <= #rows and rows[i].kind == "add" and not moves[i] do
+    table.insert(adds, i)
+    i += 1
    end
+   pairRun(rows, dels, adds, spans)
   else
    i += 1
   end
  end
- for index, span in spans do spans[index] = trimmed(span, rowText(rows[index])) end
  return spans
 end
 
-local function buildEntries(file: Pr.File, spans: { [number]: Span }, moves: { [number]: Move }): { Entry }
+local function buildEntries(file: Pr.File, spans: { [number]: { Span } }, moves: { [number]: Move }): { Entry }
  local entries: { Entry } = {}
  local src = file.src or {}
  local newN, oldN, label = 1, 1, nil
@@ -524,28 +648,22 @@ local function tokenize(line: string, syntax: Syntax): { { string } }
 end
 
 -- Splits tokens at the edges of `changed`, flagging the pieces inside it.
-local function markChanged(tokens: { { string } }, changed: Span?): { Token }
+local function markChanged(tokens: { { string } }, changed: { Span }?): { Token }
  local out: { Token } = {}
- local pos = 1
+ local spans = changed or {}
+ local pos, at = 1, 1
  for _, token in tokens do
   local text, kind = token[1], token[2]
   local first, after = pos, pos + #text
-  if not changed or changed.from >= changed.to then
-   table.insert(out, { text = text, kind = kind, changed = false })
-  else
-   local cuts = { first }
-   if changed.from > first and changed.from < after then table.insert(cuts, changed.from) end
-   if changed.to > first and changed.to < after then table.insert(cuts, changed.to) end
-   table.insert(cuts, after)
-   for k = 1, #cuts - 1 do
-    table.insert(out, {
-     text = string.sub(text, cuts[k] - first + 1, cuts[k + 1] - first),
-     kind = kind,
-     changed = cuts[k] >= changed.from and cuts[k] < changed.to,
-    })
-   end
+  if first == after then table.insert(out, { text = text, kind = kind, changed = false }) end
+  while pos < after do
+   while spans[at] and spans[at].to <= pos do at += 1 end
+   local span = spans[at]
+   local inside = span ~= nil and span.from <= pos
+   local stop = if span == nil then after elseif inside then math.min(span.to, after) else math.min(span.from, after)
+   table.insert(out, { text = string.sub(text, pos - first + 1, stop - first), kind = kind, changed = inside })
+   pos = stop
   end
-  pos = after
  end
  return out
 end
