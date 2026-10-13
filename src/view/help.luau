@@ -19,7 +19,7 @@ local GUIDED: { Group } = {
 -- A plain file list: every step is a whole file and there is one change, the whole PR. With no
 -- guide the AI keys are offered; with one, `n  p` and `a  d` walk its suggested comments.
 local FILES: { Group } = {
- { title = "1  Read", keys = { { "j  k", "next / previous file" }, { "/", "search the PR" }, { "i", "PR description" }, { "g", "open on GitHub" } } },
+ { title = "1  Read", keys = { { "j  k", "next / previous file" }, { "/", "search the PR" }, { "i", "PR description" }, { "b", "hide / show the file tree" }, { "g", "open on GitHub" } } },
  { title = "2  React", keys = { { "⏎", "file reviewed, move on" }, { "m", "mark / unmark all reviewed" }, { "c", "comment on this file" } } },
  GUIDED[3],
 }

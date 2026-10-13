@@ -69,6 +69,7 @@ New UI text sounds official: neutral, plain and short, like GitHub.
 - `/opt/homebrew/bin/luau tests/run.luau` runs the pure-module tests and exits non-zero on a failed assert. Run it, then `tern plugin reload`.
 - `tern plugin reload` exits 1 if the plugin fails to load.
 - Try the change in Tern with **New PR Guide sample block**, or a real PR opened with `post=false`. Test reviews are always dry runs.
+- For a change to the review page's layout, also open **New PR Guide worst-case sample block** at a wide and a narrow pane.
 - Check UI changes in light and dark.
 
 ## Commits

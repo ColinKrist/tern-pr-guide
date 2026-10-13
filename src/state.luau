@@ -102,6 +102,8 @@ export type State = {
  search: SearchBox?,
  hit: Hit?,
  helpOpen: boolean,
+ -- The file view's tree is hidden, giving the code the whole width.
+ treeHidden: boolean,
  models: ModelBox?,
  reviewOpen: boolean,
  -- The review panel's selected comment, an index into Review.items.
@@ -165,7 +167,7 @@ function M.new(pr: Pr.PR, guide: Guide.Guide, to: { repo: string?, dryRunPath: s
   flowOpen = true, descriptionOpen = not guide.guided, foldedFolders = if guide.guided then FileGroup.folded() else {}, supportingOpen = false, fileOpen = {}, pinned = {},
   flash = nil, flashStep = nil, flashCount = 0,
   composer = nil, search = nil, hit = nil,
-  helpOpen = false, models = nil, reviewOpen = false, reviewCursor = 1, editingSummary = false,
+  helpOpen = false, treeHidden = false, models = nil, reviewOpen = false, reviewCursor = 1, editingSummary = false,
   keyed = false, submit = { repo = to.repo, dryRunPath = to.dryRunPath, confirming = false, sending = false, error = nil }, ai = nil,
   born = {}, booted = false, now = 0, arrival = "load",
  }

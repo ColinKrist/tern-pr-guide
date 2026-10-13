@@ -46,6 +46,10 @@ block** for a board of recorded sample data, or **New PR Guide sample block** fo
 review is a dry run.
 
 To work on the plugin itself, clone it and run `tern plugin link /path/to/tern-pr-guide`.
+**New PR Guide worst-case sample block** opens a PR built to stress the page: long titles and
+paths, 60 files, a 12-step change and long comments (`fixtures/pr-worst.json`,
+`fixtures/guide-worst.json`). **…, no guide** opens it without the guide, with long model names and
+every effort level in the model menu (`fixtures/agent-worst.json`).
 
 ## Your pull requests
 
@@ -269,6 +273,7 @@ Press `?` on any PR Guide page for the keys that apply there.
 | `⇧⏎` | Mark the whole change reviewed |
 | `v` | Mark the whole file reviewed |
 | `t` | Switch between Guided and Files |
+| `b` | Hide or show the file tree in the file view |
 | `/` | Search steps, files, comments and code |
 | `s` | Show supporting changes |
 | `o` | Open all supporting files and unfold Tests; generated files stay as they are |
