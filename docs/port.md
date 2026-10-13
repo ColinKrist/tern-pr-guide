@@ -809,7 +809,7 @@ Port the table as is, as a `Record<string, (b, cx, value) => void>` and one `dis
 | `card-method` | `State.openMenu(s, "merge")` |
 | `hub-refresh` | `Refresh.refetch`, or `AgentRun.advanceAgentFixture` or `Refresh.stepFixture` on a sample board |
 | `card-handoff` | `HubTandem.handoff`. Drop: Tandem. |
-| `card-copy` | `cx.copy(title .. " " .. url)`, toast "Copied link" |
+| `card-copy` | on macOS `Fetch.copyLink` (HTML `<a href>` and plain "title url" on the pasteboard), else `cx.copy(title .. " " .. url)`; toast "Copied link". In React, `navigator.clipboard.write` with both flavors |
 | `card-merge`, `card-auto`, `card-cancel`, `card-update`, `card-rerequest`, `card-close` | `Ops.act(b, cx, id, key)` for the pull request action `id` (`State.ACT_OF`): offered only, a merge whose method isn't known yet detects it first, a refusal toasts, `State.ask` opens the action's question (`confirm.kind` `merge`, `learned` or `close`; `hub-confirm` answers it), else `Ops.execute` runs it (busy mark, `PrActions` `run`, `keepCache` edit, toast, refetch) |
 | `card-autoland` | `AutoLandRun.toggle` (⇧Q): on writes a fresh record and steps at once; off deletes it. A sample board flips the mark in memory |
 | `hub-land-tries` | `State.setLandTries` ("+1", "-1" or a number), `AutoLandRun.saveSettings` |

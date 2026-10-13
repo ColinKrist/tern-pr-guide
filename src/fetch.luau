@@ -348,6 +348,25 @@ function M.openInBrowser(url: string, done: (err: string?) -> ())
  end)
 end
 
+-- Puts `title` linked to `url` on the clipboard as HTML, with "title url" as the plain-text flavor, so a paste
+-- into Slack or a rich-text field is a hyperlink; `done` gets why it couldn't, else nil.
+-- ponytail: macOS only (JXA through `osascript`); other systems copy plain text.
+local COPY_LINK = [[
+ObjC.import('AppKit');
+function run(argv) {
+  const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const pb = $.NSPasteboard.generalPasteboard;
+  pb.clearContents;
+  pb.setStringForType($('<a href="' + esc(argv[1]) + '">' + esc(argv[0]) + '</a>'), $.NSPasteboardTypeHTML);
+  pb.setStringForType($(argv[0] + ' ' + argv[1]), $.NSPasteboardTypeString);
+}]]
+function M.copyLink(title: string, url: string, done: (err: string?) -> ())
+ M.runner({ "osascript", "-l", "JavaScript", "-e", COPY_LINK, title, url }, { timeout_ms = 15_000 }, function(out)
+  if out.status == 0 and not out.timed_out then return done(nil) end
+  done(if out.timed_out then "the clipboard didn't answer" else Text.errorLine(if out.stderr ~= "" then out.stderr else "the clipboard wasn't written"))
+ end)
+end
+
 -- How long the last finished run took, which the next run's progress is estimated from, before
 -- there is one a guess. Each pass keeps its own.
 local SECONDS_KEYS: { [Agent.Pass]: string } = { explain = "runSeconds", review = "reviewSeconds" }

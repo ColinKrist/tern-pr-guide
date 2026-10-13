@@ -112,7 +112,7 @@ Each PR appears exactly once.
 | Reviewed fix | **Push to branch** (P) | Discard fix (D) |
 | Fix failed | **Try again** (A) | Open worktree (O), only while its lease is retained |
 | No local clone | **Clone repo** (A) | Choose folder… (O) |
-| In review | **Copy link** (C), or **Re-request review** (Q) while a reviewer waits on a re-review: copies "title url" as plain text (Tern's clipboard has no rich flavor; see the clipboard facts) | |
+| In review | **Copy link** (C), or **Re-request review** (Q) while a reviewer waits on a re-review: copies the title linked to the PR (HTML and plain "title url" flavors on macOS, plain text elsewhere; see the clipboard facts) | |
 | In review with a bot review | **Fix bot comments** (A); the card stays in In review | Copy link (C) |
 | Ready to merge | **Merge** (M) | Merge method for the repo (`,`) |
 | To review | **Review** (⏎) | Remove from Review requests (X), only on PRs you added |
@@ -1175,7 +1175,7 @@ Product code follows `docs/ui.md:38-40`, not the mockups' CSS.
 
 ### The clipboard
 
-Tern's clipboard is plain text: `cx:copy(text)` (`tern.d.luau:1136-1137`, and `WindowCx` `:1606`). Nothing in `tern.d.luau` takes an HTML flavor. **Copy link** copies `"<title> <url>"` as plain text, and that passes. A rich HTML link through `osascript` in `src/fetch.luau` is optional. If it's added, it needs its own test: paste into a rich-text field and check it keeps the title as a hyperlink.
+Tern's clipboard is plain text: `cx:copy(text)` (`tern.d.luau:1136-1137`, and `WindowCx` `:1606`). Nothing in `tern.d.luau` takes an HTML flavor. **Copy link** on macOS runs `Fetch.copyLink` (JXA through `osascript`), which writes `<a href="url">title</a>` as the HTML flavor and `"<title> <url>"` as the plain-text flavor to the pasteboard, so Slack pastes a hyperlink. Other systems, and a failed write, use `cx:copy` with the plain text. `tests/copy_link_test.luau` checks the call and failures; the paste into Slack is checked by hand.
 
 ### Platform constraints
 
@@ -1341,7 +1341,7 @@ Ship in stages that each work end to end. Each stage is a commit series that `te
 ## Open questions
 
 - **Queue position:** "2nd in line" needs the merge tool's own API (Aviator's sticky comment, or a token). Without it, the card says "waiting for the merge".
-- **Copy link:** plain "title url" is the acceptance. A rich HTML link through `osascript` is optional and, if added, must be tested.
+- **Copy link:** a hyperlinked title on macOS, plain "title url" elsewhere.
 - **DESIGN.md additions** are owned by #5, together with the `--tk-*` syntax tokens in `docs/tern-tokens.css`. Confirm amber for running CI and purple for agent and Tandem work before adding them. The Components section should document washed action cards, status chips, the split button and boxes. #18 adds the agent chip.
 - **`pr-fixes.html` wording (settled in #12):** the page takes the card's own main action from `State.fixMain`, so a Tandem repo says "Hand off to Tandem" and a comments-only card says "Summarize"; the buttons send the card's action.
 

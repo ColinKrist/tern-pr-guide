@@ -420,13 +420,24 @@ end
 
 ACTIONS["card-handoff"] = HubTandem.handoff
 
--- Copy link (C): "title url" as plain text, which is all Tern's clipboard takes.
+-- Copy link (C): the title linked to the PR's URL, which Slack and rich-text fields paste as a hyperlink. Tern's
+-- clipboard takes plain text only, so on macOS `Fetch.copyLink` writes the HTML flavor too; elsewhere, and if that
+-- fails, "title url" as plain text.
 ACTIONS["card-copy"] = function(b, cx, key)
 	local card = State.card(b.s, key)
 	if not card then return end
 	State.select(b.s, key)
-	cx:copy(card.pr.title .. " " .. card.pr.url)
-	cx:toast("success", "Copied link")
+	local title, url = card.pr.title, card.pr.url
+	local function plain()
+		cx:copy(title .. " " .. url)
+		cx:toast("success", "Copied link")
+	end
+	if Host.runtime.os ~= "macos" then return plain() end
+	Fetch.copyLink(title, url, function(err)
+		if b.closed then return end
+		if err then return plain() end
+		cx:toast("success", "Copied link")
+	end)
 end
 
 -- The pull request actions (PrActions): Merge, Merge when ready, Cancel merge, Update branch, Re-request review and

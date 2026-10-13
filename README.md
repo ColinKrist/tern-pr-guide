@@ -338,7 +338,7 @@ Press `?` for shortcuts that apply to the current page. In the hub, the panel fo
 | `A` | Run the selected card's main action, on your PRs |
 | `⇧Q` | Turn auto-land on or off |
 | `⇧A` | Summarize feedback or return a retained worktree |
-| `C` | Copy the PR title and link |
+| `C` | Copy the PR title as a link to the PR (a hyperlink when pasted into Slack; plain "title url" outside macOS) |
 | `M` | Merge, merge when ready or cancel a pending merge |
 | `,` | Choose the repository's merge method |
 | `U` | Update the branch |
