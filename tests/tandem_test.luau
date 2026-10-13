@@ -135,7 +135,7 @@ local function placement()
 
 	-- The same PR with no Tandem keeps its own card.
 	local plain = card(board({ pr("acme/web#104") }), "acme/web#104")
-	assert(plain.column == "needs_fixes" and plain.main and plain.main.label == "Fix with agent")
+	assert(plain.column == "needs_fixes" and plain.main and plain.main.label == "Re-run failed checks")
 
 	-- A watched bot-feedback PR is handed off, not fixed with an agent.
 	local bot = card(board({ pr("acme/api#106") }), "acme/api#106")
@@ -538,7 +538,7 @@ local function blockPaths()
 			local b = live(w, Block)
 			w.calls[1].done(reply)
 			local c = card(b.s, "acme/web#104")
-			assert(not c.pr.tandem and c.column == "needs_fixes" and c.main and c.main.label == "Fix with agent", name)
+			assert(not c.pr.tandem and c.column == "needs_fixes" and c.main and c.main.label == "Re-run failed checks", name)
 			assert(b.flights.tandem == false and #w.toasts == 0 and b.s.error == nil, name)
 		end)
 	end
@@ -592,7 +592,7 @@ local function rootPaths()
 			local b = live(w, Block)
 			assert(#w.calls == 0 and b.flights.tandem == false and b.root == nil and #w.toasts == 0 and b.s.error == nil, name)
 			local plain = card(b.s, "acme/web#104")
-			assert(plain.column == "needs_fixes" and plain.main and plain.main.label == "Fix with agent", name)
+			assert(plain.column == "needs_fixes" and plain.main and plain.main.label == "Re-run failed checks", name)
 			Block.event(b, { ev = "action", act = "card-handoff", value = "acme/api#116" } :: any, w.cx)
 			assert(#w.calls == 0 and #w.encoded == 0 and b.s.busy["acme/api#116"] == nil, name)
 			assert(#w.toasts == 1 and w.toasts[1].kind == "error" and string.find(w.toasts[1].title, "Couldn't hand off to Tandem", 1, true), name)
@@ -1030,7 +1030,7 @@ local function cachedStartup()
 		later.rows = rows
 		w.decoded["LATER"] = later
 		reads(w)[1].done(out("LATER"))
-		assert(not card(b.s, WEB).pr.tandem and card(b.s, WEB).column == "needs_fixes" and card(b.s, WEB).main.label == "Fix with agent")
+		assert(not card(b.s, WEB).pr.tandem and card(b.s, WEB).column == "needs_fixes" and card(b.s, WEB).main.label == "Re-run failed checks")
 		assert(card(b.s, API114).pr.tandem and b.watched[WEB] == nil)
 		assert(b.cache.counts.needFixes == needFixesOf(b) and w.kv["hub.status"].counts.needFixes == needFixesOf(b))
 	end)
@@ -2436,7 +2436,7 @@ local function sharedOwnership()
 			w.decoded["CLEARS"] = later
 			reads(w)[2].done(out("CLEARS"))
 			assert(not State.prOf(b.s, WEB).tandem and b.watched[WEB] == nil, names .. ": A is cleared")
-			assert(card(b.s, WEB).column == "needs_fixes" and card(b.s, WEB).main.label == "Fix with agent", names)
+			assert(card(b.s, WEB).column == "needs_fixes" and card(b.s, WEB).main.label == "Re-run failed checks", names)
 			assert(State.prOf(b.s, API114).tandem == true, names .. ": the PRs it still names stay")
 			for _, saved in { b.cache, w.kv["hub.cache"] } do
 				for _, cached in saved.prs do
@@ -2539,7 +2539,7 @@ local function sharedOwnership()
 		assert(b.cache.counts.needFixes == needFixesOf(b) and State.prOf(b.s, API114).tandem == true, "memory state is valid")
 
 		local function stays(step: string)
-			assert(not State.prOf(b.s, WEB).tandem and b.watched[WEB] == nil and card(b.s, WEB).main.label == "Fix with agent", step .. ": A stays cleared")
+			assert(not State.prOf(b.s, WEB).tandem and b.watched[WEB] == nil and card(b.s, WEB).main.label == "Re-run failed checks", step .. ": A stays cleared")
 			assert(#w.started == 0 and w.stops == 0 and #handoffs(w) == 0 and same(w.kv["hub.cache"], retained), step .. ": no effect and nothing stored")
 		end
 		Block.event(b, { ev = "action", act = "hub-move", value = "down" } :: any, w.cx)

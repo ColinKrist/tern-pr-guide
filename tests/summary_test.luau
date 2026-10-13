@@ -527,7 +527,7 @@ return function()
 		local key = d[name].key
 		State.select(s, key)
 		local main = card(s, key).main
-		assert(main and main.act == (if name == "comments" then "card-summarize" else "card-agent") and main.key == "A")
+		assert(main and main.act == (if name == "comments" or name == "requested" then "card-summarize" else "card-agent") and main.key == "A")
 		local a = Keys.hubAction(s, { name = "a" } :: any)
 		assert(a and a.act == main.act and a.value == key)
 		local shift = Keys.hubAction(s, { name = "a", shift = true } :: any)

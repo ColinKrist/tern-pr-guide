@@ -115,29 +115,28 @@ return function()
 		assert(table.find(call.argv, "rerun") == nil, "nothing re-runs by itself")
 	end
 
-	-- The card: Re-run failed checks is behind Fix checks ▾ on every failing check, first only when the evidence says flaky.
+	-- The card: failing checks alone put Re-run failed checks first, since the agent fix resolves conflicts only. The
+	-- evidence only labels the card.
 	local s = State.new(Cases.prs, Cases.asOf, nil)
 	local card = State.card(s, "acme/web#111") :: State.Card
-	assert((card.main :: State.CardAction).label == "Fix with agent" and card.flake == nil)
-	assert(#card.more == 2 and card.more[1].act == "card-rerun" and card.more[1].label == "Re-run failed checks" and card.more[1].key == "⇧R")
+	assert((card.main :: State.CardAction).act == "card-rerun" and (card.main :: State.CardAction).key == "⇧R" and card.flake == nil)
+	for _, more in card.more do assert(more.act ~= "card-agent", "no agent fix without a conflict") end
 	local head = (State.prOf(s, "acme/web#111") :: Model.HubPR).headOid
 	State.setFlake(s, "acme/web#111", { flaky = true, reason = "failed 3 of the last 20 runs on main", headOid = head })
 	card = State.card(s, "acme/web#111") :: State.Card
-	assert((card.main :: State.CardAction).act == "card-rerun" and (card.main :: State.CardAction).key == "⇧R")
-	assert(card.more[1].label == "Fix with agent" and card.more[1].key == "A" and #card.more == 2)
-	assert(card.flake == "Likely flaky: failed 3 of the last 20 runs on main")
+	assert((card.main :: State.CardAction).act == "card-rerun" and card.flake == "Likely flaky: failed 3 of the last 20 runs on main")
 	State.setFlake(s, "acme/web#111", { flaky = false, reason = "Error in a.ts, which this PR changed", headOid = head })
 	card = State.card(s, "acme/web#111") :: State.Card
-	assert((card.main :: State.CardAction).label == "Fix with agent" and card.flake == nil, "a real failure is not labelled")
+	assert(card.flake == nil, "a real failure is not labelled")
 	State.setFlake(s, "acme/web#111", { flaky = true, reason = "x", headOid = "old" })
 	card = State.card(s, "acme/web#111") :: State.Card
-	assert((card.main :: State.CardAction).label == "Fix with agent" and card.flake == nil and State.flakeOf(s, "acme/web#111") == nil, "evidence for an older commit is ignored")
+	assert(card.flake == nil and State.flakeOf(s, "acme/web#111") == nil, "evidence for an older commit is ignored")
 	-- Flaky checks beside a conflict: the agent stays first, the re-run is in the menu.
 	local both = State.prOf(s, "acme/api#112") :: Model.HubPR
 	State.setFlake(s, both.key, { flaky = true, reason = "x", headOid = both.headOid })
 	local mixed = State.card(s, both.key) :: State.Card
 	assert((mixed.main :: State.CardAction).label == "Fix with agent" and mixed.more[#mixed.more - 1].act == "card-rerun")
-	-- Feedback alone has no failing check, so no re-run: only Summarize is behind the agent.
+	-- Feedback alone has no failing check, so no re-run.
 	local feedback = State.card(s, "acme/web#103") :: State.Card
-	assert(#feedback.more == 2 and feedback.more[1].act == "card-summarize" and feedback.more[1].key == "⇧A")
+	assert(#feedback.more == 1 and (feedback.main :: State.CardAction).act == "card-summarize")
 end

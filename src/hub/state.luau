@@ -594,16 +594,17 @@ function M.prCtx(s: State, pr: HubPR, column: Column?): PrActions.Ctx
 end
 
 -- Which actions a card offers comes from PrActions; this places them: which is the main button and which wait behind ▾.
-local function actionsFor(pr: HubPR, ctx: PrActions.Ctx, reasons: { Model.Reason }, flake: Flake?, details: FixDetails?): (CardAction?, { CardAction })
+local function actionsFor(pr: HubPR, ctx: PrActions.Ctx, reasons: { Model.Reason }, details: FixDetails?): (CardAction?, { CardAction })
 	local column = ctx.column
 	local function offers(id: PrActions.Id): boolean
 		return PrActions.offers(pr, ctx, id)
 	end
 	if column == "needs_fixes" then
-		local feedback, checks = false, false
+		local feedback, checks, conflict = false, false, false
 		for _, reason in reasons do
 			if reason == "feedback" then feedback = true end
 			if reason == "checks" then checks = true end
+			if reason == "conflict" then conflict = true end
 		end
 		local main, more
 		local commentsOnly = false
@@ -619,18 +620,18 @@ local function actionsFor(pr: HubPR, ctx: PrActions.Ctx, reasons: { Model.Reason
 		end
 		if feedback and #reasons == 1 and commentsOnly then
 			main, more = action("card-summarize", "Summarize", "A"), {}
-		else
+		elseif pr.tandem or conflict then
 			main = if pr.tandem then action("card-handoff", "Hand off to Tandem", "A") else action("card-agent", "Fix with agent", "A")
 			more = if feedback then { action("card-summarize", "Summarize", "⇧A") } else {}
+		else
+			-- The agent fix resolves merge conflicts only, so without one A summarizes the feedback.
+			main, more = if feedback then action("card-summarize", "Summarize", "A") else nil, {}
+			if not main and not checks then main = action("card-copy", "Copy link", "C") end
 		end
 		if checks then
-			-- Behind Fix checks ▾ for every failing check. It moves first only when the evidence says flaky and the
-			-- checks are all that is wrong; the agent stays first when an annotation points at a changed file.
+			-- Behind Fix checks ▾ for every failing check, and first when nothing else is offered.
 			local rerun = action("card-rerun", "Re-run failed checks", "⇧R")
-			if flake and flake.flaky and #reasons == 1 then
-				table.insert(more, 1, main :: CardAction)
-				return rerun, more
-			end
+			if main == nil then return rerun, more end
 			table.insert(more, rerun)
 		end
 		return main, more
@@ -797,7 +798,7 @@ local function toCard(pr: HubPR, placement: Model.Placement, s: State): Card
 	local known = s.flakes[pr.key]
 	local flake = if known and known.headOid == pr.headOid then known else nil
 	local ctx = M.prCtx(s, pr, placement.column)
-	local main, more = actionsFor(pr, ctx, placement.reasons, flake, s.details[pr.key])
+	local main, more = actionsFor(pr, ctx, placement.reasons, s.details[pr.key])
 	local chips, detail, detailKind = chipsFor(pr, placement, s.now, s.landSettings.tries)
 	local agent = s.agents[pr.key]
 	local summary = s.summaries[pr.key]
@@ -866,7 +867,7 @@ local function toCard(pr: HubPR, placement: Model.Placement, s: State): Card
 	return {
 		flake = if flake and flake.flaky and flake.reason then "Likely flaky: " .. flake.reason else nil,
 		pr = pr, chips = chips, detail = detail, detailKind = detailKind, column = placement.column, reasons = placement.reasons, main = main, more = more,
-		agent = agent, agentSlot = agent ~= nil or placement.column == "needs_fixes" or (placement.column == "in_review" and not pr.tandem and M.botActionable(pr)),
+		agent = agent, agentSlot = agent ~= nil or (placement.column == "needs_fixes" and table.find(placement.reasons :: { string }, "conflict") ~= nil) or (placement.column == "in_review" and not pr.tandem and M.botActionable(pr)),
 		agentMessage = message, agentPath = path, agentCommit = commit, work = work,
 		summary = if agent then nil else summary, merge = s.merges[pr.repo], note = noteFor(s, pr, placement.column),
 		asking = askingOf(s, pr, placement.column), busy = busy,
