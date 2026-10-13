@@ -882,7 +882,7 @@ The guide page has its own `ACTIONS` table in `src/review-page.luau`, with the s
 
 On a review page in the hub, `Keys.hubPageAction` takes Esc at the page's rest (`pages-back`), `t` with a Fixes view (`pages-cycle`) and ⇧P while the page takes letters and the PR offers pull request actions (`hub-pr-menu`); every other key is the page's. ⌘⏎ on the board does nothing.
 
-Letter keys act only while the search and add-by-link fields are empty. Keys with Ctrl, ⌘ or ⌥ do nothing except ⌘R and the ⌘⏎ confirmations.
+Letter keys are text while the search or add-by-link field has focus (`search` and `link` modes) and act once ⏎ leaves it, the filter still applied. Keys with Ctrl, ⌘ or ⌥ do nothing except ⌘R and the ⌘⏎ confirmations.
 
 ---
 
