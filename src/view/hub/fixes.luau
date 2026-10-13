@@ -462,17 +462,22 @@ local function checkPanel(s: State.State, step: Step, pr: Model.HubPR, details: 
 	local check = step.check :: Fixes.FailingCheck
 	local total = pr.checks.passing + pr.checks.failing + pr.checks.pending
 	local meta = (if check.workflow then check.workflow .. " · " else "") .. pr.checks.failing .. " of " .. total .. (if total == 1 then " check failing" else " checks failing")
-	local strip: { Node } = {
-		span("gp-fx-cname", check.name), span("gp-fx-cfail", "Failed"), span("gp-fx-cmeta", meta), Ui.spacer(),
-		keyed("", "View log", "⇧L", "fixes-log", itemOn(s, "log")),
-		keyed("", "Re-run failed checks", "⇧R", "fixes-rerun", itemOn(s, "rerun")),
-	}
 	-- A check that can't be re-run runs again on a new head: the base merged in, or an empty commit.
 	local branch = State.branchAction(s, pr.key)
+	-- The question takes the strip's whole line, so it never wraps under the other actions.
+	local asking = branch ~= nil and branch.kind ~= "update" and (s.route :: State.Route).ask == true
+	local strip: { Node } = { span("gp-fx-cname", check.name), span("gp-fx-cfail", "Failed") }
+	if not asking then
+		table.insert(strip, span("gp-fx-cmeta", meta))
+		table.insert(strip, Ui.spacer())
+		table.insert(strip, keyed("", "View log", "⇧L", "fixes-log", itemOn(s, "log")))
+		table.insert(strip, keyed("", "Re-run failed checks", "⇧R", "fixes-rerun", itemOn(s, "rerun")))
+	end
 	if branch and branch.kind == "update" then
 		table.insert(strip, span("gp-fx-cmeta", branch.behind .. (if branch.behind == 1 then " commit" else " commits") .. " behind " .. pr.baseBranch))
 		table.insert(strip, keyed("", "Update branch", "U", "fixes-update", itemOn(s, "update")))
-	elseif branch and (s.route :: State.Route).ask then
+	elseif branch and asking then
+		table.insert(strip, Ui.spacer())
 		table.insert(strip, span("gp-fx-ask", "Push an empty commit to " .. branch.branch.name .. "?"))
 		table.insert(strip, keyed("gp-fx-confirm", "Confirm", "⌘⏎", "fixes-empty-confirm", false))
 		table.insert(strip, keyed("", "Cancel", "esc", "fixes-empty-cancel", false))
