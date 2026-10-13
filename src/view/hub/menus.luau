@@ -1,7 +1,7 @@
 --!strict
 -- The hub's menus (filters, repositories, sort, a card's other actions) and Settings (the review page's model and lens
--- menu, then where links open) as Tern overlays under their buttons. A menu opened by a key draws without
--- animation: Tern's overlay pops only for the mouse.
+-- menu, then where links open and background guides) as Tern overlays under their buttons. A menu opened by a
+-- key draws without animation: Tern's overlay pops only for the mouse.
 local ModelPanel = require("../model-panel")
 local Paths = require("./paths")
 local State = require("../../hub/state")
@@ -87,11 +87,25 @@ local function links(s: State.State): Node
 	})
 end
 
--- Settings: the model and lens menu on the hub's agent, then where links open.
+-- Whether AI guides are prepared in the background, as a box that ticks.
+local function guides(s: State.State): Node
+	local on = s.prepareGuides
+	return el("div", { class = "gp-hs-row", key = "guides" }, {
+		el("div", { class = "gp-hs-top gp-hs-toggle", key = "top", actions = { click = "hub-guides=" .. (if on then "false" else "true") } }, {
+			el("span", { class = "gp-hm-box" .. (if on then " gp-hm-box-on" else "") }, if on then { Ui.icon("check") } else nil),
+			span("gp-hm-label", "Prepare AI guides in the background"),
+			Ui.spacer(),
+			Ui.keys("⇧G"),
+		}),
+	})
+end
+
+-- Settings: the model and lens menu on the hub's agent, then where links open and background guides.
 local function settings(s: State.State): { Node }
 	local agent, box = s.agent, s.models
 	local kids: { Node } = if agent and box then ModelPanel.parts(box, agent) else { span("gp-md-empty", "Couldn't find the agent: no models to choose from.") }
 	table.insert(kids, links(s))
+	table.insert(kids, guides(s))
 	return kids
 end
 

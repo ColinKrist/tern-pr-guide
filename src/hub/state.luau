@@ -146,6 +146,7 @@ export type State = {
 	agent: Agent.Agent?, -- what Settings picks for: the reader's agent once the block finds it, or a sample's
 	models: ModelBox.ModelBox?, -- Settings' model and lens menu, read only while `menu` is "settings"
 	links: "tern" | "browser", -- where GitHub links open; the block loads and saves it
+	prepareGuides: boolean, -- Settings: prepare AI guides for review requests in the background; the block loads and saves it
 	keyed: boolean, -- the change being drawn came from a key: it never animates
 	born: { [string]: string },
 	booted: boolean, -- arrival motion, as src/state.luau
@@ -368,7 +369,7 @@ function M.new(prs: { HubPR }, now: number, saved: any): State
 		titleRules = {}, ignoredChecks = {}, filterEdit = nil, sort = sort, search = Fields.create(""), link = Fields.create(""),
 		mode = "board", helpPage = nil, route = nil, menu = nil, menuCursor = 1, confirm = nil, methodEdit = nil, folded = folded, recent = {}, merged = {}, walking = false,
 		ringed = {}, agents = {}, details = {}, flakes = {}, summaries = {}, merges = {}, autoMerge = {}, acted = {}, busy = {},
-		refreshedAt = nil, loading = false, error = nil, agent = nil, models = nil, links = "tern",
+		refreshedAt = nil, loading = false, error = nil, agent = nil, models = nil, links = "tern", prepareGuides = false,
 		keyed = false, born = {}, booted = false,
 	}
 	if type(saved) == "table" then
@@ -1366,6 +1367,11 @@ function M.removeFilter(s: State)
 	end
 	M.project(s)
 	M.openMenu(s, "filters")
+end
+
+-- Whether AI guides are prepared in the background: `to` ("true" or "false"), else the other one.
+function M.setPrepareGuides(s: State, to: string?)
+	s.prepareGuides = if to == "true" then true elseif to == "false" then false else not s.prepareGuides
 end
 
 -- Applies row `index` of the open menu: a sort is chosen and the menu closes; a repository is

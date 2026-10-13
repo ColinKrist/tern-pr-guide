@@ -30,17 +30,14 @@ local function savedChoice(): { [string]: any }
  return if ok and type(saved) == "table" then saved else {}
 end
 
--- The model of OMP's review role, else its default role, with its effort; nil when there is none.
-local function ompModel(config: string): Agent.Choice?
- local raw = if Host.fs.exists(config) then Agent.reviewModel(Host.fs.read(config)) else nil
- if not raw then return nil end
- local model, effort = Agent.parseChoice(raw)
- return { model = model, effort = effort }
+-- What OMP's config at `config` says each pass runs with; nothing when it has no config.
+local function ompDefaults(config: string): Agent.Defaults
+ return Agent.defaults(if Host.fs.exists(config) then Host.fs.read(config) else "")
 end
 
 local M = {}
 
--- The reader's agent: `omp` on their shell's PATH with what they last picked, OMP's review model
+-- The reader's agent: `omp` on their shell's PATH with what they last picked, OMP's own roles
 -- standing in for a model never picked. Calls `done` once, with nil and why when `omp` or the
 -- model is missing. `omp` is looked up as a file because an interactive shell may define it as an alias.
 function M.findAgent(done: (agent: Agent.Agent?, why: string?) -> ())
@@ -50,7 +47,7 @@ function M.findAgent(done: (agent: Agent.Agent?, why: string?) -> ())
   local command = Agent.findOnPath(path, Host.fs.exists)
   if not command then return done(nil, "omp isn't installed (it isn't on your shell's PATH)") end
   local saved = savedChoice()
-  local picks = Agent.picks(saved, if type(saved.model) == "string" then nil else ompModel(home .. Agent.CONFIG))
+  local picks = Agent.picks(saved, ompDefaults(home .. Agent.CONFIG))
   if not picks then return done(nil, "omp has no model set (pick one in omp first)") end
   local agent = Agent.new(command, path, picks)
   Fetch.refreshLenses(agent)
@@ -64,11 +61,12 @@ function M.saveChoice(agent: Agent.Agent)
 end
 
 -- Takes up what the reader last saved, which the review page or the hub's Settings may have changed
--- since `agent` was found, so a pick made in one doesn't save over the other's.
+-- since `agent` was found, so a pick made in one doesn't save over the other's. What was never
+-- picked keeps the default the agent was found with.
 function M.refreshChoice(agent: Agent.Agent)
- local picks = Agent.picks(savedChoice(), nil)
- if not picks then return end
- agent.model, agent.effort, agent.explain, agent.review, agent.lens = picks.model, picks.effort, picks.explain, picks.review, picks.lens
+ local defaults: Agent.Defaults = { review = { model = agent.model, effort = agent.effort }, explain = if agent.explainPicked then nil else agent.explain }
+ local picks = Agent.picks(savedChoice(), defaults) :: Agent.Picks
+ agent.model, agent.effort, agent.explain, agent.explainPicked, agent.lens = picks.model, picks.effort, picks.explain, picks.explainPicked, picks.lens
 end
 
 -- The models `agent` can run with, from `omp models`. Calls `done` once; the list is empty when
@@ -80,29 +78,26 @@ function M.listModels(agent: Agent.Agent, done: (models: { Agent.Model }) -> ())
  end)
 end
 
--- Has `agent` run `pass` for `pr`, writing `out` in `repo`'s guides: the run's directory gets the
--- numbered diff and the pass's filled-in prompt, then `omp -p` runs in the checkout with the pass's
--- model. A file left at `out` by an earlier run is removed first, so only this run's can be read.
--- Calls `fail` with the first line of what went wrong, else `written`.
-local function runPass(agent: Agent.Agent, pass: Agent.Pass, repo: Fetch.Repo, pr: Pr.PR, out: string, values: { [string]: string }, fail: (string) -> (), written: () -> ())
+-- Has `agent` run `pass` for `pr`: the run's directory gets the numbered diff and the pass's
+-- filled-in prompt, then `omp -p` runs in the checkout with the pass's model. A file the pass
+-- writes, `clear`, is removed first, so only this run's can be read. Calls `fail` with the first
+-- line of what went wrong, else `ran` with what the agent replied.
+local function runPass(agent: Agent.Agent, pass: Agent.Pass, repo: Fetch.Repo, pr: Pr.PR, clear: string?, values: { [string]: string }, fail: (string) -> (), ran: (reply: string) -> ())
  local dir = Agent.workDir(pr)
  local diffPath, promptPath = dir .. "/diff.txt", dir .. "/" .. pass .. ".md"
- local model = Agent.choiceFor(agent, pass).model
  local prepared, err = pcall(function()
   Host.fs.mkdir(dir)
   Host.fs.mkdir(repo.guides)
-  if Host.fs.exists(out) then Host.fs.remove(out) end
+  if clear and Host.fs.exists(clear) then Host.fs.remove(clear) end
   Host.fs.write(diffPath, Agent.numberedDiff(pr.files))
   local filled = table.clone(values)
   filled.repo, filled.number, filled.title, filled.head = pr.repo, tostring(pr.number), pr.title, pr.head
-  filled.base, filled.diffPath, filled.author = Prdata.refPrefix(pr.number) .. "/base", diffPath, Agent.shortName(model)
+  filled.base, filled.diffPath = Prdata.refPrefix(pr.number) .. "/base", diffPath
+  filled.author = Agent.shortName(Agent.choiceFor(agent, pass).model)
   Host.fs.write(promptPath, Agent.prompt(Host.fs.read(PROMPTS[pass]), filled))
  end)
  if not prepared then return fail(Text.errorLine(err)) end
- Fetch.run(Agent.argv(agent, pass, promptPath), { cwd = repo.root, env = { PATH = agent.path }, timeout_ms = AGENT_MS }, fail, function()
-  if not Host.fs.exists(out) then return fail(Agent.shortName(model) .. " finished without writing " .. out) end
-  written()
- end)
+ Fetch.run(Agent.argv(agent, pass, promptPath, diffPath), { cwd = repo.root, env = { PATH = agent.path }, timeout_ms = AGENT_MS }, fail, ran)
 end
 
 -- Moves the unusable file at `path` into `pr`'s run directory as `name`, so the checkout never
@@ -114,15 +109,20 @@ local function setAside(pr: Pr.PR, path: string, name: string): string
  return kept
 end
 
--- Has `agent` write the explanation of `pr`: the guide's overview, flow and changes. Calls `done`
--- once, with the guide or the first line of what went wrong.
+-- Has `agent` explain `pr` in one request and saves its reply as the PR's guide: the overview,
+-- flow and changes. Calls `done` once, with the guide or the first line of what went wrong.
 function M.explain(agent: Agent.Agent, repo: Fetch.Repo, pr: Pr.PR, done: (Guide.Guide?, string?) -> ())
  local path = Fetch.guidePath(repo, pr.number)
  local fail = function(message: string) done(nil, message) end
- runPass(agent, "explain", repo, pr, path, { guidePath = path }, fail, function()
+ local body = string.match(pr.body, "^%s*(.-)%s*$") :: string
+ local values = { description = if body == "" then "No description provided." else body }
+ runPass(agent, "explain", repo, pr, nil, values, fail, function(reply)
+  local json = Agent.replyJson(reply)
+  if json == "" then return fail(Agent.shortName(agent.explain.model) .. " finished without replying") end
+  Host.fs.write(path, json)
   local guide, problem = Guide.read(path, pr)
   if guide then return done(guide, nil) end
-  fail("the explanation it wrote isn't usable: " .. (problem :: string) .. " (kept at " .. setAside(pr, path, "guide.json") .. ")")
+  fail("its explanation isn't usable: " .. (problem :: string) .. " (kept at " .. setAside(pr, path, "guide.json") .. ")")
  end)
 end
 
@@ -134,6 +134,7 @@ function M.draftReview(agent: Agent.Agent, repo: Fetch.Repo, pr: Pr.PR, done: (G
  local lens = Agent.currentLens(agent)
  local fail = function(message: string) done(nil, message) end
  runPass(agent, "review", repo, pr, path, { reviewPath = path, lens = Host.json.encode(lens.name), focus = Agent.focus(lens) }, fail, function()
+  if not Host.fs.exists(path) then return fail(Agent.shortName(agent.model) .. " finished without writing " .. path) end
   local draft, problem = Guide.readDraft(path, pr)
   if draft then return done(draft, nil) end
   fail("the review it wrote isn't usable: " .. (problem :: string) .. " (kept at " .. setAside(pr, path, "review.json") .. ")")

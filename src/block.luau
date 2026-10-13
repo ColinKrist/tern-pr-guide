@@ -473,10 +473,8 @@ local function nameOf(pr: string?): string
  return if number then "#" .. number else pr
 end
 
--- Offers the reader's agent while the page shows the default walkthrough, and shows its review
--- still going over a guide that arrived first.
 local function offerAgent(b: Block)
- if b.page then b.page.ai = if not b.guided or (b.ai and b.ai.reviewing) then b.ai else nil end
+ if b.page then b.page.ai = b.ai end
 end
 
 -- Keeps the view the reader is in, so the block's next PR with a guide opens in it.
@@ -526,67 +524,77 @@ local function showPr(b: Block, pr: Pr.PR): string?
  return unusable
 end
 
--- Has the reader's agent explain the page's PR and, side by side, draft review comments, counting
--- the seconds they take. The explanation replaces the default walkthrough, keeping what the reader
--- wrote; the review lands on whichever page is shown once the explanation has settled, or waits in
--- its file for the explanation to pick it up. One run at a time, and only while the page has no
--- guide, as the button is.
-local function generate(b: Block, cx: BlockCx)
- local run, s, repo = b.ai, b.page, b.repo
- if not run or Agent.busy(run) or not s or not repo or b.guided then return end
- local pr = s.review.pr
+-- Starts `pass` of the page's run, counting the seconds it takes and redrawing each one. Returns
+-- what the pass calls once it ends.
+local function startPass(b: Block, cx: BlockCx, run: Agent.Run, pass: Agent.Pass): () -> ()
+ Agent.start(run, pass, Fetch.expectedSeconds(pass))
  local started = Host.now()
  local ticker: TimerHandle
  local function tick()
-  run.seconds = math.floor((Host.now() - started) / 1000)
+  run.seconds[pass] = math.floor((Host.now() - started) / 1000)
   cx:render()
-  if Agent.busy(run) then ticker = Host.timer(1000, tick) end
+  ticker = Host.timer(1000, tick)
  end
- local function settled()
-  if not Agent.busy(run) then ticker:cancel() end
+ ticker = Host.timer(1000, tick)
+ return function()
+  ticker:cancel()
   offerAgent(b)
   cx:render()
  end
- Agent.start(run, { explain = Fetch.expectedSeconds("explain"), review = Fetch.expectedSeconds("review") })
- ticker = Host.timer(1000, tick)
- -- With the review off, a review file left by an earlier run isn't this run's.
- local reviewed = run.reviewing
+end
+
+-- Has the reader's agent explain the page's PR. The explanation replaces the default walkthrough,
+-- keeping what the reader wrote and any review comments drafted for the PR. One at a time, and only
+-- while the page has no guide, as the button is.
+local function generate(b: Block, cx: BlockCx)
+ local run, s, repo = b.ai, b.page, b.repo
+ if not run or run.explaining or not s or not repo or b.guided then return end
+ local pr = s.review.pr
+ local ended = startPass(b, cx, run, "explain")
  AgentHost.explain(run.agent, repo, pr, function(guide, err)
   run.explaining, run.error = false, err
-  local landed = if reviewed and not run.reviewing then reviewFile(b, pr) else nil
   if guide then
-   Fetch.saveSeconds("explain", run.seconds)
+   Fetch.saveSeconds("explain", run.seconds.explain)
+   -- A review still running cleared its file and lands on the new page itself.
+   local drafted = reviewFile(b, pr)
    local before = b.page :: State
    b.view = nil
-   showGuide(b, pr, if landed then Guide.withDraft(guide, landed) else guide, true)
+   showGuide(b, pr, if drafted then Guide.withDraft(guide, drafted) else guide, true)
    local page = b.page :: State
    State.carryOver(before, page)
    page.arrival = "guide"
-   cx:toast("success", "AI guided review ready")
-  elseif landed and b.page then
-   State.mergeDraft(b.page, landed)
+   cx:toast("success", "Guide ready")
   end
-  settled()
+  ended()
  end)
- if run.reviewing then
-  AgentHost.draftReview(run.agent, repo, pr, function(draft, err)
-   run.reviewing = false
-   if draft then
-    Fetch.saveSeconds("review", run.seconds)
-    if not run.explaining and b.page then
-     State.mergeDraft(b.page, draft)
-     cx:toast("success", if #draft.comments == 1 then "1 review comment drafted" else #draft.comments .. " review comments drafted")
-    end
-   else
-    cx:toast("error", "Couldn't draft review comments: " .. (err :: string))
-   end
-   settled()
-  end)
- end
 end
 
--- With `generate=true`, starts the run as soon as the PR's page and the agent are both ready: the
--- page shows the run going. A PR with a guide opens as it is, and with no agent the page opens
+-- Has the reader's agent draft review comments and a summary for the page's PR through the lens,
+-- with or without a guide. They land on whichever page is shown; an explanation landing later
+-- picks them up from their file. One at a time, as the button is.
+local function draftReview(b: Block, cx: BlockCx)
+ local run, s, repo = b.ai, b.page, b.repo
+ if not run or run.reviewing or not s or not repo then return end
+ local pr = s.review.pr
+ local ended = startPass(b, cx, run, "review")
+ AgentHost.draftReview(run.agent, repo, pr, function(draft, err)
+  run.reviewing = false
+  if draft then
+   Fetch.saveSeconds("review", run.seconds.review)
+   if b.page then State.mergeDraft(b.page, draft) end
+   cx:toast("success", if #draft.comments == 1 then "1 review comment drafted" else #draft.comments .. " review comments drafted")
+  else
+   cx:toast("error", "Couldn't draft review comments: " .. (err :: string))
+  end
+  ended()
+ end)
+end
+
+-- The actions that start the agent: they need the block, not only its page.
+local AGENT_ACTIONS: { [string]: (Block, BlockCx) -> () } = { ["generate-guide"] = generate, ["draft-review"] = draftReview }
+
+-- With `generate=true`, starts the explanation as soon as the PR's page and the agent are both
+-- ready: the page shows it going. A PR with a guide opens as it is, and with no agent the page opens
 -- as usual and a toast says why. Decided once.
 local function autoGenerate(b: Block, cx: BlockCx)
  if not b.opts.generate or b.autoDone or not b.page then return end
@@ -597,7 +605,7 @@ local function autoGenerate(b: Block, cx: BlockCx)
   generate(b, cx)
  elseif b.noAgent then
   b.autoDone = true
-  cx:toast("info", "No AI guided review was started", "The page opened without one: " .. b.noAgent .. ".")
+  cx:toast("info", "No guide was generated", "The page opened without one: " .. b.noAgent .. ".")
  end
 end
 
@@ -729,8 +737,9 @@ local block: BlockDef<Block> = {
   local action = actionOf(b, ev)
   if not action then return end
   if b.page then b.page.keyed = false end
-  if action.act == "generate-guide" then
-   generate(b, cx)
+  local agentAction = AGENT_ACTIONS[action.act]
+  if agentAction then
+   agentAction(b, cx)
   elseif b.page then
    dispatch(b.page, cx, action)
    remember(b, b.page)
@@ -742,7 +751,8 @@ local block: BlockDef<Block> = {
   local action = Keys.action(s, key)
   if action then
    s.keyed = true
-   if action.act == "generate-guide" then generate(b, cx) else dispatch(s, cx, action) end
+   local agentAction = AGENT_ACTIONS[action.act]
+   if agentAction then agentAction(b, cx) else dispatch(s, cx, action) end
    remember(b, s)
    return true
   end

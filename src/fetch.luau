@@ -2,7 +2,7 @@
 -- The plugin's host side: running commands on the reader's shell PATH (`run`, `git`, `runner`, which
 -- prdata, agent-host and tandem run through), finding checkouts and setting up PR Guide's saved light
 -- copies of repos, the guide and review lens files, and what the plugin remembers between runs
--- (recent PRs, run durations, where links open), and opening a link in the system browser.
+-- (recent PRs, run durations, where links open, background guides), and opening a link in the system browser.
 local Agent = require("./agent")
 local Github = require("./github")
 local Host = require("./host")
@@ -315,6 +315,27 @@ end
 
 function M.saveLinkTarget(target: "tern" | "browser")
  pcall(Host.kv.set, LINKS_KEY, target)
+end
+
+-- Whether the hub prepares AI guides for review requests in the background (Settings); off unless turned on.
+local PREPARE_KEY = "hub.prepare"
+
+function M.prepareGuides(): boolean
+ local ok, saved = pcall(function() return Host.kv.get(PREPARE_KEY) end)
+ return ok and saved == true
+end
+
+function M.savePrepareGuides(on: boolean)
+ pcall(Host.kv.set, PREPARE_KEY, on)
+end
+
+-- The PR head the saved guide for PR `number` was written against: nil when there is no guide, "" when it can't be
+-- read or names none.
+function M.guideHead(repo: Repo, number: number): string?
+ local path = M.guidePath(repo, number)
+ if not Host.fs.exists(path) then return nil end
+ local ok, raw = pcall(function() return Host.json.decode(Host.fs.read(path)) end)
+ return if ok and type(raw) == "table" and type(raw.head) == "string" then raw.head else ""
 end
 
 -- Opens `url` in the system's default browser; `done` gets why it couldn't, else nil.

@@ -27,6 +27,7 @@ local Model = require("./model")
 local ModelBox = require("../model-box")
 local Ops = require("./ops")
 local Paths = require("../view/hub/paths")
+local Prepare = require("./prepare")
 local Refresh = require("./refresh")
 local ReviewFixPage = require("../view/hub/review-fix")
 local Runtime = require("./runtime")
@@ -65,7 +66,7 @@ local SAMPLE_MERGED: { Sync.Opened } = {
 }
 
 -- The models a fixture board's Settings offers, so it has something to choose from without running omp. Names
--- and efforts are as long as omp's real ones, and there are enough that the Review list scrolls under Off.
+-- and efforts are as long as omp's real ones, and there are enough that the list scrolls.
 local SAMPLE_MODELS: { Agent.Model } = {
 	{ selector = "anthropic/claude-fable-5-1", name = "Claude Fable 5.1", efforts = { "low", "medium", "high", "xhigh", "max" } },
 	{ selector = "anthropic/claude-haiku-4-5", name = "Claude Haiku 4.5", efforts = { "minimal", "low", "medium", "high", "xhigh" } },
@@ -80,7 +81,7 @@ local SAMPLE_MODELS: { Agent.Model } = {
 
 -- A sample board's agent; its picks are never saved.
 local function sampleAgent(): Agent.Agent
-	local agent = Agent.new("", "", (Agent.picks(nil, { model = "anthropic/claude-fable-5-1", effort = "high" }) :: Agent.Picks))
+	local agent = Agent.new("", "", (Agent.picks(nil, { review = { model = "anthropic/claude-fable-5-1", effort = "high" }, explain = { model = "openai-codex/gpt-5.6-luna", effort = "medium" } }) :: Agent.Picks))
 	agent.models = table.clone(SAMPLE_MODELS)
 	return agent
 end
@@ -348,6 +349,12 @@ ACTIONS["hub-links"] = function(b, cx, to)
 	State.setLinks(b.s, to)
 	Fetch.saveLinkTarget(b.s.links)
 end
+-- ⇧G in Settings, or a click on the box: whether AI guides are prepared in the background. Turning it on starts at once.
+ACTIONS["hub-guides"] = function(b, cx, to)
+	State.setPrepareGuides(b.s, to)
+	Fetch.savePrepareGuides(b.s.prepareGuides)
+	Prepare.run(b, cx)
+end
 ACTIONS["hub-help"] = function(b)
 	State.openHelp(b.s)
 end
@@ -605,6 +612,8 @@ local function loadAgent(b: Block, cx: BlockCx)
 			if b.closed or not agent then return end
 			b.agent, b.s.agent = agent, agent
 			draw(b, cx)
+			-- The cached board's review requests, before any refresh.
+			Prepare.run(b, cx)
 			AgentHost.listModels(agent, function(models)
 				if b.closed then return end
 				agent.models = models
@@ -672,6 +681,7 @@ local block: BlockDef<Block> = {
 		end
 		local s = State.new(prs, now, saved)
 		s.links = Fetch.linkTarget()
+		s.prepareGuides = Fetch.prepareGuides()
 		if fixture then
 			State.setRecent(s, SAMPLE_RECENT)
 			State.setMerged(s, SAMPLE_MERGED)

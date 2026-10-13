@@ -1,8 +1,8 @@
 --!strict
 -- The model and lens menu: an Explanation | Review switch with a hint for the slot shown, a filter,
--- the slot's models matching it grouped by provider (Off first on Review), the efforts the highlighted
--- model takes as one segmented control, and on Review the lens. The review page shows it as Tern's
--- overlay under the model button; the PR hub's Settings puts it in its own overlay.
+-- the slot's models matching it grouped by provider, the efforts the highlighted model takes as one
+-- segmented control, and on Review the lens. The review page shows it as Tern's overlay under the
+-- model button; the PR hub's Settings puts it in its own overlay.
 local Agent = require("../agent")
 local ModelBox = require("../model-box")
 local Ui = require("./ui")
@@ -13,7 +13,6 @@ local SLOTS: { { id: Agent.Pass, label: string, hint: string } } = {
  { id = "explain", label = "Explanation", hint = "Explains what the PR changes, step by step. A fast model at low effort is enough." },
  { id = "review", label = "Review", hint = "Drafts comments on problems and questions. Use a strong model; higher effort finds more." },
 }
-local OFF_HINT = "Explanation only; no drafted comments."
 
 local M = {}
 
@@ -43,10 +42,9 @@ local function slots(box: ModelBox.ModelBox): Node
  })
 end
 
--- The effort control for `model`; nil when nothing matches the filter, which the list already says,
--- or on Off, which has none.
+-- The effort control for `model`; nil when nothing matches the filter, which the list already says.
 local function efforts(box: ModelBox.ModelBox, model: Agent.Model?): Node?
- if not model or model == ModelBox.OFF then return nil end
+ if not model then return nil end
  if #model.efforts == 0 then
   return el("div", { class = "gp-md-foot", key = "efforts" }, { span("gp-md-none", "This model has no effort setting") })
  end
@@ -103,26 +101,21 @@ end
 function M.parts(box: ModelBox.ModelBox, agent: Agent.Agent): { Node }
  local choices = ModelBox.choices(box, agent)
  local rows, group = {}, nil
- -- Off stays pinned first however far the list starts, so it is never hidden under "more".
- local first = if choices[1] == ModelBox.OFF then 2 else 1
- local from = math.max(box.top, first)
- local function row(n: number)
+ if box.top > 1 then
+  table.insert(rows, el("div", { class = "gp-md-more", key = "above", text = "↑  " .. (box.top - 1) .. " more", actions = { click = "models-top" } }))
+ end
+ for n = box.top, #choices do
   local model = choices[n]
-  local name = if model == ModelBox.OFF then "" else provider(model)
-  if name ~= group and model ~= ModelBox.OFF then
+  local name = provider(model)
+  if name ~= group then
    group = name
    table.insert(rows, el("div", { class = "gp-md-group", key = "g-" .. name, text = name }))
   end
-  local kids = { span("gp-md-name", model.name), Ui.spacer() }
-  if model == ModelBox.OFF then table.insert(kids, span("gp-md-row-hint", OFF_HINT)) end
-  table.insert(kids, el("span", { class = "gp-md-check" }, if ModelBox.inUse(agent, box.slot, model) then { Ui.icon("check") } else nil))
-  table.insert(rows, el("div", { class = "gp-md-row" .. (if n == box.selected then " gp-md-row-on" else ""), key = "m" .. n, actions = { click = "model-row=" .. n } }, kids))
+  local check = el("span", { class = "gp-md-check" }, if ModelBox.inUse(agent, box.slot, model) then { Ui.icon("check") } else nil)
+  table.insert(rows, el("div", { class = "gp-md-row" .. (if n == box.selected then " gp-md-row-on" else ""), key = "m" .. n, actions = { click = "model-row=" .. n } }, {
+   span("gp-md-name", model.name), Ui.spacer(), check,
+  }))
  end
- if first == 2 then row(1) end
- if from > first then
-  table.insert(rows, el("div", { class = "gp-md-more", key = "above", text = "↑  " .. (from - first) .. " more", actions = { click = "models-top" } }))
- end
- for n = from, #choices do row(n) end
  if #agent.models == 0 then
   table.insert(rows, span("gp-md-empty", "Listing models…"))
  elseif #choices == 0 then
@@ -135,7 +128,7 @@ function M.parts(box: ModelBox.ModelBox, agent: Agent.Agent): { Node }
  }
  local foot = efforts(box, choices[box.selected])
  if foot then table.insert(kids, foot) end
- if ModelBox.showsLens(box, agent) then table.insert(kids, lenses(agent)) end
+ if ModelBox.showsLens(box) then table.insert(kids, lenses(agent)) end
  return kids
 end
 

@@ -77,6 +77,7 @@ local function readingKey(s: State.State, key: Key): Action?
  if name == "a" then return act("decide-current", "added") end
  if name == "d" then return act("decide-current", "dismissed") end
  if name == "c" then return act("comment-step") end
+ if (name == "r" and key.shift) or name == "R" then return act("draft-review") end
  if name == "r" then return act("open-review") end
  if name == "/" or key.text == "/" then return act("open-search") end
  if (name == "g" and key.shift) or name == "G" then return act("generate-guide") end
@@ -140,11 +141,14 @@ local function hubMenuKey(s: HubState.State, key: Key): Action?
 		return nil
 	end
 	if name == "escape" then return act("hub-menu-close") end
-	-- Settings is the model and lens menu, its search field taking the letters; L switches where links
-	-- open while the field is empty.
+	-- Settings is the model and lens menu, its search field taking the letters; while the field is
+	-- empty, L switches where links open and ⇧G whether guides are prepared in the background (plain G
+	-- would take the first letter of "gpt" and "gemini").
 	if s.menu == "settings" then
 		local box = s.models
-		if name == "l" and (not box or box.field.text == "") and not (key.ctrl or key.meta or key.alt) then return act("hub-links") end
+		local empty = (not box or box.field.text == "") and not (key.ctrl or key.meta or key.alt)
+		if name == "l" and empty then return act("hub-links") end
+		if ((name == "g" and key.shift) or name == "G") and empty then return act("hub-guides") end
 		return if box then modelsKey(box, key) else nil
 	end
 	if name == "down" or name == "j" then return act("hub-menu-move", 1) end

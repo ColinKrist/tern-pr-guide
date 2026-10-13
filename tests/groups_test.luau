@@ -143,9 +143,10 @@ local function guideAndReview()
 	assert(Review.isFileReviewed(r, "gen/api.ts") and not Review.isFileReviewed(r, "tests/b.test.ts"))
 	assert(Review.counts(r).filesReviewed == 1)
 
-	-- The agent reads no generated file, and does read tests.
+	-- The agent reads no generated file's lines, only that it changed, and does read tests.
 	local diff = Agent.numberedDiff(files)
-	assert(not string.find(diff, "gen/api.ts", 1, true) and not string.find(diff, "tests/gen.test.ts", 1, true))
+	assert(string.find(diff, "=== gen/api.ts (modified)\n(generated, 3 lines not shown)\n", 1, true), diff)
+	assert(string.find(diff, "=== tests/gen.test.ts (modified)\n(generated, 3 lines not shown)\n", 1, true))
 	assert(string.find(diff, "=== tests/a.test.ts", 1, true) and string.find(diff, "=== src/a.ts", 1, true))
 end
 

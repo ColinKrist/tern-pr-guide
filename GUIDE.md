@@ -84,11 +84,18 @@ The review file (or, for a tool that writes one file, the guide):
   arrives after the reader edited the summary leaves their text alone.
 
 The diff an agent reads numbers both sides: each line starts with its old-file number, then its
-new-file number (an added line has no old one, a removed line no new one), then its mark.
+new-file number (an added line has no old one, a removed line no new one), then its mark. Generated,
+vendored and minified files and test snapshots appear in it as one line under their header, such as
+`(generated, 1,204 lines not shown)`, and hunks that only change whitespace are left out and counted
+in one line, except in Python and YAML files.
+
+PR Guide's own explanation is one `omp` request that replies with the guide JSON, bare or in a
+```` ```json ```` fence; the plugin saves the reply as `<number>.json` and reads it like any other guide.
 
 Changed files that no step visits are shown under "Supporting changes", as a folder tree. Test files
 (by path) and generated files (marked `linguist-generated`) follow in folded "Tests" and "Generated"
-groups. Generated files aren't in the diff an agent reads, so a step or comment can't point at one.
+groups. A generated file's lines aren't in the diff an agent reads, and a step or comment that
+points at one is dropped.
 
 ## Flow diagram
 

@@ -37,7 +37,7 @@ Two Tern tabs, one board each. `T` switches between them.
   - Agent work: purple.
   - Running checks: amber.
 - **Header:**
-  - Title, search, then "Updated 40s ago" and the Settings button (`⇧S`, also `⇧M`): the review page's model and lens menu (`src/view/model-panel.luau` over `src/model-box.luau`: Explanation | Review, search, models, effort, lens), saving the same kv key `model`, then an "Open links in" toggle, Tern or Default browser (`L` while the search field is empty; kv key `links`, read by the guide too).
+  - Title, search, then "Updated 40s ago" and the Settings button (`⇧S`, also `⇧M`): the review page's model and lens menu (`src/view/model-panel.luau` over `src/model-box.luau`: Explanation | Review, search, models, effort, lens), saving the same kv key `model`, then an "Open links in" toggle, Tern or Default browser (`L` while the search field is empty; kv key `links`, read by the guide too), then "Prepare AI guides in the background" (`⇧G` while the search field is empty; kv key `hub.prepare`, off by default; see Background guides below).
   - The tab row holds the tabs, then **Filter ▾** (`F`, repository selection, title conditions and ignored checks) and **Sort ▾** (`S`).
   - Sort options: Repository (the default, with Priority order inside each repo), Priority, Newest first, Oldest first, Smallest first.
 - **Kept out on purpose:** counts in the header, inline keycaps on the tab-row controls (the hint bar lists the keys), and filler notes such as "Nothing needed from you".
@@ -151,6 +151,16 @@ This opens the PR at what needs fixing, in the guided review layout.
 - **Summaries:** read-only `omp -p` over the feedback, on click only. The verdict ("Reply to @maria-k") goes on the chip line, with one line per commenter below.
 - **PRs Tandem watches** are handed to Tandem: one owner per branch.
 
+### Background guides
+
+- **Off by default.** Settings' "Prepare AI guides in the background" (`⇧G` while its search field is empty, kv `hub.prepare`) turns it on.
+- **What gets one:** review requests of the viewer (`reviews.requestedMe`) whose saved guide is missing or was written for another head. Your own PRs and team requests don't.
+- **When:** once on start with the cached board, after each refresh, and when the setting is turned on. One PR at a time, through the reader's agent with the explanation model (`AgentHost.explain`, the same run as Generate guide), never the review.
+- **Where:** the repo's checkout beside the hub's folder, else PR Guide's saved copy, which the first guide for a repo downloads (`Fetch.checkoutFor`, `Fetch.savedCopy`, `Prdata.openPr`).
+- **Failures:** a PR tried at a head is not tried again at that head this session, success or not. Nothing shows on the card.
+- **Stopping:** when the block closes or the setting goes off, no new PR starts; the one running finishes.
+- **Two windows:** the `hub.preparing` lease keeps a second window from explaining the PR the first one is on. It is read then written, so two windows deciding in the same instant can still both run it.
+
 ### Merging
 
 Each repo has one merge setting, stored in kv. It's one of six kinds:
@@ -212,7 +222,7 @@ To review has its own field: "Paste a pull request link to review" (`N`, from ei
 | A | Show or hide Approved (Review requests; no Review requests card uses A) |
 | R | Show or hide Recently merged (Your pull requests) or Recently opened (Review requests) |
 | F / S | Filter / Sort menu (menus: j/k, ⏎ or Space, Esc) |
-| ⇧S, ⇧M | Settings: typing searches, ↑↓ model, ←→ effort, ⇧←→ lens, Tab Explanation or Review, ⏎ choose and close, ⌃E edit lenses, L where links open (empty search only) |
+| ⇧S, ⇧M | Settings: typing searches, ↑↓ model, ←→ effort, ⇧←→ lens, Tab Explanation or Review, ⏎ choose and close, ⌃E edit lenses, L where links open and ⇧G background guides (empty search only) |
 | N | Add a PR by link |
 | / | Search |
 | A, ⇧A, P, D, O, C, M, `,`, X | Card actions (see the table above) |
@@ -275,7 +285,7 @@ Every issue builds against these types and signatures. An issue that needs a cha
 | `src/keys.luau` | `src/hub/state.luau`, plus what it requires today minus `picker` |
 | `src/view/hub/*.luau` | `state`, `model`, `fixes`, `src/view/ui.luau`, `src/text.luau`. Never `sync` or `github`. |
 | `src/fetch.luau`, `src/prdata.luau`, `src/agent-host.luau`, `src/tandem.luau` | `model` and `fixes` for types, `github` for the `Runner` type, `review-fix` for validated command plans, `src/links.luau`, `src/hub/sync.luau` (the recent store), plus what it requires today minus `picker`. prdata, agent-host and tandem run commands through fetch's runners. |
-| `src/hub/runtime.luau`, `store`, `lookups`, `tandem`, `refresh`, `details`, `agent-run`, `ops`, `block` | everything above, in that require order; `src/hub/block.luau` is the glue that wires them, and no module requires it |
+| `src/hub/runtime.luau`, `store`, `lookups`, `tandem`, `prepare`, `refresh`, `details`, `agent-run`, `ops`, `block` | everything above, in that require order; `src/hub/block.luau` is the glue that wires them, and no module requires it |
 | `tools/conflicts` | nothing (a standalone script) |
 
 ### `src/links.luau` (pure; the picker's link parsing, moved, and the way in's decisions)
@@ -975,6 +985,8 @@ No read, route entry or agent completion pushes automatically.
 | `hub.status` | `{ refreshedAt, counts = { toReview, needFixes, flashAt? } }`, written with every `hub.cache` write; what the status segment reads | a few bytes |
 | `hub.recent` | `{ Opened }`, migrated from the picker's `recent` key | 8 entries |
 | `hub.added` | `Sync.Added`: PRs added by link | 50 entries |
+| `hub.prepare` | whether AI guides are prepared in the background (Settings); missing means off | one boolean |
+| `hub.preparing` | `{ key = "owner/repo#n@<head>", at }`: the PR a window is preparing a guide for, so another window passes it by; returned when the run ends, ignored after 20 minutes | one |
 | `hub.clones` | slug (`owner/repo`) → the clone path the viewer chose ("Choose folder…"), for the agent's clone lookup | one per repo |
 | `hub.merge.<owner>/<repo>` | `Sync.MergeRecord`: your choice, what the repo declares, the learned habit, whether you answered the suggestion, `viewerDefault` and when it was checked | one per repo |
 

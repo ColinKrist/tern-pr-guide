@@ -26,7 +26,7 @@ function M.view(s: State.State): Node
 	if s.mode == "menu" and s.menu == "settings" and s.models and s.agent then
 		-- The model menu's keys, as on the review page; letters type into its search.
 		title, keys = "Settings", { { "↑ ↓", "Model" }, { "← →", "Effort" } }
-		if ModelBox.showsLens(s.models, s.agent) then table.insert(keys, { "⇧← →", "Lens" }) end
+		if ModelBox.showsLens(s.models) then table.insert(keys, { "⇧← →", "Lens" }) end
 		table.insert(keys, { "⏎", "Use it" })
 		table.insert(keys, { "esc", "Close" })
 	elseif fixed then
