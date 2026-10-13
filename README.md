@@ -80,7 +80,7 @@ The **Review requests** tab sorts the PRs others asked you to review:
   PRs whose review from you was dismissed, and PRs you added by pasting a link.
 - **Waiting on author:** you requested changes or left comments.
 
-Below the board, four folded lists keep the rest out of the way. Opening one scrolls it into view.
+Below the board, four folded lists keep the rest out of the way. Opening one scrolls it into view and selects its first row, so `j` and `k` carry on from there.
 
 - **Inactive:** requests that name you but have had no activity for 7 days. PRs you added by link
   always stay in To review.
