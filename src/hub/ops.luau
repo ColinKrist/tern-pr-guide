@@ -115,6 +115,12 @@ local function runMerge(b: Block, cx: BlockCx, pr: Model.HubPR, done: ((err: str
 		if done then return done(TANDEM_OWNS) end
 		return cx:toast("error", "Couldn't merge #" .. pr.number .. ": " .. TANDEM_OWNS, pr.repo)
 	end
+	-- Merging by hand overrides auto-land: it steps aside rather than ask for the merge a second time.
+	if owned and owned.autoLand and owned.autoLand.state == "on" then
+		AutoLandRun.off(b, cx, pr.key)
+		if b.closed then return end
+		if not done then cx:toast("info", "Auto-land off for #" .. pr.number .. ": merging by hand", pr.title) end
+	end
 	local method = methodOf(b, pr)
 	local head = pr.headOid
 	local mark = MERGE_BUSY[method.kind] or "Merging…"

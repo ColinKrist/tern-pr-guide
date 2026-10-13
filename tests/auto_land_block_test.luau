@@ -223,6 +223,73 @@ return function()
 		press(b, "enter")
 		assert(kv["hub.autoland.settings"].label == "hold" and b.s.landEdit == nil and b.s.menu == "settings", "⏎ saves the label and Settings stays")
 
+		press(b, "escape")
+		local OTHER = "acme/api#108"
+		local function other(): State.Card return State.card(b.s, OTHER) :: State.Card end
+		local function otherRecord(): any
+			local stored = kv["hub.autoland"]
+			return stored and stored.prs[OTHER]
+		end
+
+		-- A repo whose merge setting isn't known yet: ⇧L asks GitHub how it merges and writes nothing.
+		local resolved = b.s.merges["acme/api"]
+		b.s.merges["acme/api"] = nil
+		State.project(b.s)
+		local detects: { string } = {}
+		client.detect = function(repo: string, _done: any) table.insert(detects, repo) end
+		before = #calls
+		Block.event(b, { ev = "action", act = "card-autoland", value = OTHER } :: any, cx)
+		assert(otherRecord() == nil and #calls == before, "nothing is written or sent before the method is known")
+		assert(detects[1] == "acme/api" and lastToast()[2] == "Checking how acme/api merges…", lastToast()[2])
+		b.s.merges["acme/api"] = resolved
+		State.project(b.s)
+
+		-- A queue whose PR moved before it went out sends nothing and waits again, so the next step can queue.
+		Block.event(b, { ev = "action", act = "card-autoland", value = OTHER } :: any, cx)
+		assert(otherRecord() and otherRecord().phase == "waiting")
+		local read = calls[#calls]
+		assert(read.kind == "landFacts")
+		local moved = table.clone(other().pr)
+		moved.headOid = "elsewhere"
+		local factsMoved = { byId = { ["PR_" .. OTHER] = {
+			id = "PR_" .. OTHER, state = "open", draft = false, headOid = "head108", headAuthor = "jubbydev",
+			labels = {}, events = {}, autoMerge = false,
+		} }, rateLimit = { cost = 1, remaining = 1, limit = 1, resetAt = "" } }
+		local realWritable = State.prOf
+		before = #calls
+		-- The head moves between the step and the queue: the step sees head108, the queue sees "elsewhere".
+		local seen = 0
+		State.prOf = function(s: any, key: string): any
+			if key == OTHER then
+				seen += 1
+				if seen > 1 then return moved end
+			end
+			return realWritable(s, key)
+		end
+		read.done(factsMoved, nil)
+		State.prOf = realWritable
+		assert(#calls == before, "nothing went out for a moved head")
+		assert(otherRecord().phase == "waiting" and otherRecord().queuedAt == nil, "the record waits again")
+
+		-- Merge (M) by hand on a card auto-land holds: auto-land steps aside, and the merge label goes on once.
+		State.select(b.s, OTHER)
+		before = #calls
+		Block.event(b, { ev = "action", act = "card-merge", value = OTHER } :: any, cx)
+		assert(otherRecord() == nil and other().pr.autoLand == nil, "auto-land is off")
+		assert(#calls == before + 1 and argv(calls[#calls]) == "gh pr edit 108 --repo acme/api --add-label merge-queue", argv(calls[#calls]))
+		calls[#calls].done("", nil)
+		assert(other().pr.pending ~= nil)
+
+		-- Cancel merge on a card auto-land holds turns auto-land off too.
+		Block.event(b, { ev = "action", act = "card-autoland", value = OTHER } :: any, cx)
+		assert(otherRecord() and otherRecord().phase == "waiting")
+		before = #calls
+		Block.event(b, { ev = "action", act = "card-cancel", value = OTHER } :: any, cx)
+		local cancel = calls[#calls]
+		assert(#calls == before + 1 and argv(cancel) == "gh pr edit 108 --repo acme/api --remove-label merge-queue", argv(cancel))
+		cancel.done("", nil)
+		assert(otherRecord() == nil and other().pr.autoLand == nil and other().pr.pending == nil, "Cancel merge turns auto-land off")
+
 		-- The sample board flips the chip in memory and touches neither kv nor GitHub.
 		local sample: any = Block.init(cx, { "fixture=cases" }, nil)
 		local sampleClient, sampleCalls = recorder()

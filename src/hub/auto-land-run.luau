@@ -133,7 +133,13 @@ local function runQueue(b: Block, cx: BlockCx, record: Record, ops: { AutoLand.O
 	local s, key = b.s, record.key
 	local pr = writable(b, cx, key)
 	local resolution = if pr then s.merges[pr.repo] else nil
-	if pr == nil or resolution == nil or pr.headOid ~= record.head then return end
+	if pr == nil or resolution == nil or pr.headOid ~= record.head then
+		-- The step already stored "queued": nothing went out, so the record waits again or no signal would ever come.
+		local back = table.clone(record)
+		back.phase, back.queuedAt, back.rev = "waiting", nil, record.rev + 1
+		if commit(record, back) then setMark(b, cx, key, back) end
+		return
+	end
 	local method = resolution.method
 	local head = pr.headOid
 	State.setBusy(s, key, QUEUE_BUSY[method.kind] or "Queuing…")

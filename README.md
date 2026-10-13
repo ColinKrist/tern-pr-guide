@@ -106,8 +106,8 @@ It works with a merge queue, a comment command or a label, once the setting is c
 only while the hub is open. The card shows "Auto-land", then "Auto-land · try 2 of 5". It stops
 after the tries run out, on a merge conflict, on new commits from someone else, when changes are
 requested, or when an approval goes away. The card then moves to Needs fixes as **Auto-land
-stopped**, with the reason. Your own pushes keep it on. Removing the merge label yourself, or
-Cancel merge, turns it off. In Settings (`⇧S`), `-` and `+` set the number of tries (default 5)
+stopped**, with the reason. Your own pushes keep it on. Removing the merge label yourself,
+Cancel merge, or merging it yourself with `M` turns it off. In Settings (`⇧S`), `-` and `+` set the number of tries (default 5)
 and `⇧D` edits the dequeue label a merge bot adds when it drops a PR (default `blocked`).
 
 ## Review teammates' PRs
