@@ -175,7 +175,7 @@ startRefresh = function(b: Block, cx: BlockCx)
 		-- `refreshTried` has moved) tries again later. The answer's own save is the one write (`hold`).
 		local safe = not fresh or adoptShared(b, cx, true)
 		if b.closed then return end
-		local facts: Sync.Local = { added = {}, tandem = {} }
+		local facts: Sync.Local = { added = {}, tandem = {}, landing = {} }
 		local canonMoved = false
 		local shared: Sync.Cache? = nil
 		if safe and fresh then
@@ -374,7 +374,7 @@ local function stepFixture(b: Block, cx: BlockCx)
 	local entry = table.clone(source)
 	entry.prs = flagged(b.watched, source.prs)
 	if source.previous then entry.previous = flagged(b.watched, source.previous) end
-	local none: Sync.Local = { added = {}, tandem = {} }
+	local none: Sync.Local = { added = {}, tandem = {}, landing = {} }
 	local before: Sync.Cache? = nil
 	if entry.previous then
 		local built = Sync.merge(fixtureRefresh(entry.previous), nil, none, data.asOf)

@@ -251,7 +251,7 @@ local function testRefresh()
 	end
 	-- And Sync drops the carried pending with the head, so the next refresh looks nothing up either.
 	local previous: any = { schema = 1, refreshedAt = Cases.asOfIso, viewer = "me", prs = { moved }, counts = { toReview = 0, needFixes = 0 } }
-	local merged = Sync.merge(after, previous, { added = {}, tandem = {} }, NOW)
+	local merged = Sync.merge(after, previous, { added = {}, tandem = {}, landing = {} }, NOW)
 	for _, pr in merged.prs do
 		if pr.id == "PR_acme/api#109" then assert(pr.pending == nil and pr.mergeFailure == nil) end
 	end
@@ -287,7 +287,7 @@ local function testCarry()
 		fresh.pending = nil
 		for k, v in patch do fresh[k] = v end
 		local refresh: any = { prs = { fresh }, viewer = "me", rateLimit = { cost = 0, remaining = 0, limit = 0, resetAt = "" }, calls = {}, truncated = false }
-		return Sync.merge(refresh, previous, { added = {}, tandem = {} }, NOW).prs[1]
+		return Sync.merge(refresh, previous, { added = {}, tandem = {}, landing = {} }, NOW).prs[1]
 	end
 	assert(refreshWith({}).pending ~= nil)
 	assert(refreshWith({ headOid = "new" }).pending == nil)
