@@ -33,7 +33,7 @@ type Item = {
  -- Consecutive removed (or added) rows share a run; blank rows stay inside it.
  run: number,
  -- For an added item, the run of removed rows directly before its run: one change group, which
- -- the word diff already pairs line by line.
+ -- the word diff pairs line with line.
  after: number?,
  used: boolean,
 }

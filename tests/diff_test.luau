@@ -82,6 +82,26 @@ local function concat(...: { string }): { string }
 	return out
 end
 
+-- A .ts file of one hunk: `dels` removed lines, then `adds` added lines.
+local function changeOf(dels: { string }, adds: { string }): Pr.File
+	local rows: { Pr.Row } = { { kind = "hunk", oldStart = 1, newStart = 1 } :: Pr.Row }
+	for k, text in dels do table.insert(rows, { kind = "del", text = text, old = k } :: Pr.Line) end
+	for k, text in adds do table.insert(rows, { kind = "add", text = text, new = k } :: Pr.Line) end
+	return { path = "a.ts", status = "modified", adds = #adds, dels = #dels, rows = rows, src = adds }
+end
+
+-- The highlighted words of entry `i`, as drawn, joined by "|"; "" when none.
+local function marked(fd: Diff.FileDiff, i: number): string
+	local parts, open = {}, false
+	for _, token in Diff.tokens(fd, i) do
+		if token.changed then
+			if open then parts[#parts] ..= token.text else table.insert(parts, token.text) end
+		end
+		open = token.changed
+	end
+	return table.concat(parts, "|")
+end
+
 return function()
 	-- A change in the middle of a function shows from the function's first line, and the lines
 	-- before it stay hidden.
@@ -273,4 +293,38 @@ return function()
 	assert(Diff.analyze(fileAt("a.luau", "x")).language == "lua")
 	local unknown = Diff.analyze(fileAt("a.zig", "const x = 1;"))
 	assert(unknown.syntax == nil and unknown.language == "zig")
+
+	-- Word diff: each changed word is its own span, whitespace between changed words joins them.
+	fd = Diff.analyze(changeOf({ "\tfoo(a, b)" }, { "\tbar(a, c)" }))
+	local removed, added = fd.entries[1], fd.entries[2]
+	assert(removed.row.kind == "del" and added.row.kind == "add")
+	assert(#(removed.changed :: { Diff.Span }) == 2 and #(added.changed :: { Diff.Span }) == 2)
+	assert(marked(fd, 1) == "foo|b", marked(fd, 1))
+	assert(marked(fd, 2) == "bar|c", marked(fd, 2))
+	fd = Diff.analyze(changeOf({ "const total = a + b;" }, { "const sum = x + b;" }))
+	assert(marked(fd, 1) == "total|a" and marked(fd, 2) == "sum|x", marked(fd, 2))
+	fd = Diff.analyze(changeOf({ "return old value here;" }, { "return new thing here;" }))
+	assert(marked(fd, 1) == "old value" and marked(fd, 2) == "new thing", marked(fd, 2))
+
+	-- An added line between two edited lines pairs with nothing; the edits still pair with what they became.
+	fd = Diff.analyze(changeOf(
+		{ "\tfoo(a, b)", "\treturn render(items)" },
+		{ "\tfoo(a, c)", "\tlog.debug(\"rendering\")", "\treturn render(rows)" }
+	))
+	assert(marked(fd, 3) == "c", marked(fd, 3))
+	assert(fd.entries[4].changed == nil, "the inserted line has no word diff")
+	assert(marked(fd, 2) == "items" and marked(fd, 5) == "rows", marked(fd, 2) .. " / " .. marked(fd, 5))
+
+	-- A rewritten line shares too little to pair: no confetti of tiny matches.
+	fd = Diff.analyze(changeOf({ "if (ready) { start(); }" }, { "const queue = new Map<string, Job>();" }))
+	assert(fd.entries[1].changed == nil and fd.entries[2].changed == nil)
+
+	-- Two removed lines joined into one added line: the closer one pairs, the other is a plain removal.
+	fd = Diff.analyze(changeOf({ "const a = load(path,", "\toptions);" }, { "const a = load(path, options);" }))
+	assert(marked(fd, 3) == "options);", marked(fd, 3))
+	assert(fd.entries[2].changed == nil)
+
+	-- An indentation-only change marks nothing.
+	fd = Diff.analyze(changeOf({ "  x = 1" }, { "    x = 1" }))
+	assert(fd.entries[1].changed == nil and fd.entries[2].changed == nil)
 end
