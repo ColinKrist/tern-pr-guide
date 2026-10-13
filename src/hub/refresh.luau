@@ -3,6 +3,7 @@
 -- the newest shared cache there is before it is stored, a refresh asked for now (`refetch`), the sample board's ⌘R,
 -- which steps through recorded refreshes instead, and a pull request's check list for the checks popover and the fixes
 -- page (`loadCheckList`), read again on the checks timer while the popover is open and a check is unfinished.
+local AutoLandRun = require("./auto-land-run")
 local Checks = require("./checks")
 local FilterStore = require("./filter-store")
 local CheckFilter = require("./check-filter")
@@ -53,6 +54,7 @@ end
 local onProbe: (b: Block, cx: BlockCx) -> ()
 local onRefresh: (b: Block, cx: BlockCx) -> ()
 local onChecks: (b: Block, cx: BlockCx) -> ()
+local refetchSoon: (b: Block, cx: BlockCx) -> ()
 
 -- Cancels the named timer's old handle, then arms a one-shot after `seconds` (nil leaves it off).
 local function arm(b: Block, cx: BlockCx, name: "probe" | "refresh" | "checks" | "debounce", seconds: number?, fn: (Block, BlockCx) -> ())
@@ -180,6 +182,7 @@ startRefresh = function(b: Block, cx: BlockCx)
 		local shared: Sync.Cache? = nil
 		if safe and fresh then
 			facts = readLocal()
+			facts.landing = AutoLandRun.marks()
 			local canon, moved = State.canonicalAdded(facts.added, fresh.prs)
 			facts.added, canonMoved = canon, moved
 			-- A fix still being set up for a PR another window has taken ends before the answer is merged: ending it draws, so it
@@ -236,6 +239,8 @@ startRefresh = function(b: Block, cx: BlockCx)
 			if b.closed then return end
 			showAdded(b, cx)
 			Prepare.run(b, cx)
+			AutoLandRun.run(b, cx, true, refetchSoon)
+			if b.closed then return end
 			loadMerges(b)
 			detectMerges(b, cx)
 			loadFlakes(b, cx)
@@ -330,6 +335,8 @@ onChecks = function(b, cx)
 				end
 				if why then b.s.error = { operation = KV_CACHE, message = "the cache couldn't be saved: " .. why } end
 				loadFlakes(b, cx)
+				AutoLandRun.run(b, cx, false, refetchSoon)
+				if b.closed then return end
 			end
 		end
 		rearm(b, cx)
@@ -348,7 +355,7 @@ local function refetch(b: Block, cx: BlockCx)
 end
 
 -- A refresh a few seconds on, for changes GitHub's search takes a moment to show (a merge, a branch update).
-local function refetchSoon(b: Block, cx: BlockCx)
+refetchSoon = function(b: Block, cx: BlockCx)
 	Host.timer(3000, function()
 		if not b.closed then refetch(b, cx) end
 	end)
@@ -389,6 +396,8 @@ local function stepFixture(b: Block, cx: BlockCx)
 		b.s.acted = acted
 		announce(b, cx, before, entry.prs, data.asOf)
 		State.replace(b.s, entry.prs, data.asOf, data.asOfIso)
+		-- The sample's auto-land is in memory only: every step's board carries it.
+		State.stampLanding(b.s, b.sampleLanding)
 		draw(b, cx)
 	end
 	local timers = b.timers :: any

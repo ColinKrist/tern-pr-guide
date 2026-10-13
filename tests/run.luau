@@ -37,6 +37,7 @@ local modules: { { name: string, run: () -> () } } = {
 	{ name = "passes_test", run = require("./passes_test") },
 	{ name = "model_menu_test", run = require("./model_menu_test") },
 	{ name = "hub_settings_test", run = require("./hub_settings_test") },
+	{ name = "auto_land_block_test", run = require("./auto_land_block_test") },
 	{ name = "prepare_test", run = require("./prepare_test") },
 	{ name = "pages_test", run = require("./pages_test") },
 	{ name = "agent_chat_test", run = require("./agent_chat_test") },

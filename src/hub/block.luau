@@ -8,6 +8,7 @@ local Actions = require("../ci/actions")
 local Agent = require("../agent")
 local AgentHost = require("../agent-host")
 local AgentRun = require("./agent-run")
+local AutoLandRun = require("./auto-land-run")
 local Board = require("../view/hub/board")
 local Buildkite = require("../ci/buildkite")
 local Details = require("./details")
@@ -359,6 +360,30 @@ ACTIONS["hub-guides"] = function(b, cx, to)
 	Fetch.savePrepareGuides(b.s.prepareGuides)
 	Prepare.run(b, cx)
 end
+-- Settings' auto-land rows: - and + (or the stepper) change the try cap; ⇧D (or a click on the label) edits the dequeue label.
+local function saveLand(b: Block, cx: BlockCx)
+	local why = AutoLandRun.saveSettings(b.s.landSettings)
+	if why then cx:toast("error", "Couldn't save the auto-land settings: " .. why) end
+end
+local function focusSettings(b: Block, cx: BlockCx)
+	if b.s.models then frameLater(cx, { { "focus", Paths.settingsField } }) end
+end
+ACTIONS["hub-land-tries"] = function(b, cx, value)
+	State.setLandTries(b.s, value)
+	saveLand(b, cx)
+end
+ACTIONS["hub-land-label"] = function(b, cx)
+	State.beginLandEdit(b.s)
+	frameLater(cx, { { "focus", Paths.landField } })
+end
+ACTIONS["hub-land-label-save"] = function(b, cx)
+	if State.saveLandEdit(b.s) then saveLand(b, cx) end
+	focusSettings(b, cx)
+end
+ACTIONS["hub-land-label-cancel"] = function(b, cx)
+	State.cancelLandEdit(b.s)
+	focusSettings(b, cx)
+end
 ACTIONS["hub-help"] = function(b)
 	State.openHelp(b.s)
 end
@@ -412,6 +437,9 @@ ACTIONS["card-merge"] = Ops.mergeCard
 ACTIONS["card-cancel"] = Ops.cancelMerge
 ACTIONS["card-auto"] = Ops.autoMerge
 ACTIONS["card-rerequest"] = Ops.rerequest
+ACTIONS["card-autoland"] = function(b, cx, key)
+	AutoLandRun.toggle(b, cx, if key ~= "" then key else b.s.selected or "", Refresh.refetchSoon)
+end
 
 chooseMergeRow = function(b, cx, index)
 	local s = b.s
@@ -742,6 +770,7 @@ local block: BlockDef<Block> = {
 		local s = State.new(prs, now, saved)
 		s.links = Fetch.linkTarget()
 		s.prepareGuides = Fetch.prepareGuides()
+		s.landSettings = AutoLandRun.settings()
 		if fixture then
 			State.setRecent(s, SAMPLE_RECENT)
 			State.setMerged(s, SAMPLE_MERGED)
@@ -758,7 +787,7 @@ local block: BlockDef<Block> = {
 			s = s, cache = cache, fixture = fixture, generate = opts ~= nil and opts.generate, agent = nil, agentFlight = nil, botKeys = {},
 			github = Github.client(Fetch.runner, Host.json.decode), timers = {},
 			ci = ciProviders(if fixture then sampleRun else Fetch.runner),
-			flights = { refresh = false, checks = false, probe = false, flake = false, tandem = false }, watched = watched, handoffs = 0, seen = {}, heard = {}, held = if cache then storedId(cache) else nil, replays = {}, retired = {}, unsaved = false, root = nil, rootWaiters = nil,
+			flights = { refresh = false, checks = false, probe = false, flake = false, tandem = false, land = false }, watched = watched, handoffs = 0, seen = {}, heard = {}, held = if cache then storedId(cache) else nil, replays = {}, retired = {}, unsaved = false, root = nil, rootWaiters = nil,
 			sched = {
 				probedAt = now, probeChanged = false, focusedAt = if live then now else nil, checksAt = nil,
 				refreshTried = nil, lastModified = if cache then cache.lastModified else nil,

@@ -65,7 +65,7 @@ export type Block = {
 	github: Github.Client, timers: Timers,
 	filterViewer: string?, filtersDirty: boolean?, -- account whose personal filters were loaded; edits made before its first refresh
 	ci: { Log.Provider }, -- who reads a failing check's log: Buildkite, then GitHub Actions
-	flights: { refresh: boolean, checks: boolean, probe: boolean, flake: boolean, tandem: boolean }, -- one call of each kind at a time
+	flights: { refresh: boolean, checks: boolean, probe: boolean, flake: boolean, tandem: boolean, land: boolean }, -- one call of each kind at a time
 	watched: { [string]: boolean }, -- the PRs Tandem watches (lowercase "owner/repo#123"): the cache's flags until a read of Tandem succeeds, then that read
 	handoffs: number, -- hand-offs Tandem has taken this session: a read that began before one cannot name that PR
 	seen: { [string]: boolean }, -- write ids of caches this block stored or joined: one id is another window's word once, never again
