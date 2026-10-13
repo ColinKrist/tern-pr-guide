@@ -70,6 +70,8 @@ M.fixesTitle = M.FIXES .. ".header.title"
 -- The view tabs in the fixes page's title row; their select events carry this id.
 M.fixesTabs = M.FIXES .. ".header.title.views.tabs"
 M.reviewFixTitle = "main.review-fix.header.title"
+-- The fixes page's Pull request button, which its menu and question hang under.
+M.fixesPrButton = M.FIXES .. ".header.title.actions.pr"
 M.replyField = M.FIXES .. ".cols.code.ex.body.composer.body.field"
 
 -- A card's checks mark, after "repo #number" on its meta line, which the checks popover hangs under.

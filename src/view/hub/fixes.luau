@@ -82,6 +82,12 @@ local function header(s: State.State, pr: Model.HubPR, steps: { Step }, tabs: { 
 			end
 		end
 	end
+	-- Pull request: the page's merge, close and the rest, in the hub's menu under this button.
+	if #State.prMenu(s, pr.key) > 0 then
+		table.insert(actions, el("button", { class = "gp-btn gp-btn-keyed", key = "pr", actions = { click = "hub-pr-menu=" .. pr.key } }, {
+			span("gp-fx-btn-label", "Pull request"), Ui.keys("⇧P"),
+		}))
+	end
 	local title: { Node } = {
 		el("span", { class = "gp-hdr-act gp-back", key = "back", actions = { click = "fixes-close" } }, { el("span", { class = "gp-back-ico" }, { Ui.icon("chev-r") }), span("gp-hdr-act-label", "Pull requests"), Ui.keys("esc") }),
 		span("gp-title-num", "#" .. pr.number),

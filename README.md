@@ -62,6 +62,7 @@ The **Your pull requests** tab sorts every PR you opened into three columns:
 
 The **Next up** bar above the board shows the most urgent PR. Drafts and PRs with no activity for
 7 days move to a hidden **Inactive** group, where you can select stale PRs and close them together.
+To close any one of your PRs, select its card and press `X`, then `⌘⏎` to confirm.
 
 A PR leaves the board once it merges, from the hub or anywhere else. The folded **Recently merged**
 list at the bottom (`R`) keeps your 20 latest merges from the past 7 days, and ⏎ opens one.
@@ -145,7 +146,14 @@ header (**Fixes**, **Guided** when the PR has a guide, **Files**), and `t` cycle
 page has loaded, the fixes page shows a single **Review** tab. The hub keeps the last three PRs you
 opened, so going back to one finds its drafts, marks and any guide being written as you left them.
 A page with a comment you are writing, comments or a summary you haven't sent, or an agent run in
-progress is never dropped. `⌘⏎` opens the PR in a Tern pane of its own, to put beside the hub.
+progress is never dropped.
+
+**Pull request menu.** On a PR's review page or fixes page in the hub, `⇧P` (or the **Pull request**
+button in the header) lists what the PR offers: Merge, Merge when ready, Cancel merge, Update branch,
+Re-request review and Close pull request, under the same rules as its card on the board. `j` `k`
+move, `⏎` or a row's own key chooses, and `Esc` closes. Merge and Close ask first, as they do on the
+card: `⌘⏎` confirms and `Esc` cancels. The page stays open afterwards, with a notice of what
+happened. The standalone guide block has no menu.
 
 ## Fix what's blocking
 
@@ -314,7 +322,6 @@ Press `?` for shortcuts that apply to the current page. In the hub, the panel fo
 | `.` | Select the most urgent PR |
 | `⏎` or click | Open the PR in the hub's own pane (a Needs fixes card opens its fixes page; a ready agent fix opens its review) |
 | `⇧⏎` | Open the PR in the hub and generate its guide |
-| `⌘⏎` | Open the PR in a Tern pane of its own |
 | `T` | Switch between your PRs and review requests |
 | `/` | Search |
 | `F` | Filter by repository or title; ignore named checks |
@@ -342,7 +349,7 @@ Press `?` for shortcuts that apply to the current page. In the hub, the panel fo
 | `⇧O` | Open agent chat: resume the agent's conversation after a conflict fix ends, or focus its pane when it is open |
 | `Space` or ⌘-click | Select cards for a batch action |
 | `⇧X` | Select stale PRs |
-| `X` | Remove an added review request or close selected stale PRs |
+| `X` | Close the selected PR or the selected stale PRs, or remove an added review request |
 | `⌘R` | Refresh |
 | `⌘⏎` | Confirm an inline question |
 | `Esc` | Cancel, close or clear the selection |
@@ -359,6 +366,7 @@ Press `?` for shortcuts that apply to the current page. In the hub, the panel fo
 | `v` | Mark the whole file reviewed |
 | `t` | Switch between Guided and Files (in the hub, a Needs fixes PR also cycles Fixes) |
 | `Esc` | In the hub, with nothing open on the page: back to the board |
+| `⇧P` | In the hub: the Pull request menu (merge, close and the PR's other actions) |
 | `b` | Hide or show the file tree in the file view |
 | `/` | Search steps, files, comments and code |
 | `s` | Show supporting changes |
@@ -397,6 +405,7 @@ Replies and resolves write to GitHub right away.
 | `⇧R` | Re-run failed checks |
 | `U` | Update branch, or push an empty commit when the branch is up to date (`⌘⏎` confirms) |
 | `V` | Show all checks |
+| `⇧P` | The Pull request menu: merge, close and the PR's other actions |
 | `t` | Next view: Fixes, Guided, Files |
 | `G` | Open GitHub's conflict editor |
 | `B` | Show bot comments |

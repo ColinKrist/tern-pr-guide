@@ -2201,7 +2201,7 @@ local function watchedMerge()
 			target.tandem, target.pending = false, nil
 			State.project(b.s)
 			-- The question was asked before Tandem took the PR; the answer arrives after.
-			State.askMerge(b.s, MERGED)
+			State.ask(b.s, MERGED, "merge")
 			target.tandem = true
 			State.project(b.s)
 			for _, act in { "card-merge", "card-auto", "hub-confirm" } do
@@ -2229,6 +2229,8 @@ local function queuedMerge()
 		reads(w)[1].done(out("WATCH"))
 		w.runs = {}
 		b.github = { refresh = function() end, run = function(command: any, done: any) table.insert(w.runs, { command = command, done = done }) end }
+		-- Merge selected asks only once it knows how each repository merges.
+		b.s.merges["acme/api"] = { method = { kind = "squash" }, source = "user", ask = false }
 		b.s.confirm = { kind = "batch-merge", keys = { FIRST, SECOND } } :: any
 		assert(not State.prOf(b.s, SECOND).tandem)
 		Block.event(b, { ev = "action", act = "hub-confirm", value = "" } :: any, w.cx)
@@ -2311,7 +2313,8 @@ local function sharedOwnership()
 				reads(w)[1].done(out("WATCH"))
 				w.runs = {}
 				b.github = { refresh = function() end, run = function(command: any, done: any) table.insert(w.runs, { command = command, done = done }) end }
-				local key = if act == "card-update" then "acme/api#118" else "acme/api#109"
+				-- Each on a card that offers it: Update on a lagging branch, Merge when ready In review, Merge on Ready.
+				local key = if act == "card-update" then "acme/api#118" elseif act == "card-auto" then "acme/api#106" else "acme/api#109"
 				if act == "card-update" then
 					local lagging: any = State.prOf(b.s, key)
 					lagging.behind, lagging.conflicts, lagging.draft = true, false, false
@@ -2810,6 +2813,7 @@ local function sharedOwnership()
 			b.github.run = function(command: any, done: any) table.insert(w.runs, { command = command, done = done }) end
 			Block.event(b, { ev = "action", act = "card-agent", value = TARGET } :: any, w.cx)
 			assert(b.agentFlight ~= nil and b.agentFlight.engine == nil and #w.clones == 1, what .. ": TARGET's setup is pending")
+			b.s.merges["acme/api"] = { method = { kind = "squash" }, source = "user", ask = false }
 			b.s.confirm = { kind = if merge then "batch-merge" else "batch-close", keys = { FIRST, SECOND } } :: any
 			Block.event(b, { ev = "action", act = "hub-confirm", value = "" } :: any, w.cx)
 			assert(#w.runs == 1 and b.s.busy[FIRST] ~= nil and b.s.busy[SECOND] == nil, what .. ": the first command is out")
@@ -2834,7 +2838,7 @@ local function sharedOwnership()
 			reads(w)[1].done(out("WATCH"))
 			w.runs = {}
 			b.github = { refresh = function() end, run = function(command: any, done: any) table.insert(w.runs, { command = command, done = done }) end }
-			local key = if act == "card-update" then "acme/api#118" else "acme/api#109"
+			local key = if act == "card-update" then "acme/api#118" elseif act == "card-auto" then "acme/api#106" else "acme/api#109"
 			if act == "card-update" then
 				local lagging: any = State.prOf(b.s, key)
 				lagging.behind, lagging.conflicts, lagging.draft = true, false, false
@@ -2989,6 +2993,7 @@ local function sharedOwnership()
 			local b = settingUp(w, Fetch, Block)
 			w.runs = {}
 			b.github.run = function(command: any, done: any) table.insert(w.runs, { command = command, done = done }) end
+			b.s.merges["acme/api"] = { method = { kind = "squash" }, source = "user", ask = false }
 			b.s.confirm = { kind = if merge then "batch-merge" else "batch-close", keys = { FIRST, SECOND } } :: any
 			Block.event(b, { ev = "action", act = "hub-confirm", value = "" } :: any, w.cx)
 			assert(#w.runs == 1 and b.s.busy[FIRST] ~= nil and b.s.busy[SECOND] == nil, what .. ": the first command is out")
@@ -3050,7 +3055,7 @@ local function sharedOwnership()
 	end)
 
 	-- A merge-when-ready on a PR nobody watches: a cache-writing action that says nothing about Tandem and adds no hand-off.
-	local MERGE_KEY = "acme/api#109"
+	local MERGE_KEY = "acme/api#106" -- In review: Merge when ready is its action
 	local function mergeWhenReady(w: any, Block: any, b: any): any
 		w.runs = {}
 		b.github.run = function(command: any, done: any) table.insert(w.runs, { command = command, done = done }) end
@@ -3521,7 +3526,7 @@ local function unreadableOwnership()
 			reads(w)[1].done(out("WATCH"))
 			w.runs = {}
 			b.github = { refresh = function() end, run = function(command: any, done: any) table.insert(w.runs, { command = command, done = done }) end }
-			local key = if act == "card-update" then "acme/api#118" else "acme/api#109"
+			local key = if act == "card-update" then "acme/api#118" elseif act == "card-auto" then "acme/api#106" else "acme/api#109"
 			if act == "card-update" then
 				local lagging: any = State.prOf(b.s, key)
 				lagging.behind, lagging.conflicts, lagging.draft = true, false, false
@@ -3733,7 +3738,7 @@ end
 -- Local edits a store could not take, and the actions that make them. A replay keeps the stamp the edit was made with; an
 -- edit applies only on the head its action began on; a refresh that was out when the edit was made cannot bring the PR back.
 local function replayedEdits()
-	local KEY = "acme/api#109"
+	local KEY = "acme/api#106" -- In review: Merge when ready is its action
 	local function iso(at: number): string
 		return os.date("!%Y-%m-%dT%H:%M:%SZ", at) :: string
 	end

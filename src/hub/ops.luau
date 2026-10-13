@@ -1,8 +1,9 @@
 --!strict
--- The hub's actions on a pull request that reach GitHub or the agent: merging (with the repo's method, a confirmed batch
--- one at a time, when ready) and cancelling a merge, re-requesting review, updating a branch, re-running failed checks,
--- adding and removing a PR by link, replying to and resolving a thread, summarizing feedback, and pushing or discarding
--- an agent's fix. Each keeps the shared cache in step through hub/store (`keepCache`). Block's ACTIONS table calls them.
+-- The hub's actions on a pull request that reach GitHub or the agent: the board's side of each pull request action
+-- (PrActions holds their rules and commands; a confirmed batch merges or closes one at a time), pushing an empty commit,
+-- re-running failed checks, adding and removing a PR by link, replying to and resolving a thread, summarizing feedback,
+-- and pushing or discarding an agent's fix. Each keeps the shared cache in step through hub/store (`keepCache`).
+-- Block's ACTIONS table calls them.
 local Agent = require("../agent")
 local AutoLandRun = require("./auto-land-run")
 local AgentHost = require("../agent-host")
@@ -15,6 +16,7 @@ local Host = require("../host")
 local Log = require("../ci/log")
 local Lookups = require("./lookups")
 local Model = require("./model")
+local PrActions = require("../pr-actions")
 local Refresh = require("./refresh")
 local ReviewFix = require("./review-fix")
 local Runtime = require("./runtime")
@@ -72,220 +74,170 @@ local function summarize(b: Block, cx: BlockCx, key: string)
 		AgentHost.summarizeFeedback(b.agent :: Agent.Agent, Summary.prompt(details), complete)
 	end)
 end
--- Merging --------------------------------------------------------------------------------------------------
+-- Pull request actions -------------------------------------------------------------------------------------
+-- PrActions holds the rules and the commands; this is the board's side of each: the busy mark, the cache edit, the
+-- toast, the refresh, and auto-land stepping aside for a merge by hand.
 
-local MERGE_BUSY = { comment = "Commenting…", label = "Adding label…", queue = "Queuing…" }
+-- What a sample board says instead of sending each action.
+local SAMPLE: { [string]: string } = {
+	merge = "The sample board doesn't merge", ["auto-merge"] = "The sample board doesn't merge",
+	["cancel-merge"] = "The sample board doesn't cancel merges", update = "The sample board doesn't update branches",
+	rerequest = "The sample board doesn't ask for reviews", close = "The sample board doesn't close pull requests",
+}
 
--- The repo's resolved method, squash until its record is known.
-local function methodOf(b: Block, pr: Model.HubPR): Model.MergeMethod
-	local resolved = b.s.merges[pr.repo]
-	return if resolved then resolved.method else { kind = "squash" }
+-- The rules' context for `pr` as an action is decided: ownership another window stored joins first, and the durable
+-- watched set counts too, since a batch holds pull requests the board may have dropped since it began.
+local function liveCtx(b: Block, pr: Model.HubPR): PrActions.Ctx
+	local _, readable = joinOwned(b)
+	local s = b.s
+	local current = State.prOf(s, pr.key) or pr
+	local card = State.card(s, pr.key)
+	local ctx = State.prCtx(s, current, if card then card.column else nil)
+	ctx.readable = readable
+	ctx.tandem = current.tandem or b.watched[string.lower(pr.repo) .. "#" .. pr.number] == true
+	return ctx
 end
 
-local function toastDone(cx: BlockCx, pr: Model.HubPR, method: Model.MergeMethod)
-	if method.kind == "comment" then
-		cx:toast("success", "Commented " .. method.command .. " on #" .. pr.number, pr.title)
-	elseif method.kind == "label" then
-		cx:toast("success", "Added the " .. method.label .. " label to #" .. pr.number, pr.title)
-	elseif method.kind == "queue" then
-		cx:toast("success", "Added #" .. pr.number .. " to the merge queue", pr.title)
-	else
-		cx:toast("success", "Merged #" .. pr.number, pr.title)
+-- What the success toast says. Read before the action runs: its edit changes what the PR says.
+local function successText(id: PrActions.Id, pr: Model.HubPR, ctx: PrActions.Ctx): string
+	local n = "#" .. pr.number
+	if id == "merge" then
+		local method = PrActions.method(ctx)
+		if method.kind == "comment" then return "Commented " .. method.command .. " on " .. n end
+		if method.kind == "label" then return "Added the " .. method.label .. " label to " .. n end
+		if method.kind == "queue" then return "Added " .. n .. " to the merge queue" end
+		return "Merged " .. n
+	elseif id == "auto-merge" then
+		return n .. " will merge when ready"
+	elseif id == "cancel-merge" then
+		local pending = pr.pending
+		local method: Model.MergeMethod = if pending and pending.method == "queue" then { kind = "queue" } else PrActions.method(ctx)
+		if method.kind == "comment" then return "Commented " .. (method.cancel or "") .. " on " .. n end
+		if method.kind == "label" then return "Removed the " .. method.label .. " label from " .. n end
+		if ctx.column == "in_review" then return n .. " won't merge when ready" end
+		return "Removed " .. n .. " from the merge queue"
+	elseif id == "update" then
+		return "Updated " .. n .. " with " .. pr.baseBranch
+	elseif id == "rerequest" then
+		local again = Model.awaitingReReview(pr)
+		return "Asked " .. Model.reviewerList(if again then again.ask else {}) .. " to review " .. n .. " again"
 	end
+	return "Closed " .. n
 end
 
--- Merges with the repo's method. GitHub's merge happens now and the PR leaves the board; a queue, comment or
--- label hands the merge to the repo's tool, so the card shows it pending until a refresh brings the result.
--- With `done`, the caller owns the toast and the refresh (a batch): it hears nil when the PR merged or was handed to
--- its repo's tool, or the reason it didn't.
-local function runMerge(b: Block, cx: BlockCx, pr: Model.HubPR, done: ((err: string?) -> ())?)
+-- The board's edit once the action went through, kept in the shared cache on the head it began on. Built before the
+-- action runs, from what the PR said then.
+local function editOf(b: Block, cx: BlockCx, id: PrActions.Id, pr: Model.HubPR, ctx: PrActions.Ctx): (head: string) -> ()
+	local s, key = b.s, pr.key
+	local function gone(head: string)
+		keepCache(b, cx, function()
+			s.acted[key] = true
+			State.dropPr(s, key)
+		end, key, head)
+	end
+	if id == "merge" or id == "auto-merge" then
+		local method = PrActions.method(ctx)
+		-- GitHub's merge happens now and the PR leaves the board; a queue, comment or label hands it to the repo's tool, so
+		-- the card shows it pending until a refresh brings the result.
+		if id == "merge" and PrActions.immediate(method) then return gone end
+		local kind: "queue" | "comment" | "label" = if method.kind == "comment" or method.kind == "label" then method.kind else "queue"
+		return function(head)
+			-- One stamp for every application of the edit: a replay must not move it past a bot's later rejection.
+			local at = isoNow()
+			keepCache(b, cx, function() State.setPending(s, key, { method = kind, at = at }) end, key, head, kind == "queue")
+		end
+	elseif id == "cancel-merge" then
+		return function(head)
+			keepCache(b, cx, function() State.setPending(s, key, nil) end, key, head)
+			-- Cancelling the merge takes it back from auto-land too, which would only ask again.
+			if not b.closed and pr.autoLand then AutoLandRun.off(b, cx, key) end
+		end
+	elseif id == "update" then
+		return function(head)
+			keepCache(b, cx, function()
+				s.acted[key] = true
+				State.branchUpdated(s, key)
+			end, key, head)
+		end
+	elseif id == "rerequest" then
+		local again = Model.awaitingReReview(pr)
+		local logins = if again then again.ask else {}
+		return function(head) keepCache(b, cx, function() State.reRequested(s, key, logins) end, key, head) end
+	end
+	return gone
+end
+
+-- Runs action `id` on `pr` now: the refusal, the busy mark, the command, the edit and the toast. With `done`, the caller
+-- owns the toast and the refresh (a batch): it hears nil when the action went through, or the reason it didn't.
+local function execute(b: Block, cx: BlockCx, id: PrActions.Id, pr: Model.HubPR, done: ((err: string?) -> ())?)
 	if b.closed then return end
 	local s = b.s
-	-- A batch reaches here once per PR, long after its dispatch: ownership stored meanwhile joins first, and a store that
-	-- cannot be read merges nothing.
-	local _, readable = joinOwned(b)
-	if not readable then
-		if done then return done(UNCHECKED) end
-		return cx:toast("error", "Couldn't merge #" .. pr.number .. ": " .. UNCHECKED, pr.repo)
+	local def = PrActions.get(id)
+	local ctx = liveCtx(b, pr)
+	local function fail(reason: string)
+		if done then return done(reason) end
+		cx:toast("error", "Couldn't " .. def.what(pr) .. ": " .. reason, pr.repo)
 	end
-	-- One owner per branch: nothing new merges a PR Tandem watches (a merge already pending is only cancelled).
-	-- A batch holds the PRs it captured: the board may have dropped one Tandem took, so the durable set is asked too.
-	local owned = State.prOf(s, pr.key)
-	if (owned and owned.tandem) or b.watched[string.lower(pr.repo) .. "#" .. pr.number] then
-		if done then return done(TANDEM_OWNS) end
-		return cx:toast("error", "Couldn't merge #" .. pr.number .. ": " .. TANDEM_OWNS, pr.repo)
-	end
+	local refused = def.refusal(pr, ctx)
+	if refused then return fail(refused) end
 	-- Merging by hand overrides auto-land: it steps aside rather than ask for the merge a second time.
-	if owned and owned.autoLand and owned.autoLand.state == "on" then
+	local current = State.prOf(s, pr.key)
+	if id == "merge" and current and current.autoLand and current.autoLand.state == "on" then
 		AutoLandRun.off(b, cx, pr.key)
 		if b.closed then return end
 		if not done then cx:toast("info", "Auto-land off for #" .. pr.number .. ": merging by hand", pr.title) end
 	end
-	local method = methodOf(b, pr)
+	local success = successText(id, pr, ctx)
+	local apply = editOf(b, cx, id, pr, ctx)
+	local mark = def.progress(pr, ctx)
 	local head = pr.headOid
-	local mark = MERGE_BUSY[method.kind] or "Merging…"
 	State.setBusy(s, pr.key, mark)
-	b.github.run(Github.commands.merge(pr, method), function(_, err)
+	def.run(pr, ctx, b.github, function(err)
 		if b.closed then return end
 		if err then
 			State.setBusy(s, pr.key, nil)
-			if done then
-				done(reasonOf(err.message))
-			else
-				cx:toast("error", "Couldn't merge #" .. pr.number .. ": " .. reasonOf(err.message), pr.repo)
-			end
-		elseif method.kind == "squash" or method.kind == "merge" or method.kind == "rebase" then
-			-- The edit below applies only on the head the merge began on, and it is what clears the busy mark there. An adopted
-			-- cache that moved the head skips it, so this merge's own mark clears here, and only if nothing newer replaced it.
-			if s.busy[pr.key] == mark then State.setBusy(s, pr.key, nil) end
-			keepCache(b, cx, function()
-				s.acted[pr.key] = true
-				State.dropPr(s, pr.key)
-			end, pr.key, head)
-			-- Adopting another window's cache may have drawn, and the draw closed the block: nothing goes on from here.
-			if b.closed then return end
-			if done then done(nil) else
-				toastDone(cx, pr, method)
-				refetchSoon(b, cx)
-			end
-		else
-			State.setBusy(s, pr.key, nil)
-			-- One stamp for every application of the edit: a replay must not move it past a bot's later rejection.
-			local at = isoNow()
-			keepCache(b, cx, function() State.setPending(s, pr.key, { method = method.kind, at = at }) end, pr.key, head, method.kind == "queue")
-			if b.closed then return end
-			if done then done(nil) else
-				toastDone(cx, pr, method)
-				refetchSoon(b, cx)
-			end
+			fail(reasonOf(err))
+			return draw(b, cx)
 		end
-		draw(b, cx)
-	end)
-end
-
--- Merge (M): a GitHub method asks first (⌘⏎ merges, Esc cancels); a comment, label or queue runs at once, since
--- it can be cancelled; a comment learned from the repo's history asks once.
-local function mergeCard(b: Block, cx: BlockCx, key: string)
-	local s = b.s
-	local card = State.card(s, key)
-	if not card or s.busy[key] or card.pr.tandem then return end
-	local pr = card.pr
-	if not b.fixture and not s.merges[pr.repo] then
-		-- Not known yet how this repo merges: GitHub's merge is never the guess.
-		State.select(s, key)
-		detectRepo(b, cx, pr.repo)
-		return cx:toast("info", "Checking how " .. pr.repo .. " merges…", "Try again in a moment")
-	end
-	if State.mergeStep(s, pr) == "run" then
-		State.select(s, key)
-		if b.fixture then return cx:toast("info", "The sample board doesn't merge", pr.key) end
-		return runMerge(b, cx, pr, nil)
-	end
-	State.askMerge(s, key)
-end
-
--- Cancel merge (M on a card with a merge in flight): the method's own cancel.
-local function cancelMerge(b: Block, cx: BlockCx, key: string)
-	local s = b.s
-	local card = State.card(s, key)
-	local pending = if card then card.pr.pending else nil
-	if not card or not pending or s.busy[key] then return end
-	local pr = card.pr
-	if b.fixture then return cx:toast("info", "The sample board doesn't cancel merges", pr.key) end
-	local method = methodOf(b, pr)
-	if pending.method == "queue" then method = { kind = "queue" } end
-	local ok, command = pcall(Github.commands.cancelMerge, pr, method)
-	if not ok or method.kind ~= pending.method then
-		return cx:toast("error", "Couldn't cancel the merge of #" .. pr.number .. ": " .. pr.repo .. " has no way to cancel it", pr.title)
-	end
-	local head = pr.headOid
-	State.setBusy(s, key, "Cancelling…")
-	b.github.run(command :: Github.Command, function(_, err)
+		-- The edit applies only on the head the action began on, and it is what clears the busy mark there. An adopted cache
+		-- that moved the head skips it, so this action's own mark clears here, and only if nothing newer replaced it.
+		if s.busy[pr.key] == mark then State.setBusy(s, pr.key, nil) end
+		apply(head)
+		-- Adopting another window's cache may have drawn, and the draw closed the block: nothing goes on from here.
 		if b.closed then return end
-		State.setBusy(s, key, nil)
-		if err then
-			cx:toast("error", "Couldn't cancel the merge of #" .. pr.number .. ": " .. reasonOf(err.message), pr.repo)
+		if done then
+			done(nil)
 		else
-			keepCache(b, cx, function() State.setPending(s, key, nil) end, key, head)
-			if b.closed then return end
-			-- Cancelling the merge takes it back from auto-land too, which would only ask again.
-			if pr.autoLand then AutoLandRun.off(b, cx, key) end
-			if b.closed then return end
-			if method.kind == "comment" then
-				cx:toast("success", "Commented " .. (method.cancel or "") .. " on #" .. pr.number, pr.title)
-			elseif method.kind == "label" then
-				cx:toast("success", "Removed the " .. method.label .. " label from #" .. pr.number, pr.title)
-			elseif card.column == "in_review" then
-				cx:toast("success", "#" .. pr.number .. " won't merge when ready", pr.title)
-			else
-				cx:toast("success", "Removed #" .. pr.number .. " from the merge queue", pr.title)
-			end
+			cx:toast("success", success, pr.title)
 			refetchSoon(b, cx)
 		end
 		draw(b, cx)
 	end)
 end
 
--- Merge when ready (M behind the ▾ on an In review card): GitHub's `--auto` with the repo's method flag, or the
--- repo's own command posted early. It can be cancelled, so it asks nothing. The card then reads "Merges when ready".
-local function autoMerge(b: Block, cx: BlockCx, key: string)
+-- A pull request action from a key, a click or the Pull request menu: offered actions only, the question first when it
+-- asks one, else it runs. A refusal known now is said now, before any question.
+local function act(b: Block, cx: BlockCx, id: PrActions.Id, key: string)
 	local s = b.s
-	local card = State.card(s, key)
-	if not card or s.busy[key] or card.pr.pending or card.pr.tandem then return end
-	local pr = card.pr
-	State.select(s, key)
-	if b.fixture then return cx:toast("info", "The sample board doesn't merge", pr.key) end
-	if not ownershipChecked(b, cx, "set #" .. pr.number .. " to merge when ready") then return end
-	if pr.tandem then return cx:toast("error", "Couldn't set #" .. pr.number .. " to merge when ready: " .. TANDEM_OWNS, pr.repo) end
-	if not Model.canMergeWhenReady(s.merges[pr.repo], s.autoMerge[pr.repo]) then
-		return cx:toast("error", "Couldn't set #" .. pr.number .. " to merge when ready: " .. pr.repo .. " doesn't allow auto-merge", pr.title)
+	local pr = State.prOf(s, if key ~= "" then key else s.selected or "")
+	if not pr or s.busy[pr.key] then return end
+	local card = State.card(s, pr.key)
+	local ctx = State.prCtx(s, pr, if card then card.column else nil)
+	local def = PrActions.get(id)
+	if not def.offered(pr, ctx) then return end
+	State.select(s, pr.key)
+	if not b.fixture then
+		if id == "merge" and ctx.merge == nil then
+			-- Not known yet how this repo merges: GitHub's merge is never the guess.
+			detectRepo(b, cx, pr.repo)
+			return cx:toast("info", "Checking how " .. pr.repo .. " merges…", "Try again in a moment")
+		end
+		local refused = def.refusal(pr, liveCtx(b, pr))
+		if refused then return cx:toast("error", "Couldn't " .. def.what(pr) .. ": " .. refused, pr.repo) end
 	end
-	local method = methodOf(b, pr)
-	local head = pr.headOid
-	State.setBusy(s, key, MERGE_BUSY[method.kind] or "Setting…")
-	b.github.run(Github.commands.autoMerge(pr, method), function(_, err)
-		if b.closed then return end
-		State.setBusy(s, key, nil)
-		if err then
-			cx:toast("error", "Couldn't set #" .. pr.number .. " to merge when ready: " .. reasonOf(err.message), pr.repo)
-		else
-			local kind = if method.kind == "comment" or method.kind == "label" then method.kind else "queue"
-			local at = isoNow()
-			keepCache(b, cx, function() State.setPending(s, key, { method = kind, at = at }) end, key, head, kind == "queue")
-			if b.closed then return end
-			cx:toast("success", "#" .. pr.number .. " will merge when ready", pr.title)
-			refetchSoon(b, cx)
-		end
-		draw(b, cx)
-	end)
-end
-
--- Re-request review (Q on a card that waits on a re-review): asks the reviewers whose changes the push answers.
-local function rerequest(b: Block, cx: BlockCx, key: string)
-	local s = b.s
-	local card = State.card(s, key)
-	if not card or s.busy[key] then return end
-	local pr = card.pr
-	local again = Model.awaitingReReview(pr)
-	if not again or #again.ask == 0 then return end
-	State.select(s, key)
-	if b.fixture then return cx:toast("info", "The sample board doesn't ask for reviews", pr.key) end
-	local logins = again.ask
-	local head = pr.headOid
-	State.setBusy(s, key, "Requesting…")
-	b.github.run(Github.commands.requestReview(pr, table.concat(logins, ",")), function(_, err)
-		if b.closed then return end
-		State.setBusy(s, key, nil)
-		if err then
-			cx:toast("error", "Couldn't re-request review on #" .. pr.number .. ": " .. reasonOf(err.message), pr.repo)
-		else
-			keepCache(b, cx, function() State.reRequested(s, key, logins) end, key, head)
-			if b.closed then return end
-			cx:toast("success", "Asked " .. Model.reviewerList(logins) .. " to review #" .. pr.number .. " again", pr.title)
-			refetchSoon(b, cx)
-		end
-		draw(b, cx)
-	end)
+	if State.ask(s, pr.key, id) then return end
+	if b.fixture then return cx:toast("info", SAMPLE[id], pr.key) end
+	execute(b, cx, id, pr, nil)
 end
 
 local function refList(prs: { Model.HubPR }): string
@@ -296,15 +248,16 @@ end
 
 -- Runs the confirmed selection one pull request at a time, in column order. A failure stops the rest, which stay
 -- selected; one toast names what went through and what didn't.
-local function runBatch(b: Block, cx: BlockCx, keys: { string }, merge: boolean)
+local function runBatch(b: Block, cx: BlockCx, keys: { string }, id: "merge" | "close")
 	local s = b.s
-	if b.fixture then return cx:toast("info", if merge then "The sample board doesn't merge" else "The sample board doesn't close pull requests") end
+	if b.fixture then return cx:toast("info", SAMPLE[id]) end
 	local queue: { Model.HubPR } = {}
 	for _, key in keys do
 		local card = State.card(s, key)
 		if card and not s.busy[key] then table.insert(queue, card.pr) end
 	end
 	if #queue == 0 then return end
+	local merge = id == "merge"
 	local finished: { Model.HubPR } = {}
 	local handed = false -- some went to a repo's tool (comment, label, queue) rather than merging at once
 	local step: (index: number) -> ()
@@ -314,7 +267,7 @@ local function runBatch(b: Block, cx: BlockCx, keys: { string }, merge: boolean)
 		for i = #finished + 1, #queue do table.insert(rest, queue[i]) end
 		local done = if merge then (if handed then "Asked to merge " else "Merged ") else "Closed "
 		if failed and reason then
-			local text = (if #finished > 0 then done .. refList(finished) .. ". " else "") .. "Couldn't " .. (if merge then "merge" else "close") .. " #" .. failed.number .. ": " .. reason
+			local text = (if #finished > 0 then done .. refList(finished) .. ". " else "") .. "Couldn't " .. id .. " #" .. failed.number .. ": " .. reason
 			cx:toast("error", text, "Not " .. (if merge then "merged" else "closed") .. ": " .. refList(rest) .. ". Still selected.")
 		else
 			local n = #finished
@@ -328,31 +281,15 @@ local function runBatch(b: Block, cx: BlockCx, keys: { string }, merge: boolean)
 		if b.closed then return end
 		local pr = queue[index]
 		if not pr then return finish(nil, nil) end
-		local function after(err: string?)
+		local resolved = s.merges[pr.repo]
+		if merge and resolved and not PrActions.immediate(resolved.method) then handed = true end
+		execute(b, cx, id, pr, function(err: string?)
 			-- A redraw while keeping the cache may have closed the block: no next command, no toast.
 			if b.closed then return end
 			if err then return finish(pr, err) end
 			table.insert(finished, pr)
 			s.marked[pr.key] = nil
 			step(index + 1)
-		end
-		if merge then
-			local kind = methodOf(b, pr).kind
-			if kind ~= "squash" and kind ~= "merge" and kind ~= "rebase" then handed = true end
-			runMerge(b, cx, pr, after)
-			return
-		end
-		local head = pr.headOid
-		State.setBusy(s, pr.key, "Closing…")
-		b.github.run(Github.commands.close(pr), function(_, err)
-			if b.closed then return end
-			State.setBusy(s, pr.key, nil)
-			if err then return after(reasonOf(err.message)) end
-			keepCache(b, cx, function()
-				s.acted[pr.key] = true
-				State.dropPr(s, pr.key)
-			end, pr.key, head)
-			after(nil)
 		end)
 	end
 	step(1)
@@ -370,61 +307,24 @@ local function confirmCancel(b: Block, cx: BlockCx, _: string)
 	saveRecord(b, card.pr.repo, record)
 	cx:toast("info", "Won't suggest that again for " .. card.pr.repo)
 end
+
+-- ⌘⏎ on an inline question: the selection's batch, or the one pull request's merge or close.
 local function confirm(b: Block, cx: BlockCx, _: string)
 	local s = b.s
 	local confirm = s.confirm
-	local card = if confirm and (confirm.kind == "merge" or confirm.kind == "learned") then State.card(s, confirm.keys[1]) else nil
-	local learned = confirm ~= nil and confirm.kind == "learned"
-	if confirm and (confirm.kind == "batch-merge" or confirm.kind == "batch-close") then
-		local keys = confirm.keys
-		State.cancelConfirm(s)
-		return runBatch(b, cx, keys, confirm.kind == "batch-merge")
-	end
+	if not confirm then return end
 	State.cancelConfirm(s)
+	if confirm.kind == "batch-merge" or confirm.kind == "batch-close" then
+		return runBatch(b, cx, confirm.keys, if confirm.kind == "batch-merge" then "merge" else "close")
+	end
+	local card = State.card(s, confirm.keys[1])
 	if not card then return end
-	local resolved = s.merges[card.pr.repo]
+	local id: PrActions.Id = if confirm.kind == "close" then "close" else "merge"
 	-- Saying yes to the suggestion makes it the viewer's own setting.
-	if learned and resolved then setUserMethod(b, cx, card.pr.repo, resolved.method) end
-	if b.fixture then return cx:toast("info", "The sample board doesn't merge", card.pr.key) end
-	runMerge(b, cx, card.pr, nil)
-end
-
--- Update branch (U): a Ready card that is behind main, or a fixes page whose details count commits behind the base
--- (GitHub says BEHIND only where branch protection requires an up-to-date branch). Its checks run again, so the card
--- waits on them.
-local UPDATE_BUSY = "Updating…"
-
-local function updateBranch(b: Block, cx: BlockCx, key: string)
-	local s = b.s
-	local pr = State.prOf(s, key)
-	if pr == nil or s.busy[key] then return end
-	if not ownershipChecked(b, cx, "update #" .. pr.number) then return end
-	-- One owner per branch: a queued Update branch for a PR Tandem took meanwhile sends nothing.
-	if pr.tandem then return cx:toast("error", "Couldn't update #" .. pr.number .. ": " .. TANDEM_OWNS, pr.repo) end
-	local action = State.branchAction(s, key)
-	if not (pr.behind or (action and action.kind == "update")) or pr.conflicts then return cx:toast("info", "#" .. pr.number .. " isn't behind " .. pr.baseBranch, pr.key) end
-	if b.fixture then return cx:toast("info", "The sample board doesn't update branches", pr.key) end
-	local head = pr.headOid
-	State.setBusy(s, key, UPDATE_BUSY)
-	b.github.run(Github.commands.updateBranch(pr), function(_, err)
-		if b.closed then return end
-		if err then
-			State.setBusy(s, key, nil)
-			cx:toast("error", "Couldn't update #" .. pr.number .. ": " .. reasonOf(err.message), pr.repo)
-		else
-			-- The edit below applies only on the head the update began on, and it is what clears the busy mark there. An adopted
-			-- cache that moved the head skips it, so this update's own mark clears here, and only if nothing newer replaced it.
-			if s.busy[key] == UPDATE_BUSY then State.setBusy(s, key, nil) end
-			keepCache(b, cx, function()
-				s.acted[key] = true
-				State.branchUpdated(s, key)
-			end, key, head)
-			if b.closed then return end
-			cx:toast("success", "Updated #" .. pr.number .. " with " .. pr.baseBranch)
-			refetchSoon(b, cx)
-		end
-		draw(b, cx)
-	end)
+	local resolved = s.merges[card.pr.repo]
+	if confirm.kind == "learned" and resolved then setUserMethod(b, cx, card.pr.repo, resolved.method) end
+	if b.fixture then return cx:toast("info", SAMPLE[id], card.pr.key) end
+	execute(b, cx, id, card.pr, nil)
 end
 
 -- Push empty commit (U, after the inline question): a fixes page whose branch is up to date with its base gets a commit
@@ -745,13 +645,9 @@ end
 
 return {
 	summarize = summarize,
-	mergeCard = mergeCard,
-	cancelMerge = cancelMerge,
-	autoMerge = autoMerge,
-	rerequest = rerequest,
+	act = act,
 	confirmCancel = confirmCancel,
 	confirm = confirm,
-	updateBranch = updateBranch,
 	pushEmpty = pushEmpty,
 	rerun = rerun,
 	addByLink = addByLink,

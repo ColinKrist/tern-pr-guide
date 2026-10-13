@@ -119,12 +119,12 @@ return function()
 	local s = State.new(Cases.prs, Cases.asOf, nil)
 	local card = State.card(s, "acme/web#111") :: State.Card
 	assert((card.main :: State.CardAction).label == "Fix with agent" and card.flake == nil)
-	assert(#card.more == 1 and card.more[1].act == "card-rerun" and card.more[1].label == "Re-run failed checks" and card.more[1].key == "⇧R")
+	assert(#card.more == 2 and card.more[1].act == "card-rerun" and card.more[1].label == "Re-run failed checks" and card.more[1].key == "⇧R")
 	local head = (State.prOf(s, "acme/web#111") :: Model.HubPR).headOid
 	State.setFlake(s, "acme/web#111", { flaky = true, reason = "failed 3 of the last 20 runs on main", headOid = head })
 	card = State.card(s, "acme/web#111") :: State.Card
 	assert((card.main :: State.CardAction).act == "card-rerun" and (card.main :: State.CardAction).key == "⇧R")
-	assert(card.more[1].label == "Fix with agent" and card.more[1].key == "A" and #card.more == 1)
+	assert(card.more[1].label == "Fix with agent" and card.more[1].key == "A" and #card.more == 2)
 	assert(card.flake == "Likely flaky: failed 3 of the last 20 runs on main")
 	State.setFlake(s, "acme/web#111", { flaky = false, reason = "Error in a.ts, which this PR changed", headOid = head })
 	card = State.card(s, "acme/web#111") :: State.Card
@@ -136,8 +136,8 @@ return function()
 	local both = State.prOf(s, "acme/api#112") :: Model.HubPR
 	State.setFlake(s, both.key, { flaky = true, reason = "x", headOid = both.headOid })
 	local mixed = State.card(s, both.key) :: State.Card
-	assert((mixed.main :: State.CardAction).label == "Fix with agent" and mixed.more[#mixed.more].act == "card-rerun")
+	assert((mixed.main :: State.CardAction).label == "Fix with agent" and mixed.more[#mixed.more - 1].act == "card-rerun")
 	-- Feedback alone has no failing check, so no re-run: only Summarize is behind the agent.
 	local feedback = State.card(s, "acme/web#103") :: State.Card
-	assert(#feedback.more == 1 and feedback.more[1].act == "card-summarize" and feedback.more[1].key == "⇧A")
+	assert(#feedback.more == 2 and feedback.more[1].act == "card-summarize" and feedback.more[1].key == "⇧A")
 end

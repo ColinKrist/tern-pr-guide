@@ -75,7 +75,8 @@ Rules and functions to drop:
 - `src/hub/model.luau`: the first rule of `classify` (a PR with `pr.tandem` goes to In review), `parseTandemWatch`, `tandemFlags` and `handoffReason`.
 - `src/hub/state.luau`: the `card-handoff` actions ("Hand off to Tandem"), the "Waiting on Tandem" chip, the `pr.tandem` branches in the card builders and `dropObsoleteAgents`'s watched-PR rule.
 - `src/hub/store.luau`: `storedNow`, `joinOwnership`, `renewed`, `flagPrs`, `flagged`, `joinShared`, `joinOwned`, `applyOwnership`, `syncOwnership`, `ownershipChecked`, `reconcileFlight`, `UNCHECKED`, `TANDEM_OWNS`, the `answered` parameter of `reconcileStore` and `persistWhole`, and the `b.retired` check in `sharedCache`. `carryOn` keeps only its `currentFlight` check.
-- `src/hub/ops.luau`: the `TANDEM_OWNS` and `ownershipChecked` guards in `runMerge`, `cancelMerge`, `autoMerge`, `updateBranch`, `pushEmpty` and `reviewEffect`, and the `syncOwnership` call inside `reviewEffect`'s `canPush`.
+- `src/pr-actions.luau`: `UNCHECKED`, `TANDEM_OWNS`, `Ctx.tandem`, `Ctx.readable` and the `owned` refusal (Merge, Merge when ready, Update branch), and the `ctx.tandem` clauses in Merge when ready's and Close's `offered`.
+- `src/hub/ops.luau`: `liveCtx`'s ownership join, the `TANDEM_OWNS` and `ownershipChecked` guards in `pushEmpty` and `reviewEffect`, and the `syncOwnership` call inside `reviewEffect`'s `canPush`.
 - `src/hub/refresh.luau`: the `loadTandem` call and the `joinOwnership`, `joinShared`, `applyOwnership`, `reconcileFlight` and `flagged` calls in `startRefresh` and `stepFixture`.
 - `src/hub/agent-run.luau`: the `pr.tandem` guard in `beginAgent`, the `owner.tandem` cleanup branch in `retryAgent`, and the `carryOn` ownership half.
 - `src/hub/block.luau`: `ACTIONS["card-handoff"]`, the `pr.tandem` guard in `ACTIONS["card-agent"]`, the `syncOwnership` call in `dispatch`, and the `watched` set and `raw-tandem-watch` fixture in `init`.
@@ -204,8 +205,9 @@ Each module's one job comes from its header comment. A verdict says what the por
 | `src/hub/refresh.luau` | The probe, refresh and checks timers armed from `Sync.schedule`, each answer laid onto the newest shared cache, `refetch`, the sample board's ⌘R, and `loadCheckList` (a PR's check list, read again on the checks timer while the popover is open and a check is unfinished). | Rewrite for the web host. Keep `Sync.schedule` as the only timing rule. | via `tandem_test` |
 | `src/hub/details.luau` | Reading what a PR's pages show: feedback details, the fixes page's details, local git and failed-check logs (`readLogs`, through `b.ci`), the review fix page's files. | Rewrite for the web host. The log reads go to the server ([B.3.1](#b31-ci-logs)). | via `summary_test` |
 | `src/hub/agent-run.luau` | An agent fix's flight: clone lookup (asking for a folder when there is none), refs, engine start, settle, stop, retry, open worktree. | Rewrite for the web host. The folder prompt (`osascript`) and `open` drop. The flight becomes a worker job. | via `tandem_test`, `summary_test` |
-| `src/hub/ops.luau` | The actions that reach GitHub or the agent: merge, cancel, merge when ready, batches, re-request, Update branch, re-run, add and remove by link, reply, resolve, Summarize, push or discard a fix. | Rewrite for the web host, minus the Tandem guards. Keep the order of each action's checks. | via `tandem_test`, `summary_test` |
-| `src/hub/pages.luau`, `src/hub/page-views.luau` | Hosts review pages in the hub's pane (open, show, back, the last 3 kept, never dropping a page with unsent work) and the pure view rules (`views`, `next`, `tabs`, `victims`). The page seam is `ReviewPage.init(cx, args, root, hosted)` with `State.Hosted = { fixes }`, plus `atRest`, `reading`, `views`, `current`, `setView`, `unsaved`, `startGuide`, `tabsPath`. | Rewrite for the web host: pages are components kept in a small LRU. Keep `page-views` as is. | `pages_test` |
+| `src/pr-actions.luau` | The pull request actions both the board and a PR's page offer (merge, merge when ready, cancel merge, update branch, re-request review, close): which a PR offers, why an offered one is refused now, the question it asks, and the command it sends through the client it is given. A registry by id; no state, drawing, toasts or kv. | Port 1:1 with its tests ([B.3.2](#b32-pull-request-actions)), minus the Tandem fields. | `pr_actions_test`, `pr_page_test`, `state_test`, `merge_test` |
+| `src/hub/ops.luau` | The board's side of each pull request action (`act`: the question or the run; `execute`: busy mark, command, cache edit, toast; `runBatch`; `confirm`), and the other actions that reach GitHub or the agent: re-run, push empty commit, add and remove by link, reply, resolve, Summarize, push or discard a fix. | Rewrite for the web host, minus the Tandem guards. Keep the order of each action's checks. | via `tandem_test`, `summary_test`, `pr_page_test` |
+| `src/hub/pages.luau`, `src/hub/page-views.luau` | Hosts review pages in the hub's pane (open, show, back, the last 3 kept, never dropping a page with unsent work) and the pure view rules (`views`, `next`, `tabs`, `victims`). The page seam is `ReviewPage.init(cx, args, root, hosted)` with `State.Hosted = { fixes, pr, prOpen }` (`pr`: the page shows the Pull request button; `prOpen`: its menu or question is open), plus `atRest`, `reading`, `views`, `current`, `setView`, `unsaved`, `startGuide`, `tabsPath`. | Rewrite for the web host: pages are components kept in a small LRU. Keep `page-views` as is. | `pages_test` |
 | `src/hub/block.luau` | The PR hub block: reads its arguments, opens the board from the shared cache or a sample, draws it, and runs one `ACTIONS` table for clicks and keys. | Rewrite for the web host. Port the `ACTIONS` table as is. | via `tandem_test`, `summary_test` |
 | `src/hub/tandem.luau` | The hub's side of Tandem: `loadTandem`, `handoff`. | Drop: Tandem. | `tandem_test` |
 
@@ -500,6 +502,47 @@ interface Provider {
 
 `Log.refs` finds `path:line` mentions of the PR's changed files in a log (at most 5), and `hub/details.luau`'s `readLogFiles` reads those files with `Prdata.readFixes`, so the page can pin the lines like annotations. In the port those reads are contents API calls or worker reads, as for annotated files.
 
+### B.3.2 Pull request actions
+
+From `src/pr-actions.luau`. The hub's cards and the Pull request menu on a PR's page list the same actions from it, and `hub/ops` runs them. Port it as a registry keyed by id.
+
+```ts
+type PrActionId = "merge" | "auto-merge" | "cancel-merge" | "update" | "rerequest" | "close"
+
+interface PrActionCtx {
+	column: Column            // where the board places the PR
+	merge?: MergeResolution   // how the repo merges; absent = not known yet, and merge never guesses
+	autoMerge?: boolean       // the repo allows auto-merge; absent until detection read it
+	tandem: boolean           // drop with Tandem
+	readable: boolean         // drop with Tandem
+	agent: boolean            // an agent fix is at work on the branch
+	behind: boolean           // the base has commits the head lacks (GitHub's BEHIND, or the details' count)
+}
+
+interface PrAction {
+	id: PrActionId
+	label: string             // "Merge", "Close pull request"
+	key: string               // the card's key: M, M, M, U, Q, X
+	what(pr: HubPR): string   // completes "Couldn't …: reason": "close #116"
+	offered(pr: HubPR, ctx: PrActionCtx): boolean        // the PR lists it
+	refusal(pr: HubPR, ctx: PrActionCtx): string | null  // why an offered action can't run now; asked again just before it runs
+	question(pr: HubPR, ctx: PrActionCtx): string | null // "Squash and merge #116?", "Close #116?"; null runs at once
+	progress(pr: HubPR, ctx: PrActionCtx): string        // the busy mark: "Merging…", "Closing…"
+	run(pr: HubPR, ctx: PrActionCtx, github: GithubClient): Promise<string | null> // the error, or null
+}
+
+function list(pr: HubPR, ctx: PrActionCtx): PrAction[]  // the offered ones, in menu order
+```
+
+| Action | Offered | Refused | Asks | Command |
+|---|---|---|---|---|
+| `merge` | Ready to merge, nothing pending, not behind | ownership, or the method isn't known | a GitHub method ("Squash and merge #n?"), or a learned comment once | `merge` |
+| `auto-merge` | In review, nothing pending, not Tandem's, auto-land off, `canMergeWhenReady` | ownership | no | `autoMerge` |
+| `cancel-merge` | a pending merge In review or Ready, unless the comment method has no cancel | the method can't take it back | no | `cancelMerge` |
+| `update` | nothing pending, no conflict, `behind` | ownership | no | `updateBranch` |
+| `rerequest` | In review, a reviewer still to ask again | never | no | `requestReview` |
+| `close` | the viewer's own PR, nothing pending, no agent, not Tandem's | never | "Close #n?" | `close` |
+
 ### B.4 PrData
 
 From `src/prdata.luau`. The guide page calls `openPr` and `submitReview`. The hub's fixes page calls `readFixes`. Each calls `done` once, and the first failure ends the chain with a message naming the step.
@@ -729,7 +772,6 @@ Port the table as is, as a `Record<string, (b, cx, value) => void>` and one `dis
 | `hub-select` | `State.select` |
 | `hub-open`, `open` | `openCard` → `openRow`: `Pages.open` (`Pages.plan`: `Fetch.checkoutFor`, `State.openPlan`; then `Links.openRoute`/`routeArgs` into `ReviewPage.init` under the hub's `main` root, kept in `Block.pages`, 3 at most), or `Details.openFixes` for a Needs fixes card (details, local git, CI logs), or `Details.openReviewFix` for a ready agent fix |
 | `hub-open-generate` | `openRow(..., true)` |
-| `hub-open-pane` | `openRow(..., false, true)`: `openPr`, the PR in a pane of its own (`cx.open`); ⌘⏎ on the board |
 | `pages-cycle`, `pages-view`, `pages-back` | `hub/pages`: `t` cycles a PR's views (`PageViews.next`), a tab shows one (`fixes`, `guided`, `files`, `review`), Esc at the review page's rest returns to the board. Keys: `Keys.hubPageAction` on a shown page, `T` in `fixesKey`; the fixes tab strip's select events (`Paths.fixesTabs`) and the page's Fixes tab (`ReviewPage.tabsPath`) send `pages-view` |
 | `hub-move` | `State.move`. On the top row (`State.onTopRow`) the board scrolls to its start (`Paths.body`), else `Runtime.revealSelected` |
 | `hub-tab` | `State.setTab` or `State.switchTab` |
@@ -742,6 +784,7 @@ Port the table as is, as a `Record<string, (b, cx, value) => void>` and one `dis
 | `hub-search-clear` | `State.closeSearch(s, true)` |
 | `hub-menu` | `State.openMenu`, or `closeMenu` when it is open. Settings first takes up the saved choice (`AgentHost.refreshChoice`, live boards) and the lenses (`Fetch.refreshLenses`), then focuses `Paths.settingsField` |
 | `hub-actions` | `State.select`, then `State.openMenu(s, "actions")` or `"merge"` |
+| `hub-pr-menu` | The Pull request menu of the PR on show (`Pages.cardKey`, or the value): `State.openMenu(s, "pr")` when `State.prMenu` lists any, or `closeMenu` when it is open. ⇧P on a hub-hosted review page (`Keys.hubPageAction`) or the fixes page (`fixesKey`), and the header's Pull request button. While it or its question is open over a review page, every key is the hub's (`Pages.covered`): the `menu` and `confirm` modes below. Its rows run their `card-*` entries through `pickRow`, and the menu and question hang under the button (`Board.layer(s, anchor)`: `Pages.prButton`, `Paths.fixesPrButton`) |
 | `hub-menu-move` | `State.menuMove` |
 | `hub-menu-close` | `closeMenu` |
 | `hub-menu-pick`, `hub-menu-select` | `pickRow`, which runs the row's own action, or `chooseMergeRow` (`Lookups.setUserMethod`, `State.beginMethodEdit`) |
@@ -767,10 +810,7 @@ Port the table as is, as a `Record<string, (b, cx, value) => void>` and one `dis
 | `hub-refresh` | `Refresh.refetch`, or `AgentRun.advanceAgentFixture` or `Refresh.stepFixture` on a sample board |
 | `card-handoff` | `HubTandem.handoff`. Drop: Tandem. |
 | `card-copy` | `cx.copy(title .. " " .. url)`, toast "Copied link" |
-| `card-merge` | `Ops.mergeCard` |
-| `card-cancel` | `Ops.cancelMerge` |
-| `card-auto` | `Ops.autoMerge` |
-| `card-rerequest` | `Ops.rerequest` |
+| `card-merge`, `card-auto`, `card-cancel`, `card-update`, `card-rerequest`, `card-close` | `Ops.act(b, cx, id, key)` for the pull request action `id` (`State.ACT_OF`): offered only, a merge whose method isn't known yet detects it first, a refusal toasts, `State.ask` opens the action's question (`confirm.kind` `merge`, `learned` or `close`; `hub-confirm` answers it), else `Ops.execute` runs it (busy mark, `PrActions` `run`, `keepCache` edit, toast, refetch) |
 | `card-autoland` | `AutoLandRun.toggle` (⇧Q): on writes a fresh record and steps at once; off deletes it. A sample board flips the mark in memory |
 | `hub-land-tries` | `State.setLandTries` ("+1", "-1" or a number), `AutoLandRun.saveSettings` |
 | `hub-land-label` | `State.beginLandEdit`, focus `Paths.landField` |
@@ -785,7 +825,6 @@ Port the table as is, as a `Record<string, (b, cx, value) => void>` and one `dis
 | `hub-batch-close` | `State.askBatch(s, "inactive")` |
 | `hub-confirm` | `Ops.confirm` (runs the batch one PR at a time) |
 | `hub-confirm-cancel` | `Ops.confirmCancel` |
-| `card-update` | `Ops.updateBranch` |
 | `card-rerun` | `Ops.rerun` |
 | `hub-link` | `State.openLink`, focus `Paths.linkField` |
 | `hub-link-clear` | `State.closeLink(s, true)` |
@@ -811,7 +850,7 @@ Port the table as is, as a `Record<string, (b, cx, value) => void>` and one `dis
 | `fixes-post` | `Ops.postReply` |
 | `fixes-resolve` | `Ops.resolveThread` |
 | `fixes-rerun` | `ACTIONS["card-rerun"]` for the open PR |
-| `fixes-update` | U or the strip's button: `State.branchAction` for the open PR, then `Ops.updateBranch` (behind its base) or `State.fixAsk(s, true)` (up to date: the Push empty commit question) |
+| `fixes-update` | U or the strip's button: `State.branchAction` for the open PR, then `Ops.act(..., "update", key)` (behind its base) or `State.fixAsk(s, true)` (up to date: the Push empty commit question) |
 | `fixes-empty-confirm` | `State.fixAsk(s, false)`, then `Ops.pushEmpty` (`commands.headTree`, `emptyCommit`, `moveBranch` on the head repository) |
 | `fixes-empty-cancel` | `State.fixAsk(s, false)` |
 | `hub-checks` | The checks popover on a card (its checks mark or V) or on the fixes page's PR (All checks or V): `State.openChecks` and `Refresh.loadCheckList`, or `State.closeChecks` when it is open on that PR |
@@ -830,16 +869,18 @@ The guide page has its own `ACTIONS` table in `src/review-page.luau`, with the s
 
 | Mode | Keys |
 |---|---|
-| `board` | `?` help. `/` search. ⌘R or Ctrl+R refresh. Esc `hub-escape`. ⏎ `hub-open`, ⇧⏎ `hub-open-generate`, ⌘⏎ `hub-open-pane`. Space `hub-mark`. ⇧X `hub-mark-stale` on the mine tab. With marks, M `hub-batch-merge` and X `hub-batch-close`. h j k l and the arrows `hub-move`. `.` `hub-next`. T `hub-tab`. I `hub-fold inactive`. R `hub-fold merged` on the mine tab and `hub-fold recent` on the review tab (`State.ROW_FOLD`). ⇧T `hub-fold team` and A `hub-fold approved` on the review tab. F `hub-menu filters`. S `hub-menu sort`. ⇧S or ⇧M `hub-menu settings`. N `hub-link`. V `hub-checks` on the selected card. Any other letter runs the selected card's main or alternative action whose `key` matches (⇧A also runs a main `card-summarize`). |
-| `menu` | j k and the arrows `hub-menu-move`. ⏎ `hub-menu-enter`. Space `hub-menu-select`. Esc `hub-menu-close`. In Settings, the review page's model menu keys (`Keys` `modelsKey`: ↑↓ `models-move`, ←→ `models-effort`, Tab `models-slot` (Explanation, Review, Lens), ⏎ `models-pick`, ⌃E `edit-lenses`), other keys type into its search field (`models-filter`), and L sends `hub-links`, ⇧G `hub-guides`, `-` and `+` (or `=`) `hub-land-tries` and ⇧D `hub-land-label` while that field is empty. While the dequeue label is typed, ⏎ `hub-land-label-save` and Esc `hub-land-label-cancel`. In Filter, Space toggles a saved rule and Enter edits it. In filter editors, Tab switches text/options, Enter applies text and Esc returns without saving; ordinary letters type. While a merge method is typed, ⏎ `hub-method-save` and Esc `hub-method-cancel`. |
+| `board` | `?` help. `/` search. ⌘R or Ctrl+R refresh. Esc `hub-escape`. ⏎ `hub-open`, ⇧⏎ `hub-open-generate`. Space `hub-mark`. ⇧X `hub-mark-stale` on the mine tab. With marks, M `hub-batch-merge` and X `hub-batch-close`; without, X is the card's `card-close`. h j k l and the arrows `hub-move`. `.` `hub-next`. T `hub-tab`. I `hub-fold inactive`. R `hub-fold merged` on the mine tab and `hub-fold recent` on the review tab (`State.ROW_FOLD`). ⇧T `hub-fold team` and A `hub-fold approved` on the review tab. F `hub-menu filters`. S `hub-menu sort`. ⇧S or ⇧M `hub-menu settings`. N `hub-link`. V `hub-checks` on the selected card. Any other letter runs the selected card's main or alternative action whose `key` matches (⇧A also runs a main `card-summarize`). |
+| `menu` | j k and the arrows `hub-menu-move`. ⏎ `hub-menu-enter`. Space `hub-menu-select`. Esc `hub-menu-close`. In Settings, the review page's model menu keys (`Keys` `modelsKey`: ↑↓ `models-move`, ←→ `models-effort`, Tab `models-slot` (Explanation, Review, Lens), ⏎ `models-pick`, ⌃E `edit-lenses`), other keys type into its search field (`models-filter`), and L sends `hub-links`, ⇧G `hub-guides`, `-` and `+` (or `=`) `hub-land-tries` and ⇧D `hub-land-label` while that field is empty. While the dequeue label is typed, ⏎ `hub-land-label-save` and Esc `hub-land-label-cancel`. In Filter, Space toggles a saved rule and Enter edits it. In filter editors, Tab switches text/options, Enter applies text and Esc returns without saving; ordinary letters type. While a merge method is typed, ⏎ `hub-method-save` and Esc `hub-method-cancel`. In the Pull request menu, a row's own key (M, U, Q, X) sends `hub-menu-pick` for it. |
 | `search` | ⏎ `hub-search-done`. Esc `hub-search-clear`. Up and down `hub-move`. Other keys type, and a change sends `hub-searched` (`Keys.hubAfterTyping`). |
 | `link` | ⏎ `hub-link-add`. ⇧⏎ `hub-link-open`. Esc `hub-link-clear`. Other keys type. |
 | `confirm` | ⌘⏎ `hub-confirm`. Esc `hub-confirm-cancel`. |
 | `help` | Esc or `?` `hub-help-close`. |
-| `fixes` | While the Push empty commit question is open, only ⌘⏎ `fixes-empty-confirm` and Esc `fixes-empty-cancel`. Esc `fixes-close`. ⇧L `fixes-log`. ⇧R `fixes-rerun`. U `fixes-update` on a failing check when `State.branchAction` offers one. V `hub-checks`. T `pages-cycle`. j k `fixes-move`. h l `fixes-focus`. ⏎ `fixes-press`. R `fixes-reply`. E `fixes-resolve`. G `fixes-github`. B `fixes-bots`. The card's main action key, and A, ⇧A or O for its alternatives. |
+| `fixes` | While the Push empty commit question is open, only ⌘⏎ `fixes-empty-confirm` and Esc `fixes-empty-cancel`. Esc `fixes-close`. ⇧L `fixes-log`. ⇧R `fixes-rerun`. U `fixes-update` on a failing check when `State.branchAction` offers one. V `hub-checks`. T `pages-cycle`. ⇧P `hub-pr-menu` when the PR offers pull request actions. j k `fixes-move`. h l `fixes-focus`. ⏎ `fixes-press`. R `fixes-reply`. E `fixes-resolve`. G `fixes-github`. B `fixes-bots`. The card's main action key, and A, ⇧A or O for its alternatives. |
 | `checks` | j k and the arrows `checks-move`. ⏎ `checks-press`. ⇧R `card-rerun` while a check fails. Esc or V `checks-close`. |
 | `reply` | ⌘⏎ `fixes-post`. Esc `fixes-cancel`. ⏎ is a new line. |
 | `review-fix` | Esc `review-fix-close`. ⏎ `review-fix-reviewed`. j k `review-fix-move`. B `review-fix-original`. D `review-fix-discard`. P `review-fix-push`. While asking, ⌘⏎ `review-fix-discard-confirm` and Esc `review-fix-discard-cancel`. Nothing while busy. |
+
+On a review page in the hub, `Keys.hubPageAction` takes Esc at the page's rest (`pages-back`), `t` with a Fixes view (`pages-cycle`) and ⇧P while the page takes letters and the PR offers pull request actions (`hub-pr-menu`); every other key is the page's. ⌘⏎ on the board does nothing.
 
 Letter keys act only while the search and add-by-link fields are empty. Keys with Ctrl, ⌘ or ⌥ do nothing except ⌘R and the ⌘⏎ confirmations.
 

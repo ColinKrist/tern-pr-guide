@@ -43,6 +43,15 @@ local function settingsAction(run: Agent.Run?, open: boolean): Node?
  })
 end
 
+-- Pull request: the host's menu of merge, close and the rest, which it hangs under this button. Only on a page the PR
+-- hub shows for a pull request on its board.
+local function prAction(hosted: State.Hosted?): Node?
+ if not hosted or not hosted.pr then return nil end
+ return el("span", { class = "gp-hdr-act" .. (if hosted.prOpen then " gp-hdr-act-open" else ""), key = "pr", actions = { click = "hub-pr-menu" } }, {
+  span("gp-hdr-act-label", "Pull request"), Ui.icon("chev"), Ui.keys("⇧P"),
+ })
+end
+
 -- The views of a PR as Tern's tabs, with the key that cycles them: Guided and Files with a guide, only Files
 -- without, and Fixes first when the host (the PR hub) has them. The block reads a click as the same `view=<id>`
 -- action the key sends (see Page.viewTabsPath); the host reads a click on Fixes.
@@ -131,6 +140,8 @@ local function status(s: State.State, counts: Review.Counts): Node
  table.insert(kids, headerAction(if counts.filesReviewed == total then "Unmark all reviewed" else "Mark all reviewed", "m", "mark-all"))
  table.insert(kids, headerAction("Search", "/", "open-search"))
  table.insert(kids, headerAction("Open on GitHub", "g", "open-github", "open"))
+ local pr = prAction(s.hosted)
+ if pr then table.insert(kids, pr) end
  local settings = settingsAction(s.ai, s.models ~= nil)
  if settings then table.insert(kids, settings) end
  return el("div", { class = "gp-status", key = "status" }, kids)

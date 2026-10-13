@@ -294,18 +294,23 @@ function M.view(s: State.State, motion: Ui.Motion): Node
 end
 
 -- The layer: while a menu, the checks popover or the key panel is open, a scrim that closes it on a click outside,
--- and the overlay. The fixes page shows it for the checks popover.
-function M.layer(s: State.State): Node?
+-- and the overlay. The fixes page shows it for the checks popover, and a PR's page for its Pull request menu: `pr` is
+-- the button that menu and its question hang under, where no card on show asks the question.
+function M.layer(s: State.State, pr: string?): Node?
 	if s.mode == "checks" then
 		local popover = ChecksView.view(s)
 		if popover == nil then return nil end
 		return el("div", {}, { el("div", { class = "gp-md-scrim", key = "scrim", actions = { click = "checks-close" } }), popover })
 	elseif s.mode == "menu" and s.menu then
-		return el("div", {}, { el("div", { class = "gp-md-scrim", key = "scrim", actions = { click = "hub-menu-close" } }), Menus.view(s) })
+		return el("div", {}, { el("div", { class = "gp-md-scrim", key = "scrim", actions = { click = "hub-menu-close" } }), Menus.view(s, pr) })
 	elseif s.mode == "confirm" then
 		local selection = State.selection(s)
 		if selection and selection.confirm then
 			return el("div", {}, { el("div", { class = "gp-md-scrim", key = "scrim", actions = { click = "hub-confirm-cancel" } }), Selection.overlay(selection.confirm, Paths.selection(selection.group)) })
+		end
+		local single = if pr then State.prConfirm(s) else nil
+		if single and pr then
+			return el("div", {}, { el("div", { class = "gp-md-scrim", key = "scrim", actions = { click = "hub-confirm-cancel" } }), Selection.overlay(single, pr) })
 		end
 	elseif s.mode == "help" then
 		return el("div", {}, { el("div", { class = "gp-md-scrim", key = "scrim", actions = { click = "hub-help-close" } }), Help.view(s.helpPage or "board", s) })

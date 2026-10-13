@@ -11,6 +11,7 @@ local Fixes = require("./fixes")
 local Links = require("../links")
 local ModelBox = require("../model-box")
 local Model = require("./model")
+local PrActions = require("../pr-actions")
 local ReviewFix = require("./review-fix")
 local Summary = require("./summary")
 
@@ -25,7 +26,7 @@ export type FixDetails = Fixes.FixDetails
 
 export type Mode = "board" | "search" | "link" | "menu" | "confirm" | "help" | "fixes" | "reply" | "review-fix" | "checks"
 export type HelpPage = "board" | "fixes" | "review-fix"
-export type MenuId = "filters" | "title-filter" | "check-repository" | "check-filter" | "repositories" | "sort" | "merge" | "actions" | "settings"
+export type MenuId = "filters" | "title-filter" | "check-repository" | "check-filter" | "repositories" | "sort" | "merge" | "actions" | "pr" | "settings"
 export type Ring = "bad" | "good" | "bad-out" | "good-out" -- red ring, green wash, then the same fading
 -- What the flake evidence says about a card's failing checks, for the commit it was read on.
 export type Flake = { flaky: boolean, reason: string?, headOid: string }
@@ -136,7 +137,7 @@ export type State = {
 	checkLists: { [string]: Checks.Load }, -- check lists by "key@headOid"
 	menu: MenuId?,
 	menuCursor: number,
-	confirm: { kind: string, keys: { string } }?, -- kind "merge" (a GitHub method) or "learned" (a suggested comment command)
+	confirm: { kind: string, keys: { string } }?, -- kind "merge" (a GitHub method), "learned" (a suggested comment command) or "close"
 	methodEdit: MethodEdit?, -- the merge menu is asking for a command or a label
 	folded: { [string]: boolean }, -- true: the fold is closed. Every fold starts closed
 	recent: { Opened }, -- hub.recent, newest first; the block sets it, `project` builds the Review requests fold from it
@@ -311,7 +312,7 @@ function M.chatOf(agent: AgentFixState?): (string?, string?)
 	return nil, nil
 end
 
-local askingOf: (s: State, pr: HubPR) -> string?
+local askingOf: (s: State, pr: HubPR, column: Column) -> string?
 
 M.TABS = {
 	{ id = "mine" :: Tab, label = "Your pull requests" },
@@ -571,7 +572,33 @@ local function landing(pr: HubPR): boolean
 	return pr.autoLand ~= nil and pr.autoLand.state == "on"
 end
 
-local function actionsFor(pr: HubPR, column: Column, reasons: { Model.Reason }, merge: Model.MergeResolution?, flake: Flake?, autoMerge: boolean?, details: FixDetails?): (CardAction?, { CardAction })
+-- The card action each pull request action is sent as, by keys and clicks alike.
+M.ACT_OF = {
+	merge = "card-merge", ["auto-merge"] = "card-auto", ["cancel-merge"] = "card-cancel",
+	update = "card-update", rerequest = "card-rerequest", close = "card-close",
+} :: { [PrActions.Id]: string }
+
+local function prAction(id: PrActions.Id): CardAction
+	local def = PrActions.get(id)
+	return action(M.ACT_OF[id], def.label, def.key)
+end
+
+-- What the pull request actions read beyond the PR, as the board knows it; `column` is its card's when known. Ownership
+-- is read again before one runs.
+function M.prCtx(s: State, pr: HubPR, column: Column?): PrActions.Ctx
+	local branch = M.branchAction(s, pr.key)
+	return {
+		column = column or Model.classify(pr, s.now, s.ignoredChecks), merge = s.merges[pr.repo], autoMerge = s.autoMerge[pr.repo], tandem = pr.tandem, readable = true,
+		agent = s.agents[pr.key] ~= nil, behind = pr.behind or (branch ~= nil and branch.kind == "update"),
+	}
+end
+
+-- Which actions a card offers comes from PrActions; this places them: which is the main button and which wait behind ▾.
+local function actionsFor(pr: HubPR, ctx: PrActions.Ctx, reasons: { Model.Reason }, flake: Flake?, details: FixDetails?): (CardAction?, { CardAction })
+	local column = ctx.column
+	local function offers(id: PrActions.Id): boolean
+		return PrActions.offers(pr, ctx, id)
+	end
 	if column == "needs_fixes" then
 		local feedback, checks = false, false
 		for _, reason in reasons do
@@ -611,36 +638,30 @@ local function actionsFor(pr: HubPR, column: Column, reasons: { Model.Reason }, 
 		local copy = action("card-copy", "Copy link", "C")
 		local main, more = copy, {}
 		-- A reviewer waits on the author to say the fix is in: asking again is the card's job until they have been asked.
-		local again = Model.awaitingReReview(pr)
+		local again = offers("rerequest")
 		if pr.tandem then
 			-- Tandem owns the branch, so the card offers the hand-off and never an agent of its own.
 			main, more = action("card-handoff", "Hand off to Tandem", "A"), { copy }
-			if again and #again.ask > 0 then table.insert(more, action("card-rerequest", "Re-request review", "Q")) end
+			if again then table.insert(more, prAction("rerequest")) end
 		elseif M.botActionable(pr) then
 			main, more = action("card-agent", "Fix bot comments", "A"), { copy, action("card-summarize", "Summarize", "⇧A") }
-			if again and #again.ask > 0 then table.insert(more, action("card-rerequest", "Re-request review", "Q")) end
-		elseif again and #again.ask > 0 then
-			main, more = action("card-rerequest", "Re-request review", "Q"), { copy }
+			if again then table.insert(more, prAction("rerequest")) end
+		elseif again then
+			main, more = prAction("rerequest"), { copy }
 		end
-		if pr.pending then
-			local method = if merge then merge.method else nil
-			if not (method and method.kind == "comment" and not method.cancel) then
-				table.insert(more, action("card-cancel", "Cancel merge", "M"))
-			end
-		elseif not pr.tandem and not landing(pr) and Model.canMergeWhenReady(merge, autoMerge) then
-			-- Tandem owns the branch: no new merge is offered, only Cancel merge for one already pending.
-			table.insert(more, action("card-auto", "Merge when ready", "M"))
+		if offers("cancel-merge") then
+			table.insert(more, prAction("cancel-merge"))
+		elseif offers("auto-merge") then
+			table.insert(more, prAction("auto-merge"))
 		end
 		return main, more
 	elseif column == "ready" then
-		if pr.pending then
-			-- A merge in flight: only Cancel merge, and only when the method can be taken back.
-			local method = if merge then merge.method else nil
-			if method and method.kind == "comment" and not method.cancel then return nil, {} end
-			return action("card-cancel", "Cancel merge", "M"), {}
-		end
-		if pr.behind then return action("card-update", "Update branch", "U"), { action("card-method", "Merge method", ",") } end
-		return action("card-merge", "Merge", "M"), { action("card-method", "Merge method", ",") }
+		-- A merge in flight: only Cancel merge, and only when the method can be taken back.
+		if offers("cancel-merge") then return prAction("cancel-merge"), {} end
+		if pr.pending then return nil, {} end
+		local method = action("card-method", "Merge method", ",")
+		if pr.behind and offers("update") then return prAction("update"), { method } end
+		return if offers("merge") then prAction("merge") else nil, { method }
 	elseif column == "to_review" then
 		return action("open", "Review", "⏎"), if pr.addedByMe then { action("card-remove", "Remove from Review requests", "X") } else {}
 	end
@@ -739,21 +760,6 @@ local function chipsFor(pr: HubPR, placement: Model.Placement, now: number, cap:
 	return chips, detail, kind
 end
 
-local MERGE_LABELS: { [string]: string } = { squash = "Squash and merge", merge = "Create a merge commit", rebase = "Rebase and merge" }
-
--- The repo's GitHub merge method: the resolved one when it is squash, merge or rebase, else squash
--- (viewerDefaultMergeMethod arrives with the method detection).
-function M.mergeMethodFor(s: State, pr: HubPR): "squash" | "merge" | "rebase"
-	local resolved = s.merges[pr.repo]
-	local kind = if resolved then resolved.method.kind else "squash"
-	if kind == "merge" or kind == "rebase" then return kind end
-	return "squash"
-end
-
-function M.mergeLabel(kind: string): string
-	return MERGE_LABELS[kind] or MERGE_LABELS.squash
-end
-
 -- What a merge in flight reads on its card.
 function M.pendingNote(s: State, pr: HubPR): string?
 	local pending = pr.pending
@@ -778,33 +784,20 @@ local function noteFor(s: State, pr: HubPR, column: Column): string?
 	return M.pendingNote(s, pr)
 end
 
--- What M does on a card: a GitHub method asks first ("confirm"), a suggested comment asks once ("ask"), and
--- a method the repo or the viewer chose (comment, label, queue) just runs: it can be cancelled.
-function M.mergeStep(s: State, pr: HubPR): "confirm" | "ask" | "run"
-	local resolved = s.merges[pr.repo]
-	if resolved == nil then return "confirm" end
-	local kind = resolved.method.kind
-	if resolved.ask then return "ask" end
-	if kind == "squash" or kind == "merge" or kind == "rebase" then return "confirm" end
-	return "run"
-end
-
-function askingOf(s: State, pr: HubPR): string?
+-- The question a card is waiting on: the pull request action's own, for the action the confirm is about.
+function askingOf(s: State, pr: HubPR, column: Column): string?
 	local confirm = s.confirm
-	if confirm and confirm.keys[1] == pr.key then
-		if confirm.kind == "merge" then return M.mergeLabel(M.mergeMethodFor(s, pr)) .. " #" .. pr.number .. "?" end
-		local resolved = s.merges[pr.repo]
-		if confirm.kind == "learned" and resolved and resolved.method.kind == "comment" then
-			return "Comment " .. resolved.method.command .. ", as this repository usually does?"
-		end
-	end
-	return nil
+	if not confirm or confirm.keys[1] ~= pr.key then return nil end
+	local id: PrActions.Id? = if confirm.kind == "merge" or confirm.kind == "learned" then "merge" elseif confirm.kind == "close" then "close" else nil
+	if id == nil then return nil end
+	return PrActions.get(id).question(pr, M.prCtx(s, pr, column))
 end
 
 local function toCard(pr: HubPR, placement: Model.Placement, s: State): Card
 	local known = s.flakes[pr.key]
 	local flake = if known and known.headOid == pr.headOid then known else nil
-	local main, more = actionsFor(pr, placement.column, placement.reasons, s.merges[pr.repo], flake, s.autoMerge[pr.repo], s.details[pr.key])
+	local ctx = M.prCtx(s, pr, placement.column)
+	local main, more = actionsFor(pr, ctx, placement.reasons, flake, s.details[pr.key])
 	local chips, detail, detailKind = chipsFor(pr, placement, s.now, s.landSettings.tries)
 	local agent = s.agents[pr.key]
 	local summary = s.summaries[pr.key]
@@ -866,13 +859,17 @@ local function toCard(pr: HubPR, placement: Model.Placement, s: State): Card
 		more = table.clone(more)
 		table.insert(more, action("card-autoland", if landing(pr) then "Turn off auto-land" else "Turn on auto-land", "⇧Q"))
 	end
+	if PrActions.offers(pr, ctx, "close") then
+		more = table.clone(more)
+		table.insert(more, prAction("close"))
+	end
 	return {
 		flake = if flake and flake.flaky and flake.reason then "Likely flaky: " .. flake.reason else nil,
 		pr = pr, chips = chips, detail = detail, detailKind = detailKind, column = placement.column, reasons = placement.reasons, main = main, more = more,
 		agent = agent, agentSlot = agent ~= nil or placement.column == "needs_fixes" or (placement.column == "in_review" and not pr.tandem and M.botActionable(pr)),
 		agentMessage = message, agentPath = path, agentCommit = commit, work = work,
 		summary = if agent then nil else summary, merge = s.merges[pr.repo], note = noteFor(s, pr, placement.column),
-		asking = askingOf(s, pr), busy = busy,
+		asking = askingOf(s, pr, placement.column), busy = busy,
 		ring = s.ringed[pr.key], selected = s.selected == pr.key, marked = s.marked[pr.key] == true,
 	}
 end
@@ -1043,6 +1040,13 @@ end
 
 function M.mode(s: State): Mode
 	return s.mode
+end
+
+-- Where the reader is when nothing of the hub's is open over it: a PR's page, or the board.
+local function restMode(s: State): Mode
+	local route = s.route
+	if route == nil then return "board" end
+	return if route.kind == "review-fix" then "review-fix" else "fixes"
 end
 
 -- The card fold for `column` under this tab's board, if the tab has one.
@@ -1356,11 +1360,10 @@ function M.menuRows(s: State): { MenuRow }
 			end
 			table.insert(rows, row(kind.label, sub, nil, current ~= nil and current.kind == kind.id, "choice"))
 		end
-	elseif s.menu == "actions" then
+	elseif s.menu == "actions" or s.menu == "pr" then
 		local card = M.selectedCard(s)
-		if card then
-			for _, more in card.more do table.insert(rows, row(more.label, more.key, nil, false, "choice")) end
-		end
+		local list = if s.menu == "pr" then M.prMenu(s, s.selected) elseif card then card.more else {}
+		for _, more in list do table.insert(rows, row(more.label, more.key, nil, false, "choice")) end
 	end
 	return rows
 end
@@ -1393,7 +1396,7 @@ function M.closeMenu(s: State)
 	s.menu = nil
 	s.models = nil
 	s.methodEdit = nil
-	if s.mode == "menu" then s.mode = "board" end
+	if s.mode == "menu" then s.mode = restMode(s) end
 end
 
 function M.menuMove(s: State, delta: number)
@@ -1542,8 +1545,9 @@ function M.menuPick(s: State, index: number): boolean
 	return false
 end
 
--- The alternative the open "actions" menu has highlighted at `index`.
+-- The action the open "actions" or "pr" menu has highlighted at `index`.
 function M.actionAt(s: State, index: number): CardAction?
+	if s.menu == "pr" then return M.prMenu(s, s.selected)[index] end
 	local card = M.selectedCard(s)
 	if s.menu == "actions" and card then return card.more[index] end
 	return nil
@@ -1644,21 +1648,50 @@ end
 
 -- Card actions --------------------------------------------------------------------------------------------
 
--- Opens the merge question on the card `key` when it offers Merge and nothing else is running on it.
-function M.askMerge(s: State, key: string): boolean
+-- Opens action `id`'s question on the card `key` when the card's pull request offers it, the action asks one, and nothing
+-- else is running on it. A merge method learned from the repo's history, which nobody confirmed yet, asks as "learned".
+function M.ask(s: State, key: string, id: PrActions.Id): boolean
 	local card = M.card(s, key)
-	if not card or not card.main or card.main.act ~= "card-merge" or s.busy[key] then return false end
+	if not card or s.busy[key] then return false end
+	local ctx = M.prCtx(s, card.pr, card.column)
+	local def = PrActions.get(id)
+	if not def.offered(card.pr, ctx) or def.question(card.pr, ctx) == nil then return false end
 	M.select(s, key)
-	s.confirm = { kind = if M.mergeStep(s, card.pr) == "ask" then "learned" else "merge", keys = { key } }
+	local learned = id == "merge" and ctx.merge ~= nil and ctx.merge.ask
+	s.confirm = { kind = if learned then "learned" else id, keys = { key } }
 	s.mode, s.menu = "confirm", nil
 	M.project(s)
 	return true
 end
 
+-- The question about one pull request, as a confirm in an overlay: what a page shows where the board shows it on the card.
+function M.prConfirm(s: State): BatchConfirm?
+	local confirm = s.confirm
+	if not confirm or #confirm.keys ~= 1 then return nil end
+	local card = M.card(s, confirm.keys[1])
+	if not card or not card.asking then return nil end
+	local pr = card.pr
+	local lines = if confirm.kind == "close" then { "Closed pull requests can be reopened." } else {}
+	if confirm.kind == "merge" then lines = Model.methodLines({ PrActions.method(M.prCtx(s, pr, card.column)) }) end
+	return {
+		question = card.asking, rows = { { ref = shortRepo(pr.repo) .. " #" .. pr.number, title = pr.title } }, more = 0,
+		lines = lines, go = "Confirm", act = "hub-confirm",
+	}
+end
+
+-- The pull request actions `key` offers, as the Pull request menu lists them on its review page and fixes page.
+function M.prMenu(s: State, key: string?): { CardAction }
+	local card = if key then M.card(s, key) else nil
+	if not card then return {} end
+	local out: { CardAction } = {}
+	for _, def in PrActions.list(card.pr, M.prCtx(s, card.pr, card.column)) do table.insert(out, prAction(def.id)) end
+	return out
+end
+
 function M.cancelConfirm(s: State)
 	local had = s.confirm ~= nil
 	s.confirm = nil
-	if s.mode == "confirm" then s.mode = "board" end
+	if s.mode == "confirm" then s.mode = restMode(s) end
 	if had then M.project(s) end
 end
 

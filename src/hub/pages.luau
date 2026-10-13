@@ -3,13 +3,15 @@
 -- row builds a review page (src/review-page.luau) under the "main" root and shows it in place of the board; Esc at the
 -- page's rest returns to the board with the card still selected. The hub keeps the last `PageViews.LIMIT` pages alive
 -- in `Block.pages` (a page with unsent work is never dropped), so reopening a PR returns to its state at once. A card
--- in Needs fixes also has the fixes page as its first view, which `t` and the tab strips cycle to. Also finds the
--- checkout a PR opens in (`plan`), shared with opening the PR in a pane of its own.
+-- in Needs fixes also has the fixes page as its first view, which `t` and the tab strips cycle to. A PR on the board
+-- also has its Pull request menu (⇧P) over its page: the hub's own menu and question, under the page's button. Also
+-- finds the checkout a PR opens in (`plan`), shared with opening a PR by link in a pane of its own.
 local Details = require("./details")
 local Fetch = require("../fetch")
 local Host = require("../host")
 local Keys = require("../keys")
 local Links = require("../links")
+local Page = require("../view/page")
 local PageViews = require("./page-views")
 local ReviewPage = require("../review-page")
 local Runtime = require("./runtime")
@@ -109,6 +111,14 @@ local function evict(b: Block)
 	end
 end
 
+-- What the page's host part says: a Fixes view beside it, and the Pull request menu with whether it is open.
+local function host(b: Block, entry: Page)
+	local s = b.s
+	entry.hosted.fixes = hasFixes(b, entry.cardKey)
+	entry.hosted.pr = #State.prMenu(s, entry.cardKey) > 0
+	entry.hosted.prOpen = s.menu == "pr" or (s.mode == "confirm" and State.prConfirm(s) ~= nil)
+end
+
 -- Shows `entry`, most recent, in `view` when it is Guided or Files (a page that hasn't loaded opens in its own).
 local function show(b: Block, cx: BlockCx, entry: Page, view: ViewId?)
 	local list = b.pages.list
@@ -116,7 +126,7 @@ local function show(b: Block, cx: BlockCx, entry: Page, view: ViewId?)
 	if at then table.remove(list, at) end
 	table.insert(list, entry)
 	b.pages.shown = entry.key
-	entry.hosted.fixes = hasFixes(b, entry.cardKey)
+	host(b, entry)
 	if view == "guided" or view == "files" then ReviewPage.setView(entry.page, cx, view) end
 end
 
@@ -136,7 +146,7 @@ function M.open(b: Block, cx: BlockCx, spec: Spec)
 	end
 	if b.pages.opening[key] then return end
 	local function create(args: { string })
-		local hosted: ReviewPage.Hosted = { fixes = hasFixes(b, spec.cardKey) }
+		local hosted: ReviewPage.Hosted = { fixes = hasFixes(b, spec.cardKey), pr = false, prOpen = false }
 		local page = ReviewPage.init(cx, args, ROOT, hosted)
 		local made: Page = { key = key, slug = spec.slug, number = spec.number, cardKey = spec.cardKey, page = page, hosted = hosted }
 		local waiting = b.pages.shown == nil and (b.s.mode == "board" or b.s.mode == "fixes")
@@ -189,7 +199,7 @@ end
 -- The page's own nodes, drawn in place of the board.
 function M.view(b: Block): BlockView
 	local entry = M.shown(b) :: Page
-	entry.hosted.fixes = hasFixes(b, entry.cardKey)
+	host(b, entry)
 	return ReviewPage.view(entry.page)
 end
 
@@ -198,11 +208,31 @@ function M.title(b: Block): string?
 	return if entry then ReviewPage.title(entry.page) else nil
 end
 
--- The hub's key for the page on show, before the page's own: Esc at rest and `t` with Fixes beside it.
+-- The pull request the Pull request menu acts on: the card of the page on show, else of the fixes page.
+function M.cardKey(b: Block): string?
+	local t = target(b)
+	return if t then t.cardKey else nil
+end
+
+-- The Pull request button of the page on show, which its menu and question hang under.
+function M.prButton(b: Block): string?
+	local entry = M.shown(b)
+	return if entry then Page.prButtonPath(entry.page.root) else nil
+end
+
+-- Whether the hub's menu or question is open over the page on show: then every key is the hub's.
+function M.covered(b: Block): boolean
+	return M.shown(b) ~= nil and (b.s.mode == "menu" or b.s.mode == "confirm")
+end
+
+-- The hub's key for the page on show, before the page's own: the open menu's or question's keys, Esc at rest, `t` with
+-- Fixes beside it, and ⇧P with pull request actions.
 function M.action(b: Block, key: Key): Keys.Action?
 	local entry = M.shown(b)
 	if not entry then return nil end
-	return Keys.hubPageAction(key, { rest = ReviewPage.atRest(entry.page), reading = ReviewPage.reading(entry.page), fixes = entry.hosted.fixes })
+	if M.covered(b) then return Keys.hubAction(b.s, key) end
+	host(b, entry)
+	return Keys.hubPageAction(key, { rest = ReviewPage.atRest(entry.page), reading = ReviewPage.reading(entry.page), fixes = entry.hosted.fixes, pr = entry.hosted.pr })
 end
 
 function M.key(b: Block, key: Key, cx: BlockCx): boolean?
@@ -210,11 +240,12 @@ function M.key(b: Block, key: Key, cx: BlockCx): boolean?
 	return if entry then ReviewPage.key(entry.page, key, cx) else nil
 end
 
--- A click on the Fixes tab leaves the page for the fixes page, and one on Pull requests goes back to the board:
--- the events the page doesn't take.
+-- A click on the Fixes tab leaves the page for the fixes page, one on Pull requests goes back to the board, and the
+-- Pull request button, menu and question are the hub's: the events the page doesn't take.
 function M.tabAction(b: Block, ev: UiEvent): Keys.Action?
 	local entry = M.shown(b)
 	if entry and ev.ev == "action" and ev.act == "pages-back" then return { act = "pages-back" } end
+	if entry and ev.ev == "action" and string.sub(ev.act, 1, 4) == "hub-" then return { act = ev.act, value = ev.value } end
 	if not entry or ev.ev ~= "select" or ev.item ~= "fixes" or ev.id ~= ReviewPage.tabsPath(entry.page) then return nil end
 	return { act = "pages-view", value = "fixes" }
 end
