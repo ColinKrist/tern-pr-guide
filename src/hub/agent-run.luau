@@ -65,6 +65,13 @@ local function settleAgent(b: Block, cx: BlockCx, flight: AgentFlight, outcome: 
 	elseif not b.closed then
 		State.agentOutcome(b.s, flight.key, outcome)
 	end
+	-- An agent stopped before it wrote anything leaves an empty folder: no chat to resume, so no Open agent chat.
+	local agent = b.s.agents[flight.key]
+	local session = State.chatOf(agent)
+	if agent and session and not b.fixture and not AgentHost.savedConversation(session) then
+		if agent.kind == "ready" then agent.fix.session = nil elseif agent.kind == "failed" then agent.session = nil end
+		State.project(b.s)
+	end
 	forgetReturned(b, flight)
 	if not b.closed then draw(b, cx) end
 end

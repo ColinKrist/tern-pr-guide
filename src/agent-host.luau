@@ -219,6 +219,16 @@ function M.sessionFolder(key: string, now: number): string?
  return if ok then dir else nil
 end
 
+-- Whether the agent wrote a conversation into folder `session`: one it was stopped before starting holds none.
+function M.savedConversation(session: string): boolean
+ local ok, names = pcall(Host.fs.list, session)
+ if not ok or type(names) ~= "table" then return false end
+ for _, name in names do
+  if type(name) == "string" and string.sub(name, -6) == ".jsonl" and string.sub(name, 1, 1) ~= "." then return true end
+ end
+ return false
+end
+
 -- Where each conversation the hub offered resumes, by folder name, which the window's link route reads (Links.chatLaunch).
 local CHATS_KEY, CHATS_CAP = "hub.chats", 20
 

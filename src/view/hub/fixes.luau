@@ -59,7 +59,7 @@ local function header(s: State.State, pr: Model.HubPR, steps: { Step }, tabs: { 
 	local main = State.fixMain(s)
 	local card = State.card(s, pr.key)
 	-- A failed fix's worktree and saved conversation, ahead of Try again.
-	local alternatives: { State.CardAction } = if card then card.more else {}
+	local alternatives: { State.CardAction } = if card and card.agent and card.agent.kind == "failed" then card.more else {}
 	for _, more in alternatives do
 		if more.act == "card-agent-chat" or more.act == "card-agent-worktree" then
 			table.insert(actions, if more.act == "card-agent-chat" then 1 else #actions + 1, el("button", { class = "gp-btn gp-btn-keyed", key = more.act, actions = { click = more.act .. "=" .. pr.key } }, {

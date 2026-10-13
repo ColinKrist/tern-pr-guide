@@ -1,7 +1,7 @@
 --!strict
 -- Hub agent work: loading-row timing and formatting, the saved conversation a conflict fix keeps for Open agent chat,
 -- a fix the chat moved (re-read, reviewed again, Push locked until it is), and the chat link the window resumes.
--- Pure modules and recorded fixtures only.
+-- Pure modules and recorded fixtures, plus agent-host with Host.fs stubbed.
 local Agent = require("../src/agent")
 local AgentFix = require("../src/hub/agent-fix")
 local Keys = require("../src/keys")
@@ -247,7 +247,22 @@ local function links()
 	assert(Links.chatLaunch(nil, "acme-web-1803-17-2", sessions) == nil)
 end
 
+-- Found live: an agent stopped seconds in leaves its folder empty, and Open agent chat must not offer a blank chat.
+local function savedConversation()
+	local Host = require("../src/host")
+	local AgentHost = require("../src/agent-host")
+	local before = Host.fs
+	local folders: { [string]: { string } } = {
+		["/s/empty"] = {}, ["/s/lock"] = { ".x.jsonl.lock.os", "2026-x" }, ["/s/saved"] = { ".x.jsonl.lock.os", "2026-x", "2026-x.jsonl" },
+	}
+	Host.fs = { list = function(path: string): { string } return folders[path] or error("missing") end } :: any
+	assert(not AgentHost.savedConversation("/s/empty") and not AgentHost.savedConversation("/s/lock") and not AgentHost.savedConversation("/s/none"))
+	assert(AgentHost.savedConversation("/s/saved"))
+	Host.fs = before
+end
+
 return function()
+	savedConversation()
 	progress()
 	sessions()
 	reviewAgain(chatFix())
