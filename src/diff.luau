@@ -707,4 +707,11 @@ function M.tokens(fd: FileDiff, i: number): { Token }
  return tokens
 end
 
+-- Colored pieces of one line of `path`, or nil when its language has no syntax.
+function M.highlight(path: string, text: string): { Token }?
+ local kind = EXTENSIONS[Text.extension(path)]
+ if not kind or not kind.syntax then return nil end
+ return markChanged(tokenize(text, kind.syntax), nil)
+end
+
 return M

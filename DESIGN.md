@@ -171,11 +171,11 @@ Two palettes with separate jobs: Tern's theme variables for everything structura
 
 ### Secondary
 - **Merge Green** (`gp-merge`, `gp-merge-hover`): the two things GitHub makes green, the Submit review button and the submit action. A ticked comment checkbox and a reviewed file's meter cell use it too.
-- **Added Green** (`gp-added`, `gp-success-wash`, `gp-success-wash-line`): added-line counts, "added" state text, the posted-review notice, and the approve verdict once chosen.
+- **Added Green** (`gp-added`, `gp-success-wash`, `gp-success-wash-line`): added-line counts, "added" state text, the reader's side of a merge conflict, the posted-review notice, and the approve verdict once chosen.
 
 ### Tertiary
 - **Removed Red** (`gp-removed`, `gp-danger-fill`, `gp-danger-text`, `gp-danger-wash`, `gp-danger-wash-line`): removed-line counts, the Problem comment kind, the request-changes verdict, and error notices (`gp-danger-text` on `gp-danger-wash`, for contrast).
-- **Changed Amber** (`gp-changed`, `gp-changed-wash`, `gp-changed-wash-line`): the "changed" box in the before/after diagram, and unfinished CI: the amber spinner and "N pending" in a card's checks mark, running rows in the checks popover, and "Re-running 1m 12s" on the fixes page.
+- **Changed Amber** (`gp-changed`, `gp-changed-wash`, `gp-changed-wash-line`): the "changed" box in the before/after diagram, the base branch's side of a merge conflict, and unfinished CI: the amber spinner and "N pending" in a card's checks mark, running rows in the checks popover, and "Re-running 1m 12s" on the fixes page.
 - **Confirm Orange** (`gp-confirm`): the submit button's second state, "Post to GitHub? Press ⌘⏎ again". Nothing else.
 - **Comment kinds**: `gp-question` for Question and `gp-suggestion` for Suggestion, GitHub's own label hues. Nit uses `ink-muted`.
 - **Agent Purple** (`gp-suggestion`, `gp-suggestion-wash`): the same hue marks an agent or Tandem working, as the agent status chip ("Waiting on Tandem"). The wash is a fixed `light-dark()` pair, never computed from the hue.

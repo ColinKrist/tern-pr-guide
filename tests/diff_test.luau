@@ -290,4 +290,8 @@ return function()
 	assert(Diff.analyze(fileAt("a.luau", "x")).language == "lua")
 	local unknown = Diff.analyze(fileAt("a.zig", "const x = 1;"))
 	assert(unknown.syntax == nil and unknown.language == "zig")
+	-- A line outside a diff, such as one side of a conflict, colors by its path alone.
+	local tokens = Diff.highlight("a.tsx", "const x = 1") :: { Diff.Token }
+	assert(tokens[1].kind == "kw" and tokens[#tokens].kind == "num")
+	assert(Diff.highlight("a.zig", "const x = 1") == nil)
 end

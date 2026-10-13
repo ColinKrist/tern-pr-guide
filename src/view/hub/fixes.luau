@@ -521,18 +521,20 @@ local function checkPanel(s: State.State, step: Step, pr: Model.HubPR, details: 
 	return el("div", { class = "gp-fx-stack", key = "ex" }, { el("div", { class = "gp-fx-stack", key = "body" }, kids) })
 end
 
-local function side(label: string, detail: string, start: number, lines: { string }, other: { string }, key: string): Node
+-- One side of a conflict hunk, `tone` "ours" or "theirs". Lines both sides share fade; the lines
+-- that differ carry the side's color.
+local function side(label: string, detail: string, tone: string, path: string, start: number, lines: { string }, other: { string }, key: string): Node
 	local shared: { [string]: boolean } = {}
 	for _, line in other do shared[line] = true end
 	local rows: { Node } = {}
 	for k, text in lines do
-		rows[k] = el("div", { class = "gp-row" .. (if text == "" or shared[text] then " gp-fx-shared" else ""), key = "r" .. k }, {
-			span("gp-plus-none", ""), span("gp-gut", tostring(start + k - 1)), span("gp-sign", ""), el("span", { class = "gp-code", text = text }),
+		rows[k] = el("div", { class = "gp-row " .. (if text == "" or shared[text] then "gp-fx-shared" else "gp-fx-differs"), key = "r" .. k }, {
+			span("gp-plus-none", ""), span("gp-gut", tostring(start + k - 1)), span("gp-sign", ""), Ui.line(path, text),
 		})
 	end
 	table.insert(rows, el("div", { class = "gp-fx-pad", key = "pad" }, {}))
-	return el("div", { class = "gp-fx-side", key = key }, {
-		el("div", { class = "gp-fx-side-h", key = "h" }, { span("gp-fx-side-n", label), span("gp-fx-side-b", detail) }),
+	return el("div", { class = "gp-fx-side gp-fx-" .. tone, key = key }, {
+		el("div", { class = "gp-fx-side-h", key = "h" }, { span("gp-fx-side-dot", ""), span("gp-fx-side-n", label), span("gp-fx-side-b", detail) }),
 		lineRun(rows, "lines"),
 	})
 end
@@ -576,8 +578,8 @@ local function conflictPanel(s: State.State, step: Step, pr: Model.HubPR): Node
 	for n, hunk in conflict.hunks do
 		local last = hunk.start + math.max(#hunk.branch, #hunk.main) - 1
 		table.insert(body, span("gp-fx-chead", "Conflict " .. n .. " of " .. count .. " · lines " .. hunk.start .. "–" .. last))
-		table.insert(body, side("Your branch", "#" .. pr.number, hunk.start, hunk.branch, hunk.main, "b" .. n))
-		table.insert(body, side(pr.baseBranch, "origin/" .. pr.baseBranch, hunk.start, hunk.main, hunk.branch, "m" .. n))
+		table.insert(body, side("Your branch", "#" .. pr.number, "ours", conflict.path, hunk.start, hunk.branch, hunk.main, "b" .. n))
+		table.insert(body, side(pr.baseBranch, "origin/" .. pr.baseBranch, "theirs", conflict.path, hunk.start, hunk.main, hunk.branch, "m" .. n))
 	end
 	if count == 0 then body = { span("gp-fx-muted", "Git reports a conflict here, but no conflict markers were found.") } end
 	table.insert(parts, el("div", { class = "gp-body", key = "body" }, body))

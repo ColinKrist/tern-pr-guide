@@ -71,11 +71,7 @@ end
 -- has no syntax.
 local function codeSpan(fd: Diff.FileDiff, i: number, plain: boolean): Node
  if plain or not fd.syntax then return el("span", { class = "gp-code", text = fd.entries[i].row.text }) end
- local nodes = {}
- for _, token in Diff.tokens(fd, i) do
-  table.insert(nodes, span("gp-tk-" .. token.kind .. (if token.changed then " gp-chg" else ""), token.text))
- end
- return el("span", { class = "gp-code" }, nodes)
+ return Ui.tokens(Diff.tokens(fd, i))
 end
 
 -- One diff line. New-side lines of the PR's diff carry a "+" that shows on hover and opens a

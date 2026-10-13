@@ -101,7 +101,7 @@ local function excerpt(page: State.ReviewPage): Node
 	for index, line in page.lines do
 		local kids: { Node } = {
 			span("gp-plus-none", ""), span("gp-gut", tostring(line.number)), span("gp-sign", ""),
-			el("span", { class = "gp-code", text = line.text }),
+			Ui.line(hunk.path, line.text),
 		}
 		if line.label then table.insert(kids, span("gp-rfix-from" .. (if line.tag == "agent" then " gp-rfix-agent" else ""), line.label)) end
 		table.insert(rows, el("div", { class = "gp-row gp-ctx" .. (if line.tag == "agent" then " gp-add gp-on" else ""), key = "line" .. index }, kids))
