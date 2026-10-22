@@ -239,10 +239,10 @@ return function()
 	assert(table.concat(acts, ",") == "card-approve:review:true,card-request:review:true,mark-all:review:false,card-copy:links:true,open-github:links:false", table.concat(acts, ","))
 
 	-- Optimistic review update
-	HubState.reviewed(revBoard, "acme/api#307", "approved")
+	HubState.reviewSubmitted(revBoard, "acme/api#307", "approved")
 	c307 = HubState.card(revBoard, "acme/api#307")
 	assert(c307 and c307.column == "approved", "reviewed approved reclassifies to approved")
-	HubState.reviewed(revBoard, "acme/api#307", "changes_requested")
+	HubState.reviewSubmitted(revBoard, "acme/api#307", "changes_requested")
 	c307 = HubState.card(revBoard, "acme/api#307")
 	assert(c307 and c307.column == "waiting_on_author", "reviewed changes_requested reclassifies to waiting_on_author")
 	assert(page(Cases.prs, nil) == "" and page(Cases.prs, "acme/none#1") == "", "a PR off the board: none")

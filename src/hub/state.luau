@@ -282,14 +282,14 @@ function M.closeAgent(s: State): string?
 	return key
 end
 
--- Whether an agent fix has had all its hunks reviewed (fix, reviewed), OR
--- optimistically records that a PR was reviewed by the viewer (s, key, verdict).
-local reviewedFn: ((fix: AgentFix.Fix, reviewed: { [string]: boolean }) -> boolean) & ((s: State, key: string, verdict: Model.Verdict) -> boolean)
-reviewedFn = function(a: any, b: any, c: any): boolean
-	if type(b) == "table" then
-		return ReviewFix.allReviewed(a :: AgentFix.Fix, b :: { [string]: boolean })
-	end
-	local s: State, key: string, verdict: Model.Verdict = a, b, c
+-- Whether an agent fix has had all its conflict hunks reviewed.
+function M.reviewed(fix: AgentFix.Fix, reviewed: { [string]: boolean }): boolean
+	return ReviewFix.allReviewed(fix, reviewed)
+end
+
+-- Optimistically records that the viewer just reviewed a PR, so the card reclassifies from the review tab's
+-- "to me" column to Approved (or Waiting on author) until a refresh confirms it.
+function M.reviewSubmitted(s: State, key: string, verdict: Model.Verdict)
 	for _, pr in s.prs do
 		if pr.key == key then
 			local reviews = table.clone(pr.reviews)
@@ -308,9 +308,7 @@ reviewedFn = function(a: any, b: any, c: any): boolean
 		end
 	end
 	M.project(s)
-	return true
 end
-M.reviewed = reviewedFn
 
 local STAGES: { [AgentFix.Stage]: string } = {
 	worktree = "Preparing worktree…", merge = "Merging base branch…", rules = "Regenerating files…",

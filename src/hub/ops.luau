@@ -177,7 +177,7 @@ local function editOf(b: Block, cx: BlockCx, id: PrActions.Id, pr: Model.HubPR, 
 		return function(head)
 			keepCache(b, cx, function()
 				s.acted[key] = true
-				State.reviewed(s, key, verdict)
+				State.reviewSubmitted(s, key, verdict)
 			end, key, head)
 		end
 	end
