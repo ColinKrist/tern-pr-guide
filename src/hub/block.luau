@@ -440,7 +440,7 @@ ACTIONS["card-copy"] = function(b, cx, key)
 	end)
 end
 
--- The pull request actions (PrActions): Merge, Merge when ready, Cancel merge, Update branch, Re-request review and
+-- The pull request actions (PrActions): Merge, Force merge, Merge when ready, Cancel merge, Update branch, Re-request review and
 -- Close, from a card's key or button, the Actions menu on its review page, or the Pull request menu on its fixes page.
 for id, act in State.ACT_OF do
 	ACTIONS[act] = function(b, cx, key) Ops.act(b, cx, id, key) end
@@ -710,12 +710,8 @@ end
 -- The agent the reader's omp is set to, and the models it can run (a live board only).
 local function loadAgent(b: Block, cx: BlockCx)
 	Host.timer(0, function()
-		AgentHost.findAgent(function(agent, why)
-			if b.closed then return end
-			if not agent then
-				b.s.noAgent = why
-				return draw(b, cx)
-			end
+		AgentHost.findAgent(function(agent)
+			if b.closed or not agent then return end
 			b.agent, b.s.agent = agent, agent
 			draw(b, cx)
 			-- The cached board's review requests, before any refresh.

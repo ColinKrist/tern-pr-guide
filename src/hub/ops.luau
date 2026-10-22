@@ -80,7 +80,7 @@ end
 
 -- What a sample board says instead of sending each action.
 local SAMPLE: { [string]: string } = {
-	merge = "The sample board doesn't merge", ["auto-merge"] = "The sample board doesn't merge",
+	merge = "The sample board doesn't merge", ["force-merge"] = "The sample board doesn't merge", ["auto-merge"] = "The sample board doesn't merge",
 	["cancel-merge"] = "The sample board doesn't cancel merges", update = "The sample board doesn't update branches",
 	rerequest = "The sample board doesn't ask for reviews", close = "The sample board doesn't close pull requests",
 }
@@ -101,7 +101,9 @@ end
 -- What the success toast says. Read before the action runs: its edit changes what the PR says.
 local function successText(id: PrActions.Id, pr: Model.HubPR, ctx: PrActions.Ctx): string
 	local n = "#" .. pr.number
-	if id == "merge" then
+	if id == "force-merge" then
+		return "Force-merged " .. n
+	elseif id == "merge" then
 		local method = PrActions.method(ctx)
 		if method.kind == "comment" then return "Commented " .. method.command .. " on " .. n end
 		if method.kind == "label" then return "Added the " .. method.label .. " label to " .. n end
@@ -135,7 +137,9 @@ local function editOf(b: Block, cx: BlockCx, id: PrActions.Id, pr: Model.HubPR, 
 			State.dropPr(s, key)
 		end, key, head)
 	end
-	if id == "merge" or id == "auto-merge" then
+	if id == "force-merge" then
+		return gone
+	elseif id == "merge" or id == "auto-merge" then
 		local method = PrActions.method(ctx)
 		-- GitHub's merge happens now and the PR leaves the board; a queue, comment or label hands it to the repo's tool, so
 		-- the card shows it pending until a refresh brings the result.
@@ -182,7 +186,7 @@ local function execute(b: Block, cx: BlockCx, id: PrActions.Id, pr: Model.HubPR,
 	if refused then return fail(refused) end
 	-- Merging by hand overrides auto-land: it steps aside rather than ask for the merge a second time.
 	local current = State.prOf(s, pr.key)
-	if id == "merge" and current and current.autoLand and current.autoLand.state == "on" then
+	if (id == "merge" or id == "force-merge") and current and current.autoLand and current.autoLand.state == "on" then
 		AutoLandRun.off(b, cx, pr.key)
 		if b.closed then return end
 		if not done then cx:toast("info", "Auto-land off for #" .. pr.number .. ": merging by hand", pr.title) end
@@ -319,7 +323,7 @@ local function confirm(b: Block, cx: BlockCx, _: string)
 	end
 	local card = State.card(s, confirm.keys[1])
 	if not card then return end
-	local id: PrActions.Id = if confirm.kind == "close" then "close" else "merge"
+	local id: PrActions.Id = if confirm.kind == "close" then "close" elseif confirm.kind == "force-merge" then "force-merge" else "merge"
 	-- Saying yes to the suggestion makes it the viewer's own setting.
 	local resolved = s.merges[card.pr.repo]
 	if confirm.kind == "learned" and resolved then setUserMethod(b, cx, card.pr.repo, resolved.method) end

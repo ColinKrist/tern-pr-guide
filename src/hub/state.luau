@@ -575,7 +575,7 @@ end
 
 -- The card action each pull request action is sent as, by keys and clicks alike.
 M.ACT_OF = {
-	merge = "card-merge", ["auto-merge"] = "card-auto", ["cancel-merge"] = "card-cancel",
+	merge = "card-merge", ["force-merge"] = "card-force", ["auto-merge"] = "card-auto", ["cancel-merge"] = "card-cancel",
 	update = "card-update", rerequest = "card-rerequest", close = "card-close",
 } :: { [PrActions.Id]: string }
 
@@ -629,6 +629,7 @@ local function actionsFor(pr: HubPR, ctx: PrActions.Ctx, reasons: { Model.Reason
 			main, more = if feedback then action("card-summarize", "Summarize", "A") else nil, {}
 			if not main and not checks then main = action("card-copy", "Copy link", "C") end
 		end
+		if offers("force-merge") then table.insert(more, prAction("force-merge")) end
 		if checks then
 			-- Behind Fix checks ▾ for every failing check, and first when nothing else is offered.
 			local rerun = action("card-rerun", "Re-run failed checks", "⇧R")
@@ -656,6 +657,7 @@ local function actionsFor(pr: HubPR, ctx: PrActions.Ctx, reasons: { Model.Reason
 		elseif offers("auto-merge") then
 			table.insert(more, prAction("auto-merge"))
 		end
+		if offers("force-merge") then table.insert(more, prAction("force-merge")) end
 		return main, more
 	elseif column == "ready" then
 		-- A merge in flight: only Cancel merge, and only when the method can be taken back.
@@ -790,7 +792,9 @@ end
 function askingOf(s: State, pr: HubPR, column: Column): string?
 	local confirm = s.confirm
 	if not confirm or confirm.keys[1] ~= pr.key then return nil end
-	local id: PrActions.Id? = if confirm.kind == "merge" or confirm.kind == "learned" then "merge" elseif confirm.kind == "close" then "close" else nil
+	local id: PrActions.Id? = if confirm.kind == "merge" or confirm.kind == "learned" then "merge"
+		elseif confirm.kind == "force-merge" then "force-merge"
+		elseif confirm.kind == "close" then "close" else nil
 	if id == nil then return nil end
 	return PrActions.get(id).question(pr, M.prCtx(s, pr, column))
 end
@@ -1674,7 +1678,7 @@ function M.prConfirm(s: State): BatchConfirm?
 	if not card or not card.asking then return nil end
 	local pr = card.pr
 	local lines = if confirm.kind == "close" then { "Closed pull requests can be reopened." } else {}
-	if confirm.kind == "merge" then lines = Model.methodLines({ PrActions.method(M.prCtx(s, pr, card.column)) }) end
+	if confirm.kind == "merge" or confirm.kind == "force-merge" then lines = Model.methodLines({ PrActions.method(M.prCtx(s, pr, card.column)) }) end
 	return {
 		question = card.asking, rows = { { ref = shortRepo(pr.repo) .. " #" .. pr.number, title = pr.title } }, more = 0,
 		lines = lines, go = "Confirm", act = "hub-confirm",
@@ -1694,7 +1698,7 @@ end
 -- sits there.
 export type PageAction = { act: string, value: string?, label: string, key: string, group: "land" | "review" | "links" | "close" }
 local PAGE_GROUP: { [PrActions.Id]: "land" | "review" | "close" } = {
-	merge = "land", ["auto-merge"] = "land", ["cancel-merge"] = "land", update = "land", rerequest = "review", close = "close",
+	merge = "land", ["force-merge"] = "land", ["auto-merge"] = "land", ["cancel-merge"] = "land", update = "land", rerequest = "review", close = "close",
 }
 
 -- The rows the hub adds to the Actions menu of `key`'s review page: the pull request actions it offers, and Copy link.

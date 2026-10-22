@@ -25,7 +25,7 @@ local GROUPS: { [Page]: { Group } } = {
 			{ "G", "Open on GitHub, or resolve a conflict there" },
 			{ "B", "Show or hide bot comments" },
 			{ "⇧O", "Open agent chat, after an agent fix ends" },
-			{ "⇧P", "Pull request: merge, close and more" },
+			{ "⇧P", "Pull request: merge, force-merge, close and more" },
 			{ "T", "Next view: fixes, guided, files" },
 			{ "Esc", "Back to the board" },
 			{ "?", "Close shortcuts" },

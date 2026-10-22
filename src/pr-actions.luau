@@ -9,7 +9,7 @@ local Model = require("./hub/model")
 type HubPR = Model.HubPR
 type MergeMethod = Model.MergeMethod
 
-export type Id = "merge" | "auto-merge" | "cancel-merge" | "update" | "rerequest" | "close"
+export type Id = "merge" | "force-merge" | "auto-merge" | "cancel-merge" | "update" | "rerequest" | "close"
 
 -- What the rules read beyond the pull request itself.
 export type Ctx = {
@@ -102,6 +102,19 @@ local LIST: { Action } = {
 			return if label then label .. " #" .. pr.number .. "?" else nil
 		end,
 		progress = function(_, ctx) return MERGE_BUSY[M.method(ctx).kind] or "Merging…" end,
+		run = function(pr, ctx, github, done) send(Github.commands.merge(pr, M.method(ctx)), github, done) end,
+	},
+	{
+		id = "force-merge", label = "Force merge", key = "M",
+		what = function(pr) return "force-merge #" .. pr.number end,
+		offered = function(pr, ctx)
+			local normal = ctx.column == "ready" and pr.pending == nil and not pr.behind
+			return pr.role == "mine" and pr.pending == nil and not pr.conflicts and not pr.draft and not ctx.tandem
+				and ctx.merge ~= nil and M.immediate(M.method(ctx)) and not normal
+		end,
+		refusal = owned,
+		question = function(pr) return "Force-merge #" .. pr.number .. "? It is not ready." end,
+		progress = function() return "Force-merging…" end,
 		run = function(pr, ctx, github, done) send(Github.commands.merge(pr, M.method(ctx)), github, done) end,
 	},
 	{
