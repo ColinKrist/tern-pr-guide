@@ -272,7 +272,7 @@ return function()
 	local both = State.card(fresh(), "acme/api#116") :: State.Card
 	assert(both.main and both.main.label == "Fix with agent" and #both.more == 3 and both.more[1].key == "⇧A" and both.more[2].label == "Re-run failed checks" and both.more[2].key == "⇧R")
 	local added = State.card(fresh({ tab = "review" }), "acme/web#303") :: State.Card
-	assert(added.main and added.main.label == "Review" and #added.more == 1 and added.more[1].label == "Remove from Review requests")
+	assert(added.main and added.main.label == "Review" and #added.more == 3 and added.more[1].label == "Remove from Review requests" and added.more[2].label == "Approve" and added.more[3].label == "Request changes")
 
 	-- Chip lines: one chip per job, then the first job's detail.
 	local function chipsOf(key: string, tab: string?): (string, string?)

@@ -9,7 +9,7 @@ local Model = require("./hub/model")
 type HubPR = Model.HubPR
 type MergeMethod = Model.MergeMethod
 
-export type Id = "merge" | "force-merge" | "auto-merge" | "cancel-merge" | "update" | "rerequest" | "close"
+export type Id = "merge" | "force-merge" | "auto-merge" | "cancel-merge" | "update" | "rerequest" | "close" | "approve" | "request-changes"
 
 -- What the rules read beyond the pull request itself.
 export type Ctx = {
@@ -170,6 +170,30 @@ local LIST: { Action } = {
 			local again = Model.awaitingReReview(pr)
 			send(Github.commands.requestReview(pr, table.concat(if again then again.ask else {}, ",")), github, done)
 		end,
+	},
+	{
+		id = "approve", label = "Approve", key = "",
+		what = function(pr) return "approve #" .. pr.number end,
+		offered = function(pr, ctx)
+			return pr.role == "review" and not pr.draft and (ctx.column == "to_review" or ctx.column == "team")
+				and not (pr.reviews.mine ~= nil and pr.reviews.mine.verdict == "approved")
+		end,
+		refusal = none,
+		question = function(pr) return "Approve #" .. pr.number .. "?" end,
+		progress = function() return "Approving…" end,
+		run = function(pr, _, github, done) send(Github.commands.approve(pr), github, done) end,
+	},
+	{
+		id = "request-changes", label = "Request changes", key = "",
+		what = function(pr) return "request changes on #" .. pr.number end,
+		offered = function(pr, ctx)
+			return pr.role == "review" and not pr.draft and (ctx.column == "to_review" or ctx.column == "team")
+				and not (pr.reviews.mine ~= nil and pr.reviews.mine.verdict == "changes_requested")
+		end,
+		refusal = none,
+		question = function(pr) return "Request changes on #" .. pr.number .. "?" end,
+		progress = function() return "Requesting changes…" end,
+		run = function(pr, _, github, done) send(Github.commands.requestChanges(pr), github, done) end,
 	},
 	{
 		id = "close", label = "Close pull request", key = "X",

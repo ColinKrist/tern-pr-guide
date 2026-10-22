@@ -489,6 +489,10 @@ local function testCommands()
 	same(Github.commands.merge(pr, { kind = "merge" }), { argv = { "gh", "pr", "merge", "110", "--repo", "acme/api", "--merge" } }, "merge")
 	same(Github.commands.merge(pr, { kind = "rebase" }), { argv = { "gh", "pr", "merge", "110", "--repo", "acme/api", "--rebase" } }, "rebase")
 	same(Github.commands.updateBranch(pr), { argv = { "gh", "pr", "update-branch", "110", "--repo", "acme/api" } }, "update-branch")
+	same(Github.commands.approve(pr), { argv = { "gh", "pr", "review", "110", "--repo", "acme/api", "--approve" } }, "approve")
+	same(Github.commands.approve(pr, "Looks great"), { argv = { "gh", "pr", "review", "110", "--repo", "acme/api", "--approve", "--body", "Looks great" } }, "approve with body")
+	same(Github.commands.requestChanges(pr), { argv = { "gh", "pr", "review", "110", "--repo", "acme/api", "--request-changes" } }, "request-changes")
+	same(Github.commands.requestChanges(pr, "Needs tests"), { argv = { "gh", "pr", "review", "110", "--repo", "acme/api", "--request-changes", "--body", "Needs tests" } }, "request-changes with body")
 
 	local fake = FakeRunner.new({
 		{ prefix = { "gh", "pr", "merge" }, contains = "--squash", reply = { stdout = "" } },

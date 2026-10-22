@@ -83,6 +83,7 @@ local SAMPLE: { [string]: string } = {
 	merge = "The sample board doesn't merge", ["force-merge"] = "The sample board doesn't merge", ["auto-merge"] = "The sample board doesn't merge",
 	["cancel-merge"] = "The sample board doesn't cancel merges", update = "The sample board doesn't update branches",
 	rerequest = "The sample board doesn't ask for reviews", close = "The sample board doesn't close pull requests",
+	approve = "The sample board doesn't approve", ["request-changes"] = "The sample board doesn't request changes",
 }
 
 -- The rules' context for `pr` as an action is decided: ownership another window stored joins first, and the durable
@@ -123,6 +124,10 @@ local function successText(id: PrActions.Id, pr: Model.HubPR, ctx: PrActions.Ctx
 	elseif id == "rerequest" then
 		local again = Model.awaitingReReview(pr)
 		return "Asked " .. Model.reviewerList(if again then again.ask else {}) .. " to review " .. n .. " again"
+	elseif id == "approve" then
+		return "Approved " .. n
+	elseif id == "request-changes" then
+		return "Requested changes on " .. n
 	end
 	return "Closed " .. n
 end
@@ -167,6 +172,14 @@ local function editOf(b: Block, cx: BlockCx, id: PrActions.Id, pr: Model.HubPR, 
 		local again = Model.awaitingReReview(pr)
 		local logins = if again then again.ask else {}
 		return function(head) keepCache(b, cx, function() State.reRequested(s, key, logins) end, key, head) end
+	elseif id == "approve" or id == "request-changes" then
+		local verdict: Model.Verdict = if id == "approve" then "approved" else "changes_requested"
+		return function(head)
+			keepCache(b, cx, function()
+				s.acted[key] = true
+				State.reviewed(s, key, verdict)
+			end, key, head)
+		end
 	end
 	return gone
 end
@@ -323,7 +336,11 @@ local function confirm(b: Block, cx: BlockCx, _: string)
 	end
 	local card = State.card(s, confirm.keys[1])
 	if not card then return end
-	local id: PrActions.Id = if confirm.kind == "close" then "close" elseif confirm.kind == "force-merge" then "force-merge" else "merge"
+	local id: PrActions.Id = if confirm.kind == "close" then "close"
+		elseif confirm.kind == "force-merge" then "force-merge"
+		elseif confirm.kind == "approve" then "approve"
+		elseif confirm.kind == "request-changes" then "request-changes"
+		else "merge"
 	-- Saying yes to the suggestion makes it the viewer's own setting.
 	local resolved = s.merges[card.pr.repo]
 	if confirm.kind == "learned" and resolved then setUserMethod(b, cx, card.pr.repo, resolved.method) end

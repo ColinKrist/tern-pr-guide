@@ -282,9 +282,35 @@ function M.closeAgent(s: State): string?
 	return key
 end
 
-function M.reviewed(fix: AgentFix.Fix, reviewed: { [string]: boolean }): boolean
-	return ReviewFix.allReviewed(fix, reviewed)
+-- Whether an agent fix has had all its hunks reviewed (fix, reviewed), OR
+-- optimistically records that a PR was reviewed by the viewer (s, key, verdict).
+local reviewedFn: ((fix: AgentFix.Fix, reviewed: { [string]: boolean }) -> boolean) & ((s: State, key: string, verdict: Model.Verdict) -> boolean)
+reviewedFn = function(a: any, b: any, c: any): boolean
+	if type(b) == "table" then
+		return ReviewFix.allReviewed(a :: AgentFix.Fix, b :: { [string]: boolean })
+	end
+	local s: State, key: string, verdict: Model.Verdict = a, b, c
+	for _, pr in s.prs do
+		if pr.key == key then
+			local reviews = table.clone(pr.reviews)
+			local prev = reviews.mine
+			local mine: Model.Review = {
+				author = if prev then prev.author else "",
+				bot = false,
+				verdict = verdict,
+				at = "",
+				oid = pr.headOid,
+			}
+			reviews.mine = mine
+			reviews.decision = if verdict == "approved" then "approved" else "changes_requested"
+			reviews.requestedMe = false
+			pr.reviews = reviews
+		end
+	end
+	M.project(s)
+	return true
 end
+M.reviewed = reviewedFn
 
 local STAGES: { [AgentFix.Stage]: string } = {
 	worktree = "Preparing worktree…", merge = "Merging base branch…", rules = "Regenerating files…",
@@ -577,11 +603,12 @@ end
 M.ACT_OF = {
 	merge = "card-merge", ["force-merge"] = "card-force", ["auto-merge"] = "card-auto", ["cancel-merge"] = "card-cancel",
 	update = "card-update", rerequest = "card-rerequest", close = "card-close",
+	approve = "card-approve", ["request-changes"] = "card-request",
 } :: { [PrActions.Id]: string }
 
 local function prAction(id: PrActions.Id): CardAction
 	local def = PrActions.get(id)
-	return action(M.ACT_OF[id], def.label, def.key)
+	return action(M.ACT_OF[id], def.label, if def.key ~= "" then def.key else nil)
 end
 
 -- What the pull request actions read beyond the PR, as the board knows it; `column` is its card's when known. Ownership
@@ -667,7 +694,10 @@ local function actionsFor(pr: HubPR, ctx: PrActions.Ctx, reasons: { Model.Reason
 		if pr.behind and offers("update") then return prAction("update"), { method } end
 		return if offers("merge") then prAction("merge") else nil, { method }
 	elseif column == "to_review" then
-		return action("open", "Review", "⏎"), if pr.addedByMe then { action("card-remove", "Remove from Review requests", "X") } else {}
+		local more = if pr.addedByMe then { action("card-remove", "Remove from Review requests", "X") } else {}
+		if offers("approve") then table.insert(more, prAction("approve")) end
+		if offers("request-changes") then table.insert(more, prAction("request-changes")) end
+		return action("open", "Review", "⏎"), more
 	end
 	return nil, {}
 end
@@ -794,11 +824,12 @@ function askingOf(s: State, pr: HubPR, column: Column): string?
 	if not confirm or confirm.keys[1] ~= pr.key then return nil end
 	local id: PrActions.Id? = if confirm.kind == "merge" or confirm.kind == "learned" then "merge"
 		elseif confirm.kind == "force-merge" then "force-merge"
+		elseif confirm.kind == "approve" then "approve"
+		elseif confirm.kind == "request-changes" then "request-changes"
 		elseif confirm.kind == "close" then "close" else nil
 	if id == nil then return nil end
 	return PrActions.get(id).question(pr, M.prCtx(s, pr, column))
 end
-
 local function toCard(pr: HubPR, placement: Model.Placement, s: State): Card
 	local known = s.flakes[pr.key]
 	local flake = if known and known.headOid == pr.headOid then known else nil
@@ -1699,6 +1730,7 @@ end
 export type PageAction = { act: string, value: string?, label: string, key: string, group: "land" | "review" | "links" | "close" }
 local PAGE_GROUP: { [PrActions.Id]: "land" | "review" | "close" } = {
 	merge = "land", ["force-merge"] = "land", ["auto-merge"] = "land", ["cancel-merge"] = "land", update = "land", rerequest = "review", close = "close",
+	approve = "review", ["request-changes"] = "review",
 }
 
 -- The rows the hub adds to the Actions menu of `key`'s review page: the pull request actions it offers, and Copy link.

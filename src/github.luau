@@ -918,6 +918,24 @@ M.commands = {
 	requestReview = function(pr: HubPR, login: string): Command
 		return { argv = prArgv("edit", pr, "--add-reviewer", login), stdin = nil }
 	end,
+	-- Submits an approving review.
+	approve = function(pr: HubPR, body: string?): Command
+		local argv = prArgv("review", pr, "--approve")
+		if body and body ~= "" then
+			table.insert(argv, "--body")
+			table.insert(argv, body)
+		end
+		return { argv = argv, stdin = nil }
+	end,
+	-- Submits a review requesting changes.
+	requestChanges = function(pr: HubPR, body: string?): Command
+		local argv = prArgv("review", pr, "--request-changes")
+		if body and body ~= "" then
+			table.insert(argv, "--body")
+			table.insert(argv, body)
+		end
+		return { argv = argv, stdin = nil }
+	end,
 	-- Closes with no comment; GitHub can reopen it.
 	close = function(pr: HubPR): Command
 		return { argv = prArgv("close", pr), stdin = nil }

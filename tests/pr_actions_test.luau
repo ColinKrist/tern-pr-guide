@@ -61,7 +61,57 @@ return function()
 	local pending = pr("acme/api#109", { pending = { method = "queue", at = "" } })
 	assert(ids(PrActions.list(pending, ctx())) == "cancel-merge", "a pending merge: only Cancel merge, and no Close")
 	local review = pr("acme/api#307")
-	assert(review.role == "review" and ids(PrActions.list(review, ctx({ column = "to_review" }))) == "", "a review request offers nothing")
+	assert(review.role == "review" and ids(PrActions.list(review, ctx({ column = "to_review" }))) == "approve,request-changes", "a review request offers approve and request-changes")
+
+	-- Approve and request-changes: offered gates and withheld cases.
+	assert(PrActions.offers(review, ctx({ column = "to_review" }), "approve"), "offers approve in to_review")
+	assert(PrActions.offers(review, ctx({ column = "to_review" }), "request-changes"), "offers request-changes in to_review")
+	assert(PrActions.offers(review, ctx({ column = "team" }), "approve"), "offers approve in team")
+	assert(PrActions.offers(review, ctx({ column = "team" }), "request-changes"), "offers request-changes in team")
+
+	-- Withheld: not a review-role PR
+	assert(not PrActions.offers(ready, ctx({ column = "to_review" }), "approve"), "mine role does not offer approve")
+	assert(not PrActions.offers(ready, ctx({ column = "to_review" }), "request-changes"), "mine role does not offer request-changes")
+	assert(not PrActions.offers(ready, ctx({ column = "team" }), "approve"))
+	assert(not PrActions.offers(ready, ctx({ column = "team" }), "request-changes"))
+
+	-- Withheld: a draft PR
+	local draftReview = pr("acme/api#307", { draft = true })
+	assert(not PrActions.offers(draftReview, ctx({ column = "to_review" }), "approve"), "draft does not offer approve")
+	assert(not PrActions.offers(draftReview, ctx({ column = "to_review" }), "request-changes"), "draft does not offer request-changes")
+
+	-- Withheld: non to_review/team columns
+	for _, col in { "ready", "in_review", "needs_fixes", "approved", "waiting_on_author", "inactive" } :: { Model.Column } do
+		assert(not PrActions.offers(review, ctx({ column = col }), "approve"), col .. " does not offer approve")
+		assert(not PrActions.offers(review, ctx({ column = col }), "request-changes"), col .. " does not offer request-changes")
+	end
+
+	-- Withheld: already that verdict
+	local alreadyApproved = pr("acme/api#307")
+	local appReviews = table.clone(alreadyApproved.reviews)
+	appReviews.mine = { author = "me", bot = false, verdict = "approved", at = "", oid = "head" }
+	alreadyApproved.reviews = appReviews
+	assert(not PrActions.offers(alreadyApproved, ctx({ column = "to_review" }), "approve"), "already approved does not offer approve")
+	assert(PrActions.offers(alreadyApproved, ctx({ column = "to_review" }), "request-changes"), "already approved still offers request-changes")
+
+	local alreadyChanges = pr("acme/api#307")
+	local chReviews = table.clone(alreadyChanges.reviews)
+	chReviews.mine = { author = "me", bot = false, verdict = "changes_requested", at = "", oid = "head" }
+	alreadyChanges.reviews = chReviews
+	assert(PrActions.offers(alreadyChanges, ctx({ column = "to_review" }), "approve"), "already changes-requested still offers approve")
+	assert(not PrActions.offers(alreadyChanges, ctx({ column = "to_review" }), "request-changes"), "already changes-requested does not offer request-changes")
+
+	-- Refusal, question, progress, and run
+	local approveDef = PrActions.get("approve")
+	local requestChangesDef = PrActions.get("request-changes")
+	assert(approveDef.refusal(review, ctx({ column = "to_review" })) == nil)
+	assert(requestChangesDef.refusal(review, ctx({ column = "to_review" })) == nil)
+	assert(approveDef.question(review, ctx({ column = "to_review" })) == "Approve #307?")
+	assert(requestChangesDef.question(review, ctx({ column = "to_review" })) == "Request changes on #307?")
+	assert(approveDef.progress(review, ctx({ column = "to_review" })) == "Approving…")
+	assert(requestChangesDef.progress(review, ctx({ column = "to_review" })) == "Requesting changes…")
+	assert(sent("approve", review, ctx({ column = "to_review" })) == "gh pr review 307 --repo acme/api --approve")
+	assert(sent("request-changes", review, ctx({ column = "to_review" })) == "gh pr review 307 --repo acme/api --request-changes")
 	assert(not PrActions.offers(ready, ctx({ agent = true }), "close"), "no Close while an agent works on the branch")
 	assert(not PrActions.offers(ready, ctx({ tandem = true }), "close"), "nor on Tandem's branch")
 	local comment: Model.MergeResolution = { method = { kind = "comment", command = "/merge" }, source = "declared", ask = false }
@@ -167,6 +217,33 @@ return function()
 	local queued = page(with("acme/api#109", { pending = { method = "queue", at = "" } }), "acme/api#109")
 	assert(queued == "card-cancel:M:land:acme/api#109,card-copy:C:links:acme/api#109", "a queued merge: Cancel merge and Copy link, no Close: " .. queued)
 	local request = page(Cases.prs, "acme/api#307", "review")
-	assert(request == "card-copy:C:links:acme/api#307", "a review request: Copy link only: " .. request)
+	assert(request == "card-approve::review:acme/api#307,card-request::review:acme/api#307,card-copy:C:links:acme/api#307", "a review request: Approve, Request changes and Copy link: " .. request)
+
+	-- Optimistic review update
+	local revBoard = HubState.new(Cases.prs, Cases.asOf, nil)
+	revBoard.tab = "review"
+	HubState.project(revBoard)
+	local c307 = HubState.card(revBoard, "acme/api#307")
+	assert(c307 and c307.column == "to_review")
+	-- Review page action rows (group "review")
+	local ReviewPageState = require("../src/state")
+	local reviewPage = ReviewPageState.new(
+		{ repo = "acme/api", number = 307, files = {}, branch = "main", head = "head", base = "base", title = "T", url = "" } :: any,
+		{ title = "Test", summary = "", guided = false, steps = {}, changes = {}, comments = {} } :: any,
+		{ repo = "acme/api", dryRunPath = nil, root = "main" }
+	)
+	reviewPage.hosted = { actions = HubState.pageActions(revBoard, "acme/api#307"), asking = false }
+	local rows = ReviewPageState.actionRows(reviewPage)
+	local acts = {}
+	for _, r in rows do table.insert(acts, r.act .. ":" .. r.group .. ":" .. tostring(r.host)) end
+	assert(table.concat(acts, ",") == "card-approve:review:true,card-request:review:true,mark-all:review:false,card-copy:links:true,open-github:links:false", table.concat(acts, ","))
+
+	-- Optimistic review update
+	HubState.reviewed(revBoard, "acme/api#307", "approved")
+	c307 = HubState.card(revBoard, "acme/api#307")
+	assert(c307 and c307.column == "approved", "reviewed approved reclassifies to approved")
+	HubState.reviewed(revBoard, "acme/api#307", "changes_requested")
+	c307 = HubState.card(revBoard, "acme/api#307")
+	assert(c307 and c307.column == "waiting_on_author", "reviewed changes_requested reclassifies to waiting_on_author")
 	assert(page(Cases.prs, nil) == "" and page(Cases.prs, "acme/none#1") == "", "a PR off the board: none")
 end
