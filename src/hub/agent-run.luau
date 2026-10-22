@@ -10,6 +10,7 @@ local Fetch = require("../fetch")
 local Github = require("../github")
 local Host = require("../host")
 local Model = require("./model")
+local Platform = require("../platform")
 local Runtime = require("./runtime")
 local State = require("./state")
 local Store = require("./store")
@@ -191,7 +192,7 @@ local function beginAgent(b: Block, cx: BlockCx, key: string, mode: "fix" | "clo
 		State.project(b.s)
 		return draw(b, cx)
 	end
-	local dir = cx.cwd or Host.getenv("HOME") or ""
+	local dir = cx.cwd or Platform.home() or ""
 	local near: Fetch.Repo? = nil
 	local checkout: string? = nil
 	local cancelled, missing, answered = false, false, false
@@ -320,7 +321,7 @@ local function openWorktree(b: Block, cx: BlockCx, key: string)
 	local worktree = if not agent then nil elseif agent.kind == "failed" then agent.worktree elseif agent.kind == "ready" then agent.fix.worktree else nil
 	if not worktree then return end
 	if b.fixture then return cx:toast("info", "Sample worktree", worktree) end
-	-- Finder is the available folder-opening surface; the path stays a single argv.
+	-- The system's file manager is the available folder-opening surface; the path stays a single argv.
 	local replied = false
 	local function opened(out: Github.Out)
 		if replied then return end
@@ -328,7 +329,7 @@ local function openWorktree(b: Block, cx: BlockCx, key: string)
 		if b.closed then return end
 		if out.status ~= 0 or out.timed_out then cx:toast("error", "Couldn't open worktree: " .. reasonOf(out.stderr ~= "" and out.stderr or "Opening the folder failed")) end
 	end
-	local ok, err = pcall(Fetch.runner, { "open", worktree }, { timeout_ms = 15_000 }, opened)
+	local ok, err = pcall(Fetch.runner, Platform.openCommand(worktree), { timeout_ms = 15_000 }, opened)
 	if not ok then opened({ status = -1, stdout = "", stderr = tostring(err), timed_out = false }) end
 end
 

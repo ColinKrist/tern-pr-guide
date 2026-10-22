@@ -37,14 +37,17 @@ export type Outcome =
 export type Spec = {
  key: string, clone: string, checkout: string, pool: string, branch: string, base: string,
  headOid: string, number: number, tool: string, omp: string, model: string, effort: string?,
+ -- The program that runs `tool` where the system ignores its `#!` line (Windows); nil runs `tool` itself.
+ interpreter: string?,
  -- Generated files need a repository-specific, explicitly supplied regeneration command.
  regenerate: { [string]: { string } }?,
  input: Input?, -- absent preserves the conflict workflow
- sandbox: Sandbox?, -- required when `input` is set: a bot worker never runs unconfined
- sessionDir: string?, -- where the conflict agent saves its conversation; a bot worker saves none
- -- A lease an earlier plugin load held: the engine starts settled with it, ready with `fix` when there was one, and
- -- `head` is the worktree's commit before the run, which a return resets to.
- resume: { lease: Lease, head: string?, fix: Fix? }?,
+	sandbox: Sandbox?, -- required when `input` is set, unless `unconfined`: a bot worker never runs unconfined by accident
+	unconfined: boolean?, -- Windows has no sandbox to apply: the bot worker runs with only its tools and prompt
+	sessionDir: string?, -- where the conflict agent saves its conversation; a bot worker saves none
+	-- A lease an earlier plugin load held: the engine starts settled with it, ready with `fix` when there was one, and
+	-- `head` is the worktree's commit before the run, restored on return.
+	resume: { lease: Lease, head: string?, fix: Fix? }?,
 }
 type BoundRun = Run & { spec: Spec?, usedAgent: boolean? }
 export type Out = { status: number, stdout: string, stderr: string, timed_out: boolean }
@@ -169,6 +172,7 @@ function M.clone(slug: string, destination: string): { string }
  return { "gh", "repo", "clone", slug, destination, "--", "--filter=blob:none", "--no-checkout" }
 end
 
+-- `tool` is the command the agent types for the conflicts tool: its path, after its interpreter when it needs one.
 function M.prompt(tool: string): string
  return "Resolve the remaining merge conflicts in this worktree. Use only " .. tool ..
   " list, show <id>, take <id> ours|theirs|both, write <id> (stdin), and check for conflict content. " ..
@@ -566,8 +570,8 @@ function M.engine(spec: Spec, deps: Dependencies, now: number, changed: (Outcome
   command(argv, state.worktree :: string, acceptConflict == true, ok)
  end
  local function tool(args: { string }, ok: (any) -> (), acceptConflict: boolean?)
-  local argv = { spec.tool }
-  table.move(args, 1, #args, 2, argv)
+  local argv = if spec.interpreter then { spec.interpreter, spec.tool } else { spec.tool }
+  table.move(args, 1, #args, #argv + 1, argv)
   command(argv, state.worktree :: string, acceptConflict == true, function(out) ok(deps.decode(out.stdout)) end)
  end
  local regenerations: { { path: string, argv: { string } } } = {}
@@ -637,7 +641,7 @@ function M.engine(spec: Spec, deps: Dependencies, now: number, changed: (Outcome
    -- A fresh folder per run, so `omp --session-dir <folder> --continue` resumes exactly this conversation.
    if spec.sessionDir then table.insert(argv, "--session-dir"); table.insert(argv, spec.sessionDir) end
    if spec.effort then table.insert(argv, "--thinking"); table.insert(argv, spec.effort) end
-   table.insert(argv, M.prompt(spec.tool))
+   table.insert(argv, M.prompt(if spec.interpreter then spec.interpreter .. ' "' .. spec.tool .. '"' else spec.tool))
    command(argv, state.worktree :: string, false, function(out)
     agentSummary = string.sub(string.match(out.stdout, "%S[^\r\n]*") or "Resolve merge conflicts", 1, 240)
     journal("agent", commit)
@@ -753,19 +757,18 @@ function M.engine(spec: Spec, deps: Dependencies, now: number, changed: (Outcome
   if input.details.key ~= spec.key or input.details.headOid ~= spec.headOid or not M.hasBotFeedback(input.details, input.authors) then
    return fail("Bot feedback is missing or belongs to a different PR head")
   end
-  -- Prompt instructions are not a boundary: the worker only runs where the kernel refuses writes outside the worktree.
+  -- Prompt instructions are not a boundary: where a sandbox exists, the worker only runs where the kernel refuses
+  -- writes outside the worktree. `unconfined` (Windows, which has none to apply) runs it with its tools and prompt alone.
   local box = spec.sandbox
   local profile = if box and string.sub(spec.omp, 1, 1) ~= "-" then M.sandboxProfile(state.worktree :: string, box.home) else nil
-  if not box or not profile then return fail("The bot fix needs a write sandbox for its worktree") end
+  local unconfined = spec.unconfined == true and string.sub(spec.omp, 1, 1) ~= "-"
+  if not unconfined and (not box or not profile) then return fail("The bot fix needs a write sandbox for its worktree") end
   emit({ kind = "stage", stage = "agent" })
-  -- Only the state home moves; XDG_DATA_HOME stays put because OMP keeps its credentials there.
-  local root = (state.worktree :: string) .. "/" .. BOT_STATE
-  local argv = { box.exec, "-p", profile, "/usr/bin/env", "XDG_STATE_HOME=" .. root,
-   spec.omp, "-p", "--no-session", "--no-extensions", "--no-skills", "--no-rules", "--no-lsp", "--no-title",
+  local worker = { spec.omp, "-p", "--no-session", "--no-extensions", "--no-skills", "--no-rules", "--no-lsp", "--no-title",
    "--tools", "read,edit,write,grep,glob", "--model", spec.model }
-  if spec.effort then table.insert(argv, "--thinking"); table.insert(argv, spec.effort) end
-  table.insert(argv, M.botPrompt(input.details, input.authors))
-  sandboxed(argv, root, function(out)
+  if spec.effort then table.insert(worker, "--thinking"); table.insert(worker, spec.effort) end
+  table.insert(worker, M.botPrompt(input.details, input.authors))
+  local function review(out: Out)
    agentSummary = string.sub(string.match(out.stdout, "%S[^\r\n]*") or "Address bot feedback", 1, 240)
    git({ "rev-parse", "HEAD" }, function(head)
     if string.gsub(head.stdout, "%s+$", "") ~= spec.headOid then return fail("The agent changed the worktree head") end
@@ -794,7 +797,13 @@ function M.engine(spec: Spec, deps: Dependencies, now: number, changed: (Outcome
      end)
     end)
    end)
-  end)
+  end
+  if unconfined then return command(worker, state.worktree :: string, false, review) end
+  -- Only the state home moves; XDG_DATA_HOME stays put because OMP keeps its credentials there.
+  local root = (state.worktree :: string) .. "/" .. BOT_STATE
+  local argv = { (box :: Sandbox).exec, "-p", profile :: string, "/usr/bin/env", "XDG_STATE_HOME=" .. root }
+  table.move(worker, 1, #worker, #argv + 1, argv)
+  sandboxed(argv, root, review)
  end
  local function merge()
   git({ "status", "--porcelain" }, function(status)

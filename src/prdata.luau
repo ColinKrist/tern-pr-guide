@@ -12,6 +12,7 @@ local GitOutput = require("./git-output")
 local Host = require("./host")
 local Links = require("./links")
 local Model = require("./hub/model")
+local Platform = require("./platform")
 local Pr = require("./pr")
 local Review = require("./review")
 local Text = require("./text")
@@ -264,7 +265,7 @@ end
 local M = {}
 
 function M.dryRunPath(number: number): string
- return "/tmp/prguide-review-" .. number .. ".json"
+ return Platform.temp() .. "/prguide-review-" .. number .. ".json"
 end
 
 M.refPrefix = refPrefix

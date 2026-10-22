@@ -35,6 +35,10 @@ PR Guide needs Tern and the [GitHub CLI](https://cli.github.com) signed in to Gi
 [OMP](https://omp.sh) is optional. It runs guided reviews and agent fixes. Everything else works
 without it.
 
+On Windows, PR Guide finds `gh`, `git` and `omp` (including `omp.exe` and `omp.cmd`) on the PATH
+Tern starts with, and reads OMP's settings from your user profile. Agent fixes also need Python on
+that PATH as `python`.
+
 ```sh
 gh auth login
 tern plugin install github.com/jubbydev/tern-pr-guide
@@ -217,7 +221,8 @@ checkout.
   stays locked until you review it. Bot-comment fixes keep no conversation. Conversations older
   than 30 days are removed.
 - **Sandboxed bot fixes.** When the agent addresses a bot review, it can write only inside its
-  worktree.
+  worktree. Windows has no such sandbox, so there the agent is only told to stay in the worktree,
+  with no shell, and you still review every line before anything is pushed.
 - **Tandem.** A PR that Tandem watches goes back to its Tandem coordinator instead of a new agent.
 
 ## Read a PR
